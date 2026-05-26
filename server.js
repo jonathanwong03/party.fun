@@ -11,6 +11,7 @@ const connectDB = require("./config/db");
 
 //routes
 const authRoutes = require("./routes/authRoutes");
+const dashboardRoutes = require("./routes/dashboardRoutes");
 
 const app = express();
 connectDB();
@@ -35,6 +36,7 @@ app.set("views", path.join(__dirname, "views"));
 
 //routes
 app.use("/", authRoutes);
+app.use("/", dashboardRoutes);
 
 app.get("/", (req, res) => {
   res.redirect("/posts");
