@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { MOCK_EVENTS, getActiveTier, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, role, go, onAdd }: { id: string; qty: number; role: Role; go: (r: Route) => void; onAdd?: (t: { eventId: string; qty: number; amount: number }) => void }) {
+export function Confirmation({ id, qty, go, onAdd }: { id: string; qty: number; role: Role; go: (r: Route) => void; onAdd?: (t: { eventId: string; qty: number; amount: number }) => void }) {
   const event = MOCK_EVENTS.find((e) => e.id === id) ?? MOCK_EVENTS[0];
   const ref = 'PF-' + event.id.toUpperCase() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
 
@@ -63,15 +63,13 @@ export function Confirmation({ id, qty, role, go, onAdd }: { id: string; qty: nu
         >
           Back to Events
         </Button>
-        {role === 'user' && (
-          <Button
-            onClick={() => go({ name: 'profile' })}
-            className="flex-1 bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
-            style={{ borderRadius: 12, height: 48 }}
-          >
-            View My Events <ArrowRight size={16} className="ml-1" />
-          </Button>
-        )}
+        <Button
+          onClick={() => go({ name: 'profile' })}
+          className="flex-1 bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
+          style={{ borderRadius: 12, height: 48 }}
+        >
+          View My Events <ArrowRight size={16} className="ml-1" />
+        </Button>
       </div>
     </div>
   );

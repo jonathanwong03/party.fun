@@ -5,14 +5,16 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { MOCK_EVENTS, type Route } from '../components/types';
 
-export function Landing({ go }: { go: (r: Route) => void }) {
+export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route) => void; myEventIds?: Set<string> }) {
   const [q, setQ] = useState('');
   const [loc, setLoc] = useState('all');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
-  const featured = MOCK_EVENTS[0];
-  const rest = MOCK_EVENTS.slice(1);
+  // Hide events the user has already pledged for — they live in "My Events", not here.
+  const available = useMemo(() => MOCK_EVENTS.filter((e) => !myEventIds.has(e.id)), [myEventIds]);
+  const featured = available[0];
+  const rest = available.slice(1);
 
   const filtered = useMemo(() => {
     return rest.filter((e) => {
@@ -49,13 +51,17 @@ export function Landing({ go }: { go: (r: Route) => void }) {
       </section>
 
       {/* Featured */}
-      <div className="mb-4 flex items-baseline justify-between">
-        <h2>Featured tonight</h2>
-        <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>The most hyped event on campus</span>
-      </div>
-      <div className="mb-12">
-        <EventCard event={featured} featured onView={() => go({ name: 'event', id: featured.id })} />
-      </div>
+      {featured && (
+        <>
+          <div className="mb-4 flex items-baseline justify-between">
+            <h2>Featured tonight</h2>
+            <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>The most hyped event on campus</span>
+          </div>
+          <div className="mb-12">
+            <EventCard event={featured} featured onView={() => go({ name: 'event', id: featured.id })} />
+          </div>
+        </>
+      )}
 
       {/* Filters */}
       <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-center">

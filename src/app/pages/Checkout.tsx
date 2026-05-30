@@ -15,6 +15,31 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
   const subtotal = event.price * qty;
   const total = subtotal + fee;
 
+  const [form, setForm] = useState({
+    fullName: 'Jamie Tan',
+    email: 'jamie@u.nus.edu',
+    phone: '@jamiet',
+    matric: '',
+    card: '',
+    expiry: '',
+    cvc: '',
+  });
+  const [attempted, setAttempted] = useState(false);
+
+  // Phone / Telegram is the only optional field; everything else is required.
+  const requiredFields: (keyof typeof form)[] = ['fullName', 'email', 'matric', 'card', 'expiry', 'cvc'];
+  const isMissing = (key: keyof typeof form) => form[key].trim() === '';
+  const hasMissing = requiredFields.some(isMissing);
+
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+
+  const handleConfirm = () => {
+    setAttempted(true);
+    if (hasMissing) return;
+    go({ name: 'confirmation', id, qty });
+  };
+
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
       <button
@@ -57,20 +82,20 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
               Pre-filled from your account profile.
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" defaultValue="Jamie Tan" placeholder="Jamie Tan" />
-              <Field label="Email" defaultValue="jamie@u.nus.edu" placeholder="you@u.nus.edu" type="email" />
-              <Field label="Phone / Telegram" defaultValue="@jamiet" placeholder="@yourhandle" />
-              <Field label="Matric / Student ID (optional)" placeholder="A0234567X" />
+              <Field label="Full name" placeholder="Jamie Tan" value={form.fullName} onChange={set('fullName')} error={attempted && isMissing('fullName')} />
+              <Field label="Email" placeholder="you@u.nus.edu" type="email" value={form.email} onChange={set('email')} error={attempted && isMissing('email')} />
+              <Field label="Phone / Telegram (optional)" placeholder="@yourhandle" value={form.phone} onChange={set('phone')} />
+              <Field label="Matric / Student ID" placeholder="A0234567X" value={form.matric} onChange={set('matric')} error={attempted && isMissing('matric')} />
             </div>
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Payment</h3>
             <div className="space-y-4">
-              <Field label="Card number" placeholder="4242 4242 4242 4242" />
+              <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted && isMissing('card')} />
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Expiry" placeholder="MM / YY" />
-                <Field label="CVC" placeholder="123" />
+                <Field label="Expiry" placeholder="MM / YY" value={form.expiry} onChange={set('expiry')} error={attempted && isMissing('expiry')} />
+                <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted && isMissing('cvc')} />
               </div>
             </div>
             <div className="mt-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
@@ -107,12 +132,18 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
               </div>
 
               <Button
-                onClick={() => go({ name: 'confirmation', id, qty })}
+                onClick={handleConfirm}
                 className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
                 style={{ borderRadius: 12, height: 48 }}
               >
                 Confirm Pledge
               </Button>
+
+              {attempted && hasMissing && (
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
+                  Please fill in all required details before confirming your pledge.
+                </div>
+              )}
 
               <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
                 style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
@@ -127,11 +158,12 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
   );
 }
 
-function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, error, ...props }: { label: string; error?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
-      <Input {...props} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42 }} />
+      <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
+      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>This field is required.</p>}
     </div>
   );
 }

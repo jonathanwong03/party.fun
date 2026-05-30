@@ -1,8 +1,8 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import type { Role, Route } from './components/types';
+import { PLEDGED_EVENT_IDS, type Role, type Route } from './components/types';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -31,6 +31,13 @@ export default function App() {
   const [addedTickets, setAddedTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
   const addTicket = (t: { eventId: string; qty: number; amount: number }) =>
     setAddedTickets((prev) => [t, ...prev.filter((p) => p.eventId !== t.eventId)]);
+
+  // Events already in "My Events" (pre-pledged base + anything just pledged this session).
+  // These are hidden from the "All Events" browse list so the same event can't be pledged twice.
+  const myEventIds = useMemo(
+    () => new Set<string>([...PLEDGED_EVENT_IDS, ...addedTickets.map((t) => t.eventId)]),
+    [addedTickets],
+  );
 
   const go = (r: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -72,7 +79,7 @@ export default function App() {
         />
       )}
 
-      {activeRoute.name === 'landing' && <Landing go={go} />}
+      {activeRoute.name === 'landing' && <Landing go={go} myEventIds={myEventIds} />}
       {activeRoute.name === 'event' && role && <EventDetail id={activeRoute.id} role={role} go={go} fromProfile={activeRoute.fromProfile} fromAdmin={activeRoute.fromAdmin} />}
       {activeRoute.name === 'checkout' && role && <Checkout id={activeRoute.id} role={role} go={go} />}
       {activeRoute.name === 'confirmation' && role && (
