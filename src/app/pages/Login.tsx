@@ -23,8 +23,8 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role:
         onSubmit={(e) => {
           e.preventDefault();
           const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
-          onLogin(email.toLowerCase().includes('admin') ? 'admin' : 'user');
-          go({ name: 'landing' });
+          const nextRole = email.toLowerCase().includes('admin') ? 'admin' : 'user';
+          onLogin(nextRole);
         }}
       >
         <div>

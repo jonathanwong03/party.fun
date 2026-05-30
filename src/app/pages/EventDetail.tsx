@@ -209,17 +209,6 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
               {event.status !== 'cancelled' && <ArrowRight size={16} className="ml-1" />}
             </Button>
 
-            {role === 'guest' && (
-              <Button
-                variant="outline"
-                onClick={() => go({ name: 'login' })}
-                className="mt-2 w-full border-white/15 bg-transparent text-foreground hover:bg-white/5"
-                style={{ borderRadius: 12, height: 44 }}
-              >
-                Login or Create Account
-              </Button>
-            )}
-
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
@@ -233,4 +222,3 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
     </div>
   );
 }
-

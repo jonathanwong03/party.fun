@@ -53,22 +53,15 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4">Buyer details</h3>
-            {role !== 'guest' && (
-              <div className="mb-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
-                Pre-filled from your account profile.
-              </div>
-            )}
+            <div className="mb-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
+              Pre-filled from your account profile.
+            </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" defaultValue={role !== 'guest' ? 'Jamie Tan' : ''} placeholder="Jamie Tan" />
-              <Field label="Email" defaultValue={role !== 'guest' ? 'jamie@u.nus.edu' : ''} placeholder="you@u.nus.edu" type="email" />
-              <Field label="Phone / Telegram" defaultValue={role !== 'guest' ? '@jamiet' : ''} placeholder="@yourhandle" />
+              <Field label="Full name" defaultValue="Jamie Tan" placeholder="Jamie Tan" />
+              <Field label="Email" defaultValue="jamie@u.nus.edu" placeholder="you@u.nus.edu" type="email" />
+              <Field label="Phone / Telegram" defaultValue="@jamiet" placeholder="@yourhandle" />
               <Field label="Matric / Student ID (optional)" placeholder="A0234567X" />
             </div>
-            {role === 'guest' && (
-              <p className="mt-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                Buying as a guest. <button onClick={() => go({ name: 'login' })} className="text-[#ff4d2e] underline">Login</button> to save this ticket to your account.
-              </p>
-            )}
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>

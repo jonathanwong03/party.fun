@@ -13,8 +13,8 @@ export function MobileNav({
   const items = [
     { icon: Home, label: 'Home', target: { name: 'landing' } as Route, active: route.name === 'landing' },
     { icon: Search, label: 'Search', target: { name: 'landing' } as Route, active: false },
-    { icon: Ticket, label: 'My Tickets', target: role === 'user' ? ({ name: 'profile' } as Route) : ({ name: 'login' } as Route), active: route.name === 'profile' },
-    { icon: User, label: 'Account', target: role === 'guest' ? ({ name: 'login' } as Route) : role === 'admin' ? ({ name: 'admin' } as Route) : ({ name: 'profile' } as Route), active: route.name === 'profile' || route.name === 'admin' },
+    { icon: Ticket, label: 'My Tickets', target: { name: 'profile' } as Route, active: route.name === 'profile' },
+    { icon: User, label: 'Account', target: role === 'admin' ? ({ name: 'admin' } as Route) : ({ name: 'profile' } as Route), active: route.name === 'profile' || route.name === 'admin' },
   ];
 
   return (
