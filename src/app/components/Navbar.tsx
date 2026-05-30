@@ -1,5 +1,4 @@
 import { Logo } from './Logo';
-import { Button } from './ui/button';
 import { LogOut, Menu, User as UserIcon } from 'lucide-react';
 import type { Role, Route } from './types';
 
@@ -56,24 +55,6 @@ export function Navbar({
         </nav>
 
         <div className="flex items-center gap-3">
-          {role === 'guest' && (
-            <>
-              <Button
-                variant="ghost"
-                onClick={() => go({ name: 'login' })}
-                className="text-white hover:bg-white/5"
-              >
-                Login
-              </Button>
-              <Button
-                onClick={() => go({ name: 'choose-account' })}
-                className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
-                style={{ borderRadius: 9999 }}
-              >
-                Create Account
-              </Button>
-            </>
-          )}
           {(role === 'user' || role === 'admin') && (
             <>
               <button

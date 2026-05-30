@@ -15,9 +15,18 @@ import { Profile } from './pages/Profile';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CreateEvent } from './pages/CreateEvent';
 
+function isAuthRoute(route: Route) {
+  return (
+    route.name === 'login' ||
+    route.name === 'choose-account' ||
+    route.name === 'register-user' ||
+    route.name === 'register-admin'
+  );
+}
+
 export default function App() {
-  const [route, setRoute] = useState<Route>({ name: 'landing' });
-  const [role, setRole] = useState<Role>('guest');
+  const [route, setRoute] = useState<Route>({ name: 'login' });
+  const [role, setRole] = useState<Role | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [addedTickets, setAddedTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
   const addTicket = (t: { eventId: string; qty: number; amount: number }) =>
@@ -25,55 +34,61 @@ export default function App() {
 
   const go = (r: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    setRoute(r);
+    setRoute(role || isAuthRoute(r) ? r : { name: 'login' });
   };
 
-  const isAuthPage =
-    route.name === 'login' ||
-    route.name === 'choose-account' ||
-    route.name === 'register-user' ||
-    route.name === 'register-admin';
+  const handleLogin = (nextRole: Role) => {
+    window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+    setRole(nextRole);
+    setRoute({ name: nextRole === 'admin' ? 'admin' : 'landing' });
+  };
 
-  const isAdminConsole = route.name === 'admin' || route.name === 'create-event' || route.name === 'edit-event';
+  const activeRoute = role || isAuthRoute(route) ? route : { name: 'login' };
+  const isAuthPage = isAuthRoute(activeRoute);
+
+  const isAdminConsole = activeRoute.name === 'admin' || activeRoute.name === 'create-event' || activeRoute.name === 'edit-event';
 
   return (
     <div className="dark min-h-screen pb-16 md:pb-0" style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
-      {!isAuthPage && (
+      {!isAuthPage && role && (
         <Navbar
           role={role}
-          route={route}
+          route={activeRoute}
           go={go}
-          onLogout={() => setRole('guest')}
+          onLogout={() => {
+            setRole(null);
+            setRoute({ name: 'login' });
+          }}
           onMenuClick={() => setSidebarOpen(true)}
         />
       )}
-      {!isAuthPage && (
+      {!isAuthPage && role && (
         <Sidebar
           open={sidebarOpen}
           onClose={() => setSidebarOpen(false)}
           role={role}
-          route={route}
+          route={activeRoute}
           go={go}
         />
       )}
 
-      {route.name === 'landing' && <Landing go={go} />}
-      {route.name === 'event' && <EventDetail id={route.id} role={role} go={go} fromProfile={route.fromProfile} fromAdmin={route.fromAdmin} />}
-      {route.name === 'checkout' && <Checkout id={route.id} role={role} go={go} />}
-      {route.name === 'confirmation' && (
-        <Confirmation id={route.id} qty={route.qty} role={role} go={go} onAdd={addTicket} />
+      {activeRoute.name === 'landing' && <Landing go={go} />}
+      {activeRoute.name === 'event' && role && <EventDetail id={activeRoute.id} role={role} go={go} fromProfile={activeRoute.fromProfile} fromAdmin={activeRoute.fromAdmin} />}
+      {activeRoute.name === 'checkout' && role && <Checkout id={activeRoute.id} role={role} go={go} />}
+      {activeRoute.name === 'confirmation' && role && (
+        <Confirmation id={activeRoute.id} qty={activeRoute.qty} role={role} go={go} onAdd={addTicket} />
       )}
-      {route.name === 'login' && <Login go={go} onLogin={setRole} />}
-      {route.name === 'choose-account' && <ChooseAccount go={go} />}
-      {route.name === 'register-user' && <RegisterUser go={go} onLogin={setRole} />}
-      {route.name === 'register-admin' && <RegisterAdmin go={go} onLogin={setRole} />}
-      {route.name === 'profile' && <Profile go={go} added={addedTickets} />}
-      {route.name === 'admin' && <AdminDashboard route={route} go={go} />}
-      {route.name === 'create-event' && <CreateEvent route={route} go={go} />}
-      {route.name === 'edit-event' && <CreateEvent route={route} go={go} editId={route.id} />}
+      {activeRoute.name === 'login' && <Login go={go} onLogin={handleLogin} />}
+      {activeRoute.name === 'choose-account' && <ChooseAccount go={go} />}
+      {activeRoute.name === 'register-user' && <RegisterUser go={go} onLogin={handleLogin} />}
+      {activeRoute.name === 'register-admin' && <RegisterAdmin go={go} onLogin={handleLogin} />}
+      {activeRoute.name === 'profile' && <Profile go={go} added={addedTickets} />}
+      {activeRoute.name === 'admin' && <AdminDashboard route={activeRoute} go={go} />}
+      {activeRoute.name === 'create-event' && <CreateEvent route={activeRoute} go={go} />}
+      {activeRoute.name === 'edit-event' && <CreateEvent route={activeRoute} go={go} editId={activeRoute.id} />}
 
-      {!isAuthPage && !isAdminConsole && (
-        <MobileNav role={role} route={route} go={go} />
+      {!isAuthPage && !isAdminConsole && role && (
+        <MobileNav role={role} route={activeRoute} go={go} />
       )}
     </div>
   );

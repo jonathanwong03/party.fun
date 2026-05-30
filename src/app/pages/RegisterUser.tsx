@@ -11,9 +11,9 @@ export function RegisterUser({ go, onLogin }: { go: (r: Route) => void; onLogin:
       subtitle="Track your tickets, get hype updates and refunds in one place."
       footer={
         <>
-          Just want to buy a ticket?{' '}
-          <button onClick={() => go({ name: 'landing' })} className="text-[#ff4d2e]" style={{ fontWeight: 600 }}>
-            Continue as guest
+          Already have an account?{' '}
+          <button onClick={() => go({ name: 'login' })} className="text-[#ff4d2e]" style={{ fontWeight: 600 }}>
+            Login
           </button>
         </>
       }
@@ -23,24 +23,19 @@ export function RegisterUser({ go, onLogin }: { go: (r: Route) => void; onLogin:
         onSubmit={(e) => {
           e.preventDefault();
           onLogin('user');
-          go({ name: 'landing' });
         }}
       >
         <Field label="Username" placeholder="jamiet" />
         <Field label="Email" type="email" placeholder="you@u.nus.edu" />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" type="password" placeholder="••••••••" />
-          <Field label="Confirm" type="password" placeholder="••••••••" />
+          <Field label="Password" type="password" placeholder="********" />
+          <Field label="Confirm" type="password" placeholder="********" />
         </div>
         <Field label="Phone / Telegram (optional)" placeholder="@jamiet" />
 
         <Button type="submit" className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           Create account
         </Button>
-
-        <p className="text-center text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
-          You can also buy tickets as a guest — no account required.
-        </p>
       </form>
     </AuthShell>
   );

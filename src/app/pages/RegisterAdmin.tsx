@@ -24,7 +24,6 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
         onSubmit={(e) => {
           e.preventDefault();
           onLogin('admin');
-          go({ name: 'admin' });
         }}
       >
         <Field label="Organisation / CCA name" placeholder="NUS Electronic Music Club" />

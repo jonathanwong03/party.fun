@@ -18,8 +18,6 @@ export function Sidebar({
 }) {
   const isAdmin = role === 'admin';
 
-  const isGuest = role === 'guest';
-
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
     { label: 'My Events', icon: Bookmark, target: { name: 'profile' }, active: route.name === 'profile' },
@@ -33,12 +31,10 @@ export function Sidebar({
     { label: 'Tickets', icon: Ticket, target: { name: 'admin' }, active: false },
   ];
 
-  const tail: Item[] = isGuest
-    ? [{ label: 'Settings', icon: Settings, target: { name: 'profile' }, active: false }]
-    : [
-        { label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' },
-        { label: 'Settings', icon: Settings, target: { name: 'profile' }, active: false },
-      ];
+  const tail: Item[] = [
+    { label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' },
+    { label: 'Settings', icon: Settings, target: { name: 'profile' }, active: false },
+  ];
 
   const items = [...baseItems, ...(isAdmin ? adminOnly : []), ...tail];
 

@@ -12,7 +12,7 @@ export type Route =
   | { name: 'create-event' }
   | { name: 'edit-event'; id: string };
 
-export type Role = 'guest' | 'user' | 'admin';
+export type Role = 'user' | 'admin';
 
 export type EventStatus = 'live' | 'almost' | 'greenlit' | 'cancelled';
 
