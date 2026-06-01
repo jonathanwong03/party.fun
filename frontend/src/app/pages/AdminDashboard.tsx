@@ -90,7 +90,7 @@ export function AdminDashboard({ route, go, events, onDelete }: { route: Route; 
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
                         {e.backers}/{e.threshold}
                       </td>
-                      <td className="px-3 py-4"><StatusBadge status={e.status} /></td>
+                      <td className="px-3 py-4"><StatusBadge event={e} /></td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1">
                           <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromAdmin: true })}><Eye size={14} /></IconBtn>

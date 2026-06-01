@@ -10,9 +10,10 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => void; fromProfile?: boolean; fromAdmin?: boolean }) {
+export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => void; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id) ?? events[0];
   const activeTier = getActiveTier(event);
+  const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromAdmin;
   const [cancelling, setCancelling] = useState(false);
@@ -33,7 +34,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <StatusBadge status={event.status} />
+            <StatusBadge event={event} />
             <h1 className="mt-3 text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
@@ -119,7 +120,34 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
           </div>
         </div>
 
-        {showOptOut ? (
+        {showCancelledCard ? (
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.tierLabel}</div>
+            <div className="flex items-baseline gap-2">
+              <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
+              <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
+            </div>
+
+            <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
+
+            <Button
+              disabled
+              className="w-full"
+              style={{ background: '#5c2a20', color: 'rgba(255,255,255,0.55)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+            >
+              Event over
+            </Button>
+
+            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
+                <Shield size={14} className="mt-0.5 shrink-0" />
+                <span>Funds are only captured when the event hits its hype threshold. If it doesn't, you're refunded automatically.</span>
+              </div>
+            </div>
+          </div>
+        </aside>
+        ) : showOptOut ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>

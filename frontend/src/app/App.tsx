@@ -27,6 +27,7 @@ import { CreateEvent } from './pages/CreateEvent';
 type RouteState = {
   fromProfile?: boolean;
   fromAdmin?: boolean;
+  fromPast?: boolean;
   qty?: number;
   amount?: number;
 };
@@ -65,6 +66,7 @@ function stateForRoute(route: Route): RouteState | undefined {
     return {
       fromProfile: route.fromProfile,
       fromAdmin: route.fromAdmin,
+      fromPast: route.fromPast,
       qty: route.qty,
       amount: route.amount,
     };
@@ -107,6 +109,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
       id: eventMatch[1],
       fromProfile: state?.fromProfile,
       fromAdmin: state?.fromAdmin,
+      fromPast: state?.fromPast,
       qty: state?.qty,
       amount: state?.amount,
     };
@@ -133,6 +136,8 @@ function AppShell() {
   const [events, setEvents] = useState<EventItem[]>(MOCK_EVENTS);
   const addEvent = (e: EventItem) => setEvents((prev) => [e, ...prev]);
   const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
+  const updateEvent = (updated: EventItem) =>
+    setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
 
   const [cancelledTickets, setCancelledTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
 
@@ -214,7 +219,7 @@ function AppShell() {
         <BrowserRoute path="/profile" element={<Profile go={go} added={addedTickets} events={events} cancelled={cancelledTickets} />} />
         <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} />} />
         <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} />} />
-        <BrowserRoute path="/dashboard/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} />} />
+        <BrowserRoute path="/dashboard/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
         <BrowserRoute path="*" element={<Navigate to={role ? '/events' : '/login'} replace />} />
       </Routes>
 
@@ -253,6 +258,7 @@ function EventDetailRoute({
       onCancelAttendance={onCancelAttendance}
       fromProfile={state.fromProfile}
       fromAdmin={state.fromAdmin}
+      fromPast={state.fromPast}
     />
   );
 }
@@ -298,12 +304,14 @@ function EditEventRoute({
   go,
   events,
   onDelete,
+  onUpdate,
 }: {
   activeRoute: Route;
   go: (r: Route) => void;
   events: EventItem[];
   onDelete: (id: string) => void;
+  onUpdate: (e: EventItem) => void;
 }) {
   const { eventId = '' } = useParams();
-  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onDelete={onDelete} />;
+  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onDelete={onDelete} onUpdate={onUpdate} />;
 }

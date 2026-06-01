@@ -1,6 +1,6 @@
 export type Route =
   | { name: 'landing' }
-  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; qty?: number; amount?: number }
+  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number }
   | { name: 'checkout'; id: string }
   | { name: 'confirmation'; id: string; qty: number }
   | { name: 'login' }
@@ -67,6 +67,26 @@ export function reversePledge(e: EventItem, qty: number): EventItem {
 }
 
 export const TIER_COLORS = ['#29e07a', '#ffcb3c', '#ff8a2e', '#ff3354'] as const;
+
+// Tier-stage labels shown on the status badge while an event is still gathering hype.
+export const TIER_LABELS = ['Early believers', 'Growing Hype', 'Almost There', 'Greenlit'] as const;
+
+// Badge styling for an event: greenlit -> "Confirmed", cancelled -> "Refunded",
+// otherwise the active pricing tier's stage name coloured by TIER_COLORS.
+export function eventBadge(e: EventItem): { label: string; bg: string; fg: string; dot: string } {
+  if (e.status === 'cancelled') return { label: 'Cancelled by Organiser', bg: 'rgba(255,255,255,0.06)', fg: '#8a8a99', dot: '#8a8a99' };
+  if (e.status === 'greenlit') return { label: 'Confirmed', bg: 'rgba(255,51,84,0.14)', fg: '#ff6b85', dot: '#ff3354' };
+  const t = getActiveTier(e);
+  const c = TIER_COLORS[t];
+  return { label: TIER_LABELS[t], bg: `${c}1f`, fg: c, dot: c };
+}
+
+// Key matching what the badge shows, used by the landing filter.
+export function eventBadgeKey(e: EventItem): string {
+  if (e.status === 'cancelled') return 'cancelled';
+  if (e.status === 'greenlit') return 'greenlit';
+  return `tier${getActiveTier(e)}`;
+}
 
 export const PLEDGED_EVENT_IDS = new Set(['e1', 'e2', 'e3', 'e6']);
 

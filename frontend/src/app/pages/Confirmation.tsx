@@ -38,7 +38,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span style={{ color: 'var(--muted-foreground)' }}>Current hype</span>
-            <span style={{ fontWeight: 600 }}>{event.backers} / {event.threshold} backers</span>
+            <span style={{ fontWeight: 600 }}>{event.backers} / {event.threshold} tickets</span>
           </div>
           <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
         </div>

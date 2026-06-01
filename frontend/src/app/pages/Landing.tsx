@@ -3,7 +3,7 @@ import { Search, Sparkles } from 'lucide-react';
 import { EventCard } from '../components/EventCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { MOCK_EVENTS, type Route } from '../components/types';
+import { MOCK_EVENTS, eventBadgeKey, type Route } from '../components/types';
 
 export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route) => void; myEventIds?: Set<string> }) {
   const [q, setQ] = useState('');
@@ -23,9 +23,7 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
       if (price === 'lt15' && e.price >= 15) return false;
       if (price === '15-25' && (e.price < 15 || e.price > 25)) return false;
       if (price === 'gt25' && e.price <= 25) return false;
-      if (hype === 'live' && e.status !== 'live') return false;
-      if (hype === 'almost' && e.status !== 'almost') return false;
-      if (hype === 'greenlit' && e.status !== 'greenlit') return false;
+      if (hype !== 'all' && eventBadgeKey(e) !== hype) return false;
       return true;
     });
   }, [q, loc, hype, price, rest]);
@@ -103,9 +101,10 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All hype</SelectItem>
-            <SelectItem value="live">Live hype</SelectItem>
-            <SelectItem value="almost">Almost there</SelectItem>
-            <SelectItem value="greenlit">Greenlit</SelectItem>
+            <SelectItem value="tier0">Early believers</SelectItem>
+            <SelectItem value="tier1">Growing Hype</SelectItem>
+            <SelectItem value="tier2">Almost There</SelectItem>
+            <SelectItem value="greenlit">Confirmed</SelectItem>
           </SelectContent>
         </Select>
       </div>

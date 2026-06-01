@@ -112,7 +112,7 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
             <div className="relative h-32">
               <ImageWithFallback src={event.image} alt={event.title} className="size-full object-cover" />
               <div className="absolute inset-0 bg-gradient-to-t from-[#14141b] to-transparent" />
-              <div className="absolute left-3 top-3"><StatusBadge status={event.status} /></div>
+              <div className="absolute left-3 top-3"><StatusBadge event={event} /></div>
             </div>
             <div className="space-y-4 p-5">
               <div>

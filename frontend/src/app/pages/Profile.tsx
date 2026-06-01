@@ -73,7 +73,7 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
               fontWeight: 600,
             }}
           >
-            {t === 'cancelled' ? 'Cancelled / Refunded' : t}
+            {t === 'cancelled' ? 'Cancelled' : t}
           </button>
         ))}
       </div>
@@ -95,7 +95,12 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
         <div className="space-y-3">
           {items.map(({ event, qty, amount, ticketStatus }) => {
             const isRefunded = ticketStatus === 'Refunded';
-            const badgeStatus = isRefunded ? 'cancelled' : event.status;
+            const badgeLabel =
+              tab === 'past' ? 'Not available'
+              : event.status === 'cancelled' ? undefined        // -> eventBadge: "Cancelled by Organiser"
+              : isRefunded ? 'Cancelled by Buyer'
+              : undefined;                                       // -> eventBadge: tier label
+            const greyMeter = !!badgeLabel || event.status === 'cancelled';
             return (
             <div key={event.id} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center"
               style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -105,7 +110,7 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="line-clamp-1">{event.title}</h3>
-                  <StatusBadge status={badgeStatus} />
+                  <StatusBadge event={event} label={badgeLabel} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
@@ -113,7 +118,7 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
                   <span>Ticket: {ticketStatus} · {qty} × ${amount}</span>
                 </div>
                 <div className="mt-3 max-w-md">
-                  <HypeMeter pct={event.hypePct} status={badgeStatus} tier={getActiveTier(event)} size="sm" showLabel={false} />
+                  <HypeMeter pct={event.hypePct} status={greyMeter ? 'cancelled' : event.status} tier={getActiveTier(event)} size="sm" showLabel={false} />
                 </div>
               </div>
               <div className="flex items-center gap-3 md:flex-col md:items-end">
@@ -121,7 +126,7 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Total</div>
                   <div style={{ fontWeight: 700, fontSize: 18 }}>${(qty * amount).toFixed(2)}</div>
                 </div>
-                <Button onClick={() => go(isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount })} variant="outline"
+                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount })} variant="outline"
                   className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
                   View
                 </Button>

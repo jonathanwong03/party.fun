@@ -7,11 +7,11 @@ import { Textarea } from '../components/ui/textarea';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { MOCK_EVENTS, type EventItem, type Route, type EventStatus } from '../components/types';
+import { MOCK_EVENTS, getActiveTier, type EventItem, type Route, type EventStatus } from '../components/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { required, dateError, timeError, deadlineError } from '../components/validation';
 
-export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void }) {
+export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void }) {
   const list = events ?? MOCK_EVENTS;
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const isEdit = !!existing;
@@ -51,7 +51,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: 
     address: required(address),
     deadline: deadlineError(deadline),
   };
-  const errOf = (k: keyof typeof errs) => (showErrors ? errs[k] : null);
+  // In edit mode the schedule/deadline fields hold human-readable values from the seed data
+  // that the strict validators reject, so suppress those errors when editing.
+  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'deadline']);
+  const errOf = (k: keyof typeof errs) => (showErrors && !(isEdit && relaxedInEdit.has(k)) ? errs[k] : null);
   const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
 
   const handlePublish = () => {
@@ -87,6 +90,37 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: 
     go({ name: 'admin' });
   };
 
+  const handleSave = () => {
+    if (!existing) return;
+    // Relaxed validation: existing events store human-readable dates (e.g. "Fri, Jun 12")
+    // that the strict create validators reject, so only require the text fields here.
+    setShowErrors(true);
+    if (required(title) || required(organiser) || required(description) || required(venue) || required(address)) return;
+    const tiers = existing.tiers.map((t, i) =>
+      i === 0 ? { ...t, price: t1p, qty: t1q }
+        : i === 1 ? { ...t, price: t2p, qty: t2q }
+        : i === 2 ? { ...t, price: t3p, qty: t3q }
+        : { ...t, price: tFp }
+    );
+    const updated: EventItem = {
+      ...existing,
+      title,
+      organiser,
+      description,
+      location: `${venue}, ${address}`,
+      date,
+      time: start,
+      capacity,
+      threshold,
+      deadline,
+      spotsLeft: Math.max(0, capacity - existing.backers),
+      tiers,
+    };
+    updated.price = updated.tiers[getActiveTier(updated)].price;
+    onUpdate?.(updated);
+    go({ name: 'admin' });
+  };
+
   return (
     <div>
       <main className="flex-1 px-6 py-8">
@@ -108,7 +142,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: 
                 {isEdit ? 'Update the details below. Changes are visible to backers immediately.' : 'Set up your event details, threshold and pricing tiers.'}
               </p>
             </div>
-            {isEdit && <div className="flex items-center gap-3"><span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status</span><StatusBadge status={status} /></div>}
+            {isEdit && existing && <div className="flex items-center gap-3"><span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status</span><StatusBadge event={existing} /></div>}
           </div>
 
           {isEdit && (status === 'live' || status === 'almost') && (
@@ -185,7 +219,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: 
               <div className="flex flex-wrap gap-3 pt-2">
                 {isEdit ? (
                   <>
-                    <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'admin' })}>
+                    <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={handleSave}>
                       Save Changes
                     </Button>
                     <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'admin' })}>
