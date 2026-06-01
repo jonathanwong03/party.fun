@@ -4,11 +4,10 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { MOCK_EVENTS, getActiveTier, type Route } from '../components/types';
+import { getActiveTier, type EventItem, type Route } from '../components/types';
 
-export function AdminDashboard({ route, go }: { route: Route; go: (r: Route) => void }) {
+export function AdminDashboard({ route, go, events, onDelete }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
-  const events = MOCK_EVENTS;
 
   const target = events.find((e) => e.id === deleting);
   const totalPledged = events.reduce((s, e) => s + e.backers * e.price, 0);
@@ -16,7 +15,7 @@ export function AdminDashboard({ route, go }: { route: Route; go: (r: Route) => 
   return (
     <div>
       <main className="min-w-0 flex-1 px-4 py-6">
-        <div className="mx-auto w-full max-w-6xl">
+        <div className="mx-auto w-full max-w-[1536px]">
           {/* Header */}
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -112,7 +111,7 @@ export function AdminDashboard({ route, go }: { route: Route; go: (r: Route) => 
         <DeleteEventModal
           eventName={target.title}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => setDeleting(null)}
+          onConfirm={() => { if (deleting) onDelete(deleting); setDeleting(null); }}
         />
       )}
     </div>

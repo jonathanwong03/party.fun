@@ -7,6 +7,7 @@ import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { MOCK_EVENTS, getActiveTier, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { required, emailError, cardError, expiryError, cvcError } from '../components/validation';
 
 export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Route) => void }) {
   const event = MOCK_EVENTS.find((e) => e.id === id) ?? MOCK_EVENTS[0];
@@ -27,21 +28,27 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
   const [attempted, setAttempted] = useState(false);
 
   // Phone / Telegram is the only optional field; everything else is required.
-  const requiredFields: (keyof typeof form)[] = ['fullName', 'email', 'matric', 'card', 'expiry', 'cvc'];
-  const isMissing = (key: keyof typeof form) => form[key].trim() === '';
-  const hasMissing = requiredFields.some(isMissing);
+  const errs = {
+    fullName: required(form.fullName),
+    email: emailError(form.email),
+    matric: required(form.matric),
+    card: cardError(form.card),
+    expiry: expiryError(form.expiry),
+    cvc: cvcError(form.cvc),
+  };
+  const hasErr = Object.values(errs).some(Boolean);
 
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   const handleConfirm = () => {
     setAttempted(true);
-    if (hasMissing) return;
+    if (hasErr) return;
     go({ name: 'confirmation', id, qty });
   };
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-6 py-8">
       <button
         onClick={() => go({ name: 'event', id })}
         className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
@@ -78,24 +85,21 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4">Buyer details</h3>
-            <div className="mb-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
-              Pre-filled from your account profile.
-            </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" placeholder="Jamie Tan" value={form.fullName} onChange={set('fullName')} error={attempted && isMissing('fullName')} />
-              <Field label="Email" placeholder="you@u.nus.edu" type="email" value={form.email} onChange={set('email')} error={attempted && isMissing('email')} />
+              <Field label="Full name" placeholder="Jamie Tan" value={form.fullName} onChange={set('fullName')} error={attempted ? errs.fullName : null} />
+              <Field label="Email" placeholder="you@u.nus.edu" type="email" value={form.email} onChange={set('email')} error={attempted ? errs.email : null} />
               <Field label="Phone / Telegram (optional)" placeholder="@yourhandle" value={form.phone} onChange={set('phone')} />
-              <Field label="Matric / Student ID" placeholder="A0234567X" value={form.matric} onChange={set('matric')} error={attempted && isMissing('matric')} />
+              <Field label="Matric / Student ID" placeholder="A0234567X" value={form.matric} onChange={set('matric')} error={attempted ? errs.matric : null} />
             </div>
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Payment</h3>
             <div className="space-y-4">
-              <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted && isMissing('card')} />
+              <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Expiry" placeholder="MM / YY" value={form.expiry} onChange={set('expiry')} error={attempted && isMissing('expiry')} />
-                <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted && isMissing('cvc')} />
+                <Field label="Expiry" placeholder="01/05" value={form.expiry} onChange={set('expiry')} error={attempted ? errs.expiry : null} />
+                <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
               </div>
             </div>
             <div className="mt-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
@@ -139,7 +143,7 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
                 Confirm Pledge
               </Button>
 
-              {attempted && hasMissing && (
+              {attempted && hasErr && (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
                   Please fill in all required details before confirming your pledge.
                 </div>
@@ -158,12 +162,12 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
   );
 }
 
-function Field({ label, error, ...props }: { label: string; error?: boolean } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, error, ...props }: { label: string; error?: string | null } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
-      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>This field is required.</p>}
+      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
     </div>
   );
 }

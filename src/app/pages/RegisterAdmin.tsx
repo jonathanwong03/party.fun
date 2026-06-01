@@ -1,11 +1,29 @@
+import { useState } from 'react';
 import { Shield } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
+import { required, emailError, confirmError } from '../components/validation';
 import type { Role, Route } from '../components/types';
 
 export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin: (r: Role) => void }) {
+  const [adminName, setAdminName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
+  const [contact, setContact] = useState('');
+  const [social, setSocial] = useState('');
+  const [attempted, setAttempted] = useState(false);
+
+  const errs = {
+    adminName: required(adminName),
+    email: emailError(email),
+    password: required(password),
+    confirm: confirmError(password, confirm),
+  };
+  const hasErr = Object.values(errs).some(Boolean);
+
   return (
     <AuthShell
       title="Launch as an organiser"
@@ -23,18 +41,19 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault();
+          setAttempted(true);
+          if (hasErr) return;
           onLogin('admin');
         }}
       >
-        <Field label="Organisation / CCA name" placeholder="NUS Electronic Music Club" />
-        <Field label="Admin name" placeholder="Jamie Tan" />
-        <Field label="Email" type="email" placeholder="organiser@u.nus.edu" />
+        <Field label="Admin name" placeholder="Jamie Tan" value={adminName} onChange={(e) => setAdminName(e.target.value)} error={attempted ? errs.adminName : null} />
+        <Field label="Email" type="email" placeholder="organiser@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" type="password" placeholder="••••••••" />
-          <Field label="Confirm" type="password" placeholder="••••••••" />
+          <Field label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
+          <Field label="Confirm" type="password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Contact / Telegram" placeholder="@nus_emc" />
-        <Field label="Social link (optional)" placeholder="instagram.com/nus.emc" />
+        <Field label="Contact / Telegram (optional)" placeholder="@nus_emc" value={contact} onChange={(e) => setContact(e.target.value)} />
+        <Field label="Social link (optional)" placeholder="instagram.com/nus.emc" value={social} onChange={(e) => setSocial(e.target.value)} />
 
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
@@ -50,11 +69,12 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
   );
 }
 
-function Field({ label, ...props }: { label: string } & React.InputHTMLAttributes<HTMLInputElement>) {
+function Field({ label, error, ...props }: { label: string; error?: string | null } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
-      <Input {...props} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42 }} />
+      <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
+      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
     </div>
   );
 }

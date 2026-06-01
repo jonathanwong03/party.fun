@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import { PLEDGED_EVENT_IDS, type Role, type Route } from './components/types';
+import { MOCK_EVENTS, PLEDGED_EVENT_IDS, type EventItem, type Role, type Route } from './components/types';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -31,6 +31,10 @@ export default function App() {
   const [addedTickets, setAddedTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
   const addTicket = (t: { eventId: string; qty: number; amount: number }) =>
     setAddedTickets((prev) => [t, ...prev.filter((p) => p.eventId !== t.eventId)]);
+
+  const [events, setEvents] = useState<EventItem[]>(MOCK_EVENTS);
+  const addEvent = (e: EventItem) => setEvents((prev) => [e, ...prev]);
+  const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
 
   // Events already in "My Events" (pre-pledged base + anything just pledged this session).
   // These are hidden from the "All Events" browse list so the same event can't be pledged twice.
@@ -90,9 +94,9 @@ export default function App() {
       {activeRoute.name === 'register-user' && <RegisterUser go={go} onLogin={handleLogin} />}
       {activeRoute.name === 'register-admin' && <RegisterAdmin go={go} onLogin={handleLogin} />}
       {activeRoute.name === 'profile' && <Profile go={go} added={addedTickets} />}
-      {activeRoute.name === 'admin' && <AdminDashboard route={activeRoute} go={go} />}
-      {activeRoute.name === 'create-event' && <CreateEvent route={activeRoute} go={go} />}
-      {activeRoute.name === 'edit-event' && <CreateEvent route={activeRoute} go={go} editId={activeRoute.id} />}
+      {activeRoute.name === 'admin' && <AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} />}
+      {activeRoute.name === 'create-event' && <CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} />}
+      {activeRoute.name === 'edit-event' && <CreateEvent route={activeRoute} go={go} editId={activeRoute.id} events={events} onDelete={deleteEvent} />}
 
       {!isAuthPage && !isAdminConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />

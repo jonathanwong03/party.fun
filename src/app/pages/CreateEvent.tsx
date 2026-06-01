@@ -7,14 +7,17 @@ import { Textarea } from '../components/ui/textarea';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { MOCK_EVENTS, type Route, type EventStatus } from '../components/types';
+import { MOCK_EVENTS, type EventItem, type Route, type EventStatus } from '../components/types';
 import { NumberStepper } from '../components/NumberStepper';
+import { required, dateError, timeError, deadlineError } from '../components/validation';
 
-export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route) => void; editId?: string }) {
-  const existing = editId ? MOCK_EVENTS.find((e) => e.id === editId) : undefined;
+export function CreateEvent({ route, go, editId, events, onPublish, onDelete }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void }) {
+  const list = events ?? MOCK_EVENTS;
+  const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const isEdit = !!existing;
 
   const [title, setTitle] = useState(existing?.title ?? '');
+  const [organiser, setOrganiser] = useState(existing?.organiser ?? '');
   const [description, setDescription] = useState(existing?.description ?? '');
   const [venue, setVenue] = useState(existing?.location.split(',')[0] ?? '');
   const [address, setAddress] = useState(existing?.location ?? '');
@@ -32,14 +35,62 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
   const [t3q, setT3q] = useState<number>(existing?.tiers[2]?.qty ?? 100);
   const [tFp, setTFp] = useState<number>(existing?.tiers[3]?.price ?? 28);
   const [deleting, setDeleting] = useState(false);
+  const [showErrors, setShowErrors] = useState(false);
 
   const status: EventStatus = existing?.status ?? 'live';
   const locked = isEdit && status === 'greenlit';
 
+  const errs = {
+    title: required(title),
+    organiser: required(organiser),
+    description: required(description),
+    date: dateError(date),
+    start: timeError(start),
+    end: timeError(end),
+    venue: required(venue),
+    address: required(address),
+    deadline: deadlineError(deadline),
+  };
+  const errOf = (k: keyof typeof errs) => (showErrors ? errs[k] : null);
+  const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
+
+  const handlePublish = () => {
+    setShowErrors(true);
+    if (Object.values(errs).some(Boolean)) return;
+    const newEvent: EventItem = {
+      id: `e${Date.now()}`,
+      mine: true,
+      title,
+      organiser,
+      date,
+      time: start,
+      location: `${venue}, ${address}`,
+      description,
+      image: '',
+      price: t1p,
+      tierLabel: 'Tier 1 — Super Early',
+      hypePct: 0,
+      threshold,
+      backers: 0,
+      capacity,
+      spotsLeft: capacity,
+      status: 'live',
+      deadline,
+      tiers: [
+        { label: 'Super Early', price: t1p, qty: t1q, sold: 0 },
+        { label: 'Early', price: t2p, qty: t2q, sold: 0 },
+        { label: 'Standard', price: t3p, qty: t3q, sold: 0 },
+        { label: 'Greenlit Door', price: tFp, qty: t3q, sold: 0 },
+      ],
+    };
+    onPublish?.(newEvent);
+    go({ name: 'admin' });
+  };
+
   return (
     <div>
       <main className="flex-1 px-6 py-8">
-        <div className="mx-auto max-w-6xl">
+        <div className="mx-auto max-w-[1536px]">
           <button
             onClick={() => go({ name: 'admin' })}
             className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
@@ -74,11 +125,14 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
           <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
             <div className="space-y-6">
               <Section title="Basic details">
-                <Field label="Event title">
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Neon Jungle: Freshers Rave" style={fieldStyle} />
+                <Field label="Event title" error={errOf('title')}>
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Neon Jungle: Freshers Rave" style={errStyle(errOf('title'))} />
                 </Field>
-                <Field label="Description">
-                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's the vibe?" rows={4} style={fieldStyle} />
+                <Field label="Organiser" error={errOf('organiser')}>
+                  <Input value={organiser} onChange={(e) => setOrganiser(e.target.value)} placeholder="NUS Electronic Music Club" style={errStyle(errOf('organiser'))} />
+                </Field>
+                <Field label="Description" error={errOf('description')}>
+                  <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's the vibe?" rows={4} style={errStyle(errOf('description'))} />
                 </Field>
                 <Field label="Event image / banner">
                   <button type="button" className="flex w-full items-center gap-3 rounded-xl border border-dashed p-4 text-left text-sm hover:bg-white/5"
@@ -91,16 +145,16 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
 
               <Section title="Schedule">
                 <div className="grid gap-4 sm:grid-cols-3">
-                  <Field label="Date"><Input type="text" value={date} onChange={(e) => setDate(e.target.value)} placeholder="Fri, Jun 12" style={fieldStyle} /></Field>
-                  <Field label="Start time"><Input value={start} onChange={(e) => setStart(e.target.value)} placeholder="10:00 PM" style={fieldStyle} /></Field>
-                  <Field label="End time"><Input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="2:00 AM" style={fieldStyle} /></Field>
+                  <Field label="Date" error={errOf('date')}><Input type="text" value={date} onChange={(e) => setDate(e.target.value)} placeholder="12/06/2025" style={errStyle(errOf('date'))} /></Field>
+                  <Field label="Start time" error={errOf('start')}><Input value={start} onChange={(e) => setStart(e.target.value)} placeholder="10:00 PM" style={errStyle(errOf('start'))} /></Field>
+                  <Field label="End time" error={errOf('end')}><Input value={end} onChange={(e) => setEnd(e.target.value)} placeholder="2:00 AM" style={errStyle(errOf('end'))} /></Field>
                 </div>
               </Section>
 
               <Section title="Location">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Venue name"><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="The Projector" style={fieldStyle} /></Field>
-                  <Field label="Address"><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Golden Mile Tower" style={fieldStyle} /></Field>
+                  <Field label="Venue name" error={errOf('venue')}><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="The Projector" style={errStyle(errOf('venue'))} /></Field>
+                  <Field label="Address" error={errOf('address')}><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Golden Mile Tower" style={errStyle(errOf('address'))} /></Field>
                 </div>
               </Section>
 
@@ -123,8 +177,8 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
                 <TierRow label="Tier 2 — Early" price={t2p} qty={t2q} onPrice={setT2p} onQty={setT2q} disabled={locked} />
                 <TierRow label="Tier 3 — Standard" price={t3p} qty={t3q} onPrice={setT3p} onQty={setT3q} disabled={locked} />
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Field label="Greenlit / door price"><NumberStepper value={tFp} onChange={setTFp} min={0} disabled={locked} /></Field>
-                  <Field label="Deadline to reach threshold"><Input value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="Jun 10, 11:59 PM" style={fieldStyle} /></Field>
+                  <Field label="Greenlit / door price"><NumberStepper value={tFp} onChange={setTFp} min={1} disabled={locked} /></Field>
+                  <Field label="Deadline to reach threshold" error={errOf('deadline')}><Input value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="10/06/2025, 11:59 PM" style={errStyle(errOf('deadline'))} /></Field>
                 </div>
               </Section>
 
@@ -143,7 +197,7 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
                   </>
                 ) : (
                   <>
-                    <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'admin' })}>
+                    <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={handlePublish}>
                       Publish Event
                     </Button>
                     <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }}>
@@ -186,6 +240,7 @@ export function CreateEvent({ route, go, editId }: { route: Route; go: (r: Route
           onCancel={() => setDeleting(false)}
           onConfirm={() => {
             setDeleting(false);
+            onDelete?.(existing.id);
             go({ name: 'admin' });
           }}
         />
@@ -205,11 +260,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children, error }: { label: string; children: React.ReactNode; error?: string | null }) {
   return (
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       {children}
+      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
     </div>
   );
 }
@@ -219,10 +275,10 @@ function TierRow({ label, price, qty, onPrice, onQty, disabled }: { label: strin
     <div className="grid grid-cols-[1fr_120px_120px] items-end gap-3">
       <div className="text-sm" style={{ color: 'var(--foreground)', fontWeight: 500 }}>{label}</div>
       <Field label="Price ($)">
-        <NumberStepper value={price} onChange={onPrice} min={0} disabled={disabled} />
+        <NumberStepper value={price} onChange={onPrice} min={1} disabled={disabled} />
       </Field>
       <Field label="Quantity">
-        <NumberStepper value={qty} onChange={onQty} min={0} disabled={disabled} />
+        <NumberStepper value={qty} onChange={onQty} min={1} disabled={disabled} />
       </Field>
     </div>
   );

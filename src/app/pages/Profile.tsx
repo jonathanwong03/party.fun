@@ -28,7 +28,7 @@ export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { 
   const items = merged.filter((t) => t.tab === tab);
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-6 py-8">
       {/* Profile summary */}
       <div className="mb-8 flex flex-wrap items-center gap-5 rounded-2xl border p-6"
         style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>

@@ -13,7 +13,7 @@ export function Confirmation({ id, qty, go, onAdd }: { id: string; qty: number; 
   }, [event.id, qty, event.price]);
 
   return (
-    <div className="mx-auto max-w-2xl px-6 py-16">
+    <div className="mx-auto max-w-[1536px] px-6 py-16">
       <div className="text-center">
         <div className="mx-auto grid size-16 place-items-center rounded-full"
           style={{ background: 'rgba(41,224,122,0.15)', border: '1px solid rgba(41,224,122,0.4)' }}>

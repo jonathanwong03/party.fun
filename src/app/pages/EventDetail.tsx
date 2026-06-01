@@ -15,7 +15,7 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
   const showWhosGoing = !!fromAdmin;
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-6 py-8">
       <button
         onClick={() => go({ name: 'landing' })}
         className="mb-4 inline-flex items-center gap-1 text-sm transition hover:text-foreground"

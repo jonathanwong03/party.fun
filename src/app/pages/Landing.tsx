@@ -31,7 +31,7 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
   }, [q, loc, hype, price, rest]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-10">
+    <div className="mx-auto max-w-[1536px] px-6 py-10">
       {/* Hero */}
       <section className="relative mb-10 overflow-hidden rounded-3xl border p-8 md:p-12"
         style={{ borderColor: 'var(--border)', background: 'linear-gradient(135deg, rgba(255,77,46,0.18), rgba(124,92,255,0.10) 50%, rgba(41,224,122,0.10))' }}>
@@ -45,7 +45,6 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
           <div className="mt-6 flex flex-wrap gap-2 text-xs">
             <span className="rounded-full border px-3 py-1.5" style={{ borderColor: 'var(--border)' }}>✓ Refund-guaranteed</span>
             <span className="rounded-full border px-3 py-1.5" style={{ borderColor: 'var(--border)' }}>✓ Buy early, pay less</span>
-            <span className="rounded-full border px-3 py-1.5" style={{ borderColor: 'var(--border)' }}>✓ Built for CCAs & student orgs</span>
           </div>
         </div>
       </section>

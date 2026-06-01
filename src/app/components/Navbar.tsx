@@ -33,7 +33,7 @@ export function Navbar({
       className="sticky top-0 z-30 border-b backdrop-blur-xl"
       style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.75)' }}
     >
-      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-6">
+      <div className="mx-auto flex h-16 max-w-[1536px] items-center justify-between px-6">
         <div className="flex items-center gap-3">
           <button
             type="button"

@@ -7,6 +7,7 @@ import type { Role, Route } from '../components/types';
 export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role: Role) => void }) {
   return (
     <AuthShell
+      maxWidthClass="max-w-xl"
       title="Welcome back"
       subtitle="Sign in to track your tickets and manage your events."
       footer={

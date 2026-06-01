@@ -6,11 +6,13 @@ export function AuthShell({
   subtitle,
   children,
   footer,
+  maxWidthClass = 'max-w-md',
 }: {
   title: string;
   subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
+  maxWidthClass?: string;
 }) {
   return (
     <div className="relative grid min-h-screen place-items-center overflow-hidden px-4 py-12">
@@ -20,7 +22,7 @@ export function AuthShell({
       <div className="pointer-events-none absolute bottom-0 right-0 size-[420px] rounded-full"
         style={{ background: 'radial-gradient(closest-side, rgba(41,224,122,0.10), transparent 70%)' }} />
 
-      <div className="relative w-full max-w-md">
+      <div className={`relative w-full ${maxWidthClass}`}>
         <div className="mb-8 flex justify-center">
           <Logo size={32} />
         </div>
