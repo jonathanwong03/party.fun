@@ -3,15 +3,23 @@
 -- Run these commands in your Supabase SQL Editor to populate mock events.
 -- ============================================================================
 
--- 1. Create Mock Organizer Profiles
-INSERT INTO public.profiles (id, full_name, email, role, student_id) VALUES
-  ('d1000000-0000-0000-0000-000000000001', 'NUS Electronic Music Club', 'emc@u.nus.edu', 'admin', 'A0000001A'),
-  ('d1000000-0000-0000-0000-000000000002', 'NTU Cultural Council', 'cultural@u.ntu.edu', 'admin', 'A0000002B'),
-  ('d1000000-0000-0000-0000-000000000003', 'SMU Photography Society', 'photosoc@u.smu.edu', 'admin', 'A0000003C'),
-  ('d1000000-0000-0000-0000-000000000004', 'SUTD Dev Society', 'devsoc@u.sutd.edu', 'admin', 'A0000004D'),
-  ('d1000000-0000-0000-0000-000000000005', 'NUS Adventure Club', 'adventure@u.nus.edu', 'admin', 'A0000005E'),
-  ('d1000000-0000-0000-0000-000000000006', 'SMU Writers Guild', 'writers@u.smu.edu', 'admin', 'A0000006F')
+-- 1. Create Mock Auth Users (which automatically fires trigger to populate public.profiles)
+INSERT INTO auth.users (id, email, aud, role, raw_user_meta_data) VALUES
+  ('d1000000-0000-0000-0000-000000000001', 'emc@u.nus.edu', 'authenticated', 'authenticated', '{"full_name": "NUS Electronic Music Club"}'),
+  ('d1000000-0000-0000-0000-000000000002', 'cultural@u.ntu.edu', 'authenticated', 'authenticated', '{"full_name": "NTU Cultural Council"}'),
+  ('d1000000-0000-0000-0000-000000000003', 'photosoc@u.smu.edu', 'authenticated', 'authenticated', '{"full_name": "SMU Photography Society"}'),
+  ('d1000000-0000-0000-0000-000000000004', 'devsoc@u.sutd.edu', 'authenticated', 'authenticated', '{"full_name": "SUTD Dev Society"}'),
+  ('d1000000-0000-0000-0000-000000000005', 'adventure@u.nus.edu', 'authenticated', 'authenticated', '{"full_name": "NUS Adventure Club"}'),
+  ('d1000000-0000-0000-0000-000000000006', 'writers@u.smu.edu', 'authenticated', 'authenticated', '{"full_name": "SMU Writers Guild"}')
 ON CONFLICT (id) DO NOTHING;
+
+-- 2. Update Student IDs & Details in public.profiles
+UPDATE public.profiles SET student_id = 'A0000001A', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000001';
+UPDATE public.profiles SET student_id = 'A0000002B', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000002';
+UPDATE public.profiles SET student_id = 'A0000003C', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000003';
+UPDATE public.profiles SET student_id = 'A0000004D', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000004';
+UPDATE public.profiles SET student_id = 'A0000005E', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000005';
+UPDATE public.profiles SET student_id = 'A0000006F', role = 'admin' WHERE id = 'd1000000-0000-0000-0000-000000000006';
 
 -- 2. Create Mock Events
 INSERT INTO public.events (id, title, organiser_id, description, start_time, location, image_url, backers_threshold, hard_capacity, status, deadline) VALUES
