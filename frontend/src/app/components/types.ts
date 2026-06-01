@@ -9,7 +9,7 @@ export type Route =
   | { name: 'register-admin' }
   | { name: 'profile' }
   | { name: 'admin' }
-  | { name: 'create-event' }
+  | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };
 
 export type Role = 'user' | 'admin';

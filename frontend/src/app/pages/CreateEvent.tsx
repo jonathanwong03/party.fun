@@ -11,29 +11,32 @@ import { MOCK_EVENTS, getActiveTier, type EventItem, type Route, type EventStatu
 import { NumberStepper } from '../components/NumberStepper';
 import { required, dateError, timeError, deadlineError } from '../components/validation';
 
-export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void }) {
+export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? MOCK_EVENTS;
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
+  const draftSource = draftId ? (drafts ?? []).find((d) => d.id === draftId) : undefined;
   const isEdit = !!existing;
+  // The record used to pre-fill the form: an existing published event, or a draft being resumed.
+  const source = existing ?? draftSource;
 
-  const [title, setTitle] = useState(existing?.title ?? '');
-  const [organiser, setOrganiser] = useState(existing?.organiser ?? '');
-  const [description, setDescription] = useState(existing?.description ?? '');
-  const [venue, setVenue] = useState(existing?.location.split(',')[0] ?? '');
-  const [address, setAddress] = useState(existing?.location ?? '');
-  const [date, setDate] = useState(existing?.date ?? '');
-  const [start, setStart] = useState(existing?.time ?? '');
+  const [title, setTitle] = useState(source?.title ?? '');
+  const [organiser, setOrganiser] = useState(source?.organiser ?? '');
+  const [description, setDescription] = useState(source?.description ?? '');
+  const [venue, setVenue] = useState(source?.location.split(',')[0] ?? '');
+  const [address, setAddress] = useState(source?.location ?? '');
+  const [date, setDate] = useState(source?.date ?? '');
+  const [start, setStart] = useState(source?.time ?? '');
   const [end, setEnd] = useState('');
-  const [capacity, setCapacity] = useState<number>(existing?.capacity ?? 300);
-  const [threshold, setThreshold] = useState<number>(existing?.threshold ?? 150);
-  const [deadline, setDeadline] = useState(existing?.deadline ?? '');
-  const [t1p, setT1p] = useState<number>(existing?.tiers[0]?.price ?? 10);
-  const [t1q, setT1q] = useState<number>(existing?.tiers[0]?.qty ?? 50);
-  const [t2p, setT2p] = useState<number>(existing?.tiers[1]?.price ?? 15);
-  const [t2q, setT2q] = useState<number>(existing?.tiers[1]?.qty ?? 80);
-  const [t3p, setT3p] = useState<number>(existing?.tiers[2]?.price ?? 22);
-  const [t3q, setT3q] = useState<number>(existing?.tiers[2]?.qty ?? 100);
-  const [tFp, setTFp] = useState<number>(existing?.tiers[3]?.price ?? 28);
+  const [capacity, setCapacity] = useState<number>(source?.capacity ?? 300);
+  const [threshold, setThreshold] = useState<number>(source?.threshold ?? 150);
+  const [deadline, setDeadline] = useState(source?.deadline ?? '');
+  const [t1p, setT1p] = useState<number>(source?.tiers[0]?.price ?? 10);
+  const [t1q, setT1q] = useState<number>(source?.tiers[0]?.qty ?? 50);
+  const [t2p, setT2p] = useState<number>(source?.tiers[1]?.price ?? 15);
+  const [t2q, setT2q] = useState<number>(source?.tiers[1]?.qty ?? 80);
+  const [t3p, setT3p] = useState<number>(source?.tiers[2]?.price ?? 22);
+  const [t3q, setT3q] = useState<number>(source?.tiers[2]?.qty ?? 100);
+  const [tFp, setTFp] = useState<number>(source?.tiers[3]?.price ?? 28);
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
@@ -87,6 +90,39 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       ],
     };
     onPublish?.(newEvent);
+    if (draftId) onDeleteDraft?.(draftId); // publishing a resumed draft removes it from Drafts
+    go({ name: 'admin' });
+  };
+
+  // Save the in-progress form as a draft — no validation, fields may be partial.
+  const handleSaveDraft = () => {
+    const draft: EventItem = {
+      id: draftId ?? `draft-${Date.now()}`,
+      mine: true,
+      title: title || 'Untitled draft',
+      organiser,
+      date,
+      time: start,
+      location: `${venue}, ${address}`,
+      description,
+      image: '',
+      price: t1p,
+      tierLabel: 'Tier 1 — Super Early',
+      hypePct: 0,
+      threshold,
+      backers: 0,
+      capacity,
+      spotsLeft: capacity,
+      status: 'live',
+      deadline,
+      tiers: [
+        { label: 'Super Early', price: t1p, qty: t1q, sold: 0 },
+        { label: 'Early', price: t2p, qty: t2q, sold: 0 },
+        { label: 'Standard', price: t3p, qty: t3q, sold: 0 },
+        { label: 'Greenlit Door', price: tFp, qty: t3q, sold: 0 },
+      ],
+    };
+    onSaveDraft?.(draft);
     go({ name: 'admin' });
   };
 
@@ -234,7 +270,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={handlePublish}>
                       Publish Event
                     </Button>
-                    <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }}>
+                    <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={handleSaveDraft}>
                       Save Draft
                     </Button>
                   </>

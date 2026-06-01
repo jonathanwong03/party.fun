@@ -55,7 +55,7 @@ function pathForRoute(route: Route) {
     case 'admin':
       return '/dashboard';
     case 'create-event':
-      return '/dashboard/events/new';
+      return route.draftId ? `/dashboard/drafts/${route.draftId}/edit` : '/dashboard/events/new';
     case 'edit-event':
       return `/dashboard/events/${route.id}/edit`;
   }
@@ -92,6 +92,9 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/dashboard') return { name: 'admin' };
   if (pathname === '/dashboard/events/new') return { name: 'create-event' };
+
+  const draftMatch = pathname.match(/^\/dashboard\/drafts\/([^/]+)\/edit$/);
+  if (draftMatch) return { name: 'create-event', draftId: draftMatch[1] };
 
   const checkoutMatch = pathname.match(/^\/checkout\/([^/]+)$/);
   if (checkoutMatch) return { name: 'checkout', id: checkoutMatch[1] };
@@ -138,6 +141,12 @@ function AppShell() {
   const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
   const updateEvent = (updated: EventItem) =>
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+
+  const [drafts, setDrafts] = useState<EventItem[]>([]);
+  // Upsert: re-saving a resumed draft replaces the existing one rather than duplicating it.
+  const addDraft = (d: EventItem) =>
+    setDrafts((prev) => (prev.some((p) => p.id === d.id) ? prev.map((p) => (p.id === d.id ? d : p)) : [d, ...prev]));
+  const deleteDraft = (id: string) => setDrafts((prev) => prev.filter((d) => d.id !== id));
 
   const [cancelledTickets, setCancelledTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
 
@@ -217,8 +226,9 @@ function AppShell() {
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} added={addedTickets} events={events} cancelled={cancelledTickets} />} />
-        <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} />} />
-        <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} />} />
+        <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
+        <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
         <BrowserRoute path="*" element={<Navigate to={role ? '/events' : '/login'} replace />} />
       </Routes>
@@ -314,4 +324,36 @@ function EditEventRoute({
 }) {
   const { eventId = '' } = useParams();
   return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onDelete={onDelete} onUpdate={onUpdate} />;
+}
+
+function ResumeDraftRoute({
+  activeRoute,
+  go,
+  events,
+  drafts,
+  onPublish,
+  onSaveDraft,
+  onDeleteDraft,
+}: {
+  activeRoute: Route;
+  go: (r: Route) => void;
+  events: EventItem[];
+  drafts: EventItem[];
+  onPublish: (e: EventItem) => void;
+  onSaveDraft: (e: EventItem) => void;
+  onDeleteDraft: (id: string) => void;
+}) {
+  const { draftId = '' } = useParams();
+  return (
+    <CreateEvent
+      route={activeRoute}
+      go={go}
+      events={events}
+      draftId={draftId}
+      drafts={drafts}
+      onPublish={onPublish}
+      onSaveDraft={onSaveDraft}
+      onDeleteDraft={onDeleteDraft}
+    />
+  );
 }

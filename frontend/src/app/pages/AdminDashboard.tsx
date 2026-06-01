@@ -6,10 +6,13 @@ import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, type EventItem, type Route } from '../components/types';
 
-export function AdminDashboard({ route, go, events, onDelete }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void }) {
+export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [tab, setTab] = useState<'created' | 'drafts'>('created');
 
-  const target = events.find((e) => e.id === deleting);
+  const isDrafts = tab === 'drafts';
+  const rows = isDrafts ? drafts : events;
+  const target = [...events, ...drafts].find((e) => e.id === deleting);
   const totalPledged = events.reduce((s, e) => s + e.backers * e.price, 0);
 
   return (
@@ -44,11 +47,29 @@ export function AdminDashboard({ route, go, events, onDelete }: { route: Route; 
             <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${(totalPledged / 1000).toFixed(1)}k`} hint="Across all events" />
           </div>
 
+          {/* Tabs */}
+          <div className="mb-5 flex gap-2 rounded-full border p-1" style={{ borderColor: 'var(--border)', background: 'var(--surface)', width: 'fit-content' }}>
+            {(['created', 'drafts'] as const).map((t) => (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                className="rounded-full px-4 py-1.5 text-sm transition"
+                style={{
+                  background: tab === t ? '#ff4d2e' : 'transparent',
+                  color: tab === t ? '#fff' : 'var(--muted-foreground)',
+                  fontWeight: 600,
+                }}
+              >
+                {t === 'created' ? 'Created events' : 'Drafts'}
+              </button>
+            ))}
+          </div>
+
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="flex items-center justify-between border-b px-3 py-3" style={{ borderColor: 'var(--border)' }}>
-              <h3>All events</h3>
-              <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{events.length} total</span>
+              <h3>{isDrafts ? 'Drafts' : 'Created events'}</h3>
+              <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{rows.length} total</span>
             </div>
             <div>
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
@@ -73,13 +94,13 @@ export function AdminDashboard({ route, go, events, onDelete }: { route: Route; 
                   </tr>
                 </thead>
                 <tbody>
-                  {events.map((e) => (
+                  {rows.map((e) => (
                     <tr key={e.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
                       <td className="px-3 py-3">
                         <div style={{ fontWeight: 600 }}>{e.title}</div>
-                        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.organiser}</div>
+                        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.organiser || (isDrafts ? 'Draft event' : '')}</div>
                       </td>
-                      <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date}</td>
+                      <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date || '—'}</td>
                       <td className="px-3 py-4">
                         <div className="w-full min-w-0">
                           <HypeMeter pct={e.hypePct} status={e.status} tier={getActiveTier(e)} size="sm" showLabel={false} />
@@ -90,18 +111,32 @@ export function AdminDashboard({ route, go, events, onDelete }: { route: Route; 
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
                         {e.backers}/{e.threshold}
                       </td>
-                      <td className="px-3 py-4"><StatusBadge event={e} /></td>
+                      <td className="px-3 py-4">{isDrafts ? <StatusBadge event={e} label="Draft" /> : <StatusBadge event={e} />}</td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1">
-                          <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromAdmin: true })}><Eye size={14} /></IconBtn>
-                          <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
-                          <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                          {isDrafts ? (
+                            <>
+                              <IconBtn label="Resume" onClick={() => go({ name: 'create-event', draftId: e.id })}><Pencil size={14} /></IconBtn>
+                              <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                            </>
+                          ) : (
+                            <>
+                              <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromAdmin: true })}><Eye size={14} /></IconBtn>
+                              <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
+                              <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
+              {rows.length === 0 && (
+                <div className="px-3 py-12 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                  {isDrafts ? 'No drafts yet. Start creating an event and hit “Save Draft” to keep it here.' : 'No events yet.'}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -111,7 +146,7 @@ export function AdminDashboard({ route, go, events, onDelete }: { route: Route; 
         <DeleteEventModal
           eventName={target.title}
           onCancel={() => setDeleting(null)}
-          onConfirm={() => { if (deleting) onDelete(deleting); setDeleting(null); }}
+          onConfirm={() => { if (deleting) (isDrafts ? onDeleteDraft : onDelete)(deleting); setDeleting(null); }}
         />
       )}
     </div>
