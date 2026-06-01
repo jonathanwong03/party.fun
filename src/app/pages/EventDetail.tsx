@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Calendar, Clock, MapPin, Users, Shield, ChevronLeft, ArrowRight, Timer } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
@@ -5,14 +6,16 @@ import { HypeMeter } from '../components/HypeMeter';
 import { TicketPricesOverTime } from '../components/TicketPricesOverTime';
 import { PricingTier } from '../components/PricingTier';
 import { StatusBadge } from '../components/StatusBadge';
-import { MOCK_EVENTS, getActiveTier, type Role, type Route } from '../components/types';
+import { DeleteEventModal } from '../components/DeleteEventModal';
+import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: string; go: (r: Route) => void; role: Role; fromProfile?: boolean; fromAdmin?: boolean }) {
-  const event = MOCK_EVENTS.find((e) => e.id === id) ?? MOCK_EVENTS[0];
+export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => void; fromProfile?: boolean; fromAdmin?: boolean }) {
+  const event = events.find((e) => e.id === id) ?? events[0];
   const activeTier = getActiveTier(event);
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromAdmin;
+  const [cancelling, setCancelling] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -89,7 +92,7 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
             <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
               <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Threshold</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.threshold} backers</div>
+                <div className="mt-1" style={{ fontWeight: 700 }}>{event.threshold} </div>
               </div>
               <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Pledged</div>
@@ -128,7 +131,7 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
             <Button
-              onClick={() => go({ name: 'profile' })}
+              onClick={() => setCancelling(true)}
               className="w-full bg-[#ff0a0a] text-white hover:bg-[#ff2a2a]"
               style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
             >
@@ -219,6 +222,23 @@ export function EventDetail({ id, go, role, fromProfile, fromAdmin }: { id: stri
         </aside>
         )}
       </div>
+
+      {cancelling && (
+        <DeleteEventModal
+          eventName={event.title}
+          confirmWord="CONFIRM"
+          title="Cancel Event?"
+          leadIn="You're about to cancel your spot for"
+          warning="Your pledge will be released back to the pool and refunded in full. You'll no longer be attending this event."
+          actionLabel="Cancel Event"
+          onCancel={() => setCancelling(false)}
+          onConfirm={() => {
+            setCancelling(false);
+            onCancelAttendance?.(event.id, qty ?? 1, amount ?? event.price);
+            go({ name: 'profile' });
+          }}
+        />
+      )}
     </div>
   );
 }

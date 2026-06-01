@@ -36,7 +36,7 @@ export function HypeMeter({
             <div style={{ fontSize: 36, fontWeight: 800, color, lineHeight: 1 }}>{capped}%</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
               {backers !== undefined && threshold !== undefined
-                ? `${backers} of ${threshold} backers`
+                ? `${backers} of ${threshold} tickets`
                 : tierLabel}
             </div>
           </div>

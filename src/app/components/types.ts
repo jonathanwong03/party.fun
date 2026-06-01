@@ -1,6 +1,6 @@
 export type Route =
   | { name: 'landing' }
-  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean }
+  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; qty?: number; amount?: number }
   | { name: 'checkout'; id: string }
   | { name: 'confirmation'; id: string; qty: number }
   | { name: 'login' }
@@ -42,6 +42,28 @@ export function getActiveTier(e: EventItem): number {
   const idx = e.tiers.findIndex((t) => t.sold < t.qty);
   if (idx === -1) return 3;
   return Math.min(idx, 3);
+}
+
+// Apply a pledge of `qty` tickets to an event: bump the active tier's sold count and the
+// backer count, then recompute hype % and spots left. Returns a new EventItem (never mutates).
+export function applyPledge(e: EventItem, qty: number): EventItem {
+  const idx = getActiveTier(e);
+  const tiers = e.tiers.map((t, i) => (i === idx ? { ...t, sold: t.sold + qty } : t));
+  const backers = e.backers + qty;
+  const hypePct = Math.min(100, Math.round((backers / e.threshold) * 100));
+  const spotsLeft = Math.max(0, e.capacity - backers);
+  return { ...e, tiers, backers, hypePct, spotsLeft };
+}
+
+// Reverse a pledge of `qty` tickets (the inverse of applyPledge): drop the active tier's sold
+// count and the backer count by `qty` (floored at 0), then recompute hype % and spots left.
+export function reversePledge(e: EventItem, qty: number): EventItem {
+  const idx = getActiveTier(e);
+  const tiers = e.tiers.map((t, i) => (i === idx ? { ...t, sold: Math.max(0, t.sold - qty) } : t));
+  const backers = Math.max(0, e.backers - qty);
+  const hypePct = Math.min(100, Math.round((backers / e.threshold) * 100));
+  const spotsLeft = Math.max(0, e.capacity - backers);
+  return { ...e, tiers, backers, hypePct, spotsLeft };
 }
 
 export const TIER_COLORS = ['#29e07a', '#ffcb3c', '#ff8a2e', '#ff3354'] as const;

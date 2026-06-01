@@ -1,12 +1,39 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
-function parse(deadline: string): Date {
-  // Approximate: treat deadline string as a future date by adding days
-  const now = new Date();
-  const d = new Date(now);
-  d.setDate(d.getDate() + 3);
-  d.setHours(23, 59, 0, 0);
-  return d;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+// Convert a 12-hour clock hour + meridiem to 24-hour.
+function to24(hour: number, meridiem: string) {
+  const h = hour % 12;
+  return /pm/i.test(meridiem) ? h + 12 : h;
+}
+
+// Parse a deadline string into its target Date. Handles two formats:
+//   "10/06/2025, 11:59 PM"  (DD/MM/YYYY, HH:MM AM/PM)
+//   "Jun 10, 11:59 PM"      (legacy, no year → current year, rolled forward if already past)
+function parse(deadline: string): Date | null {
+  const s = deadline.trim();
+
+  let m = /^(\d{1,2})\/(\d{1,2})\/(\d{4}),?\s+(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(s);
+  if (m) {
+    return new Date(+m[3], +m[2] - 1, +m[1], to24(+m[4], m[6]), +m[5], 0, 0);
+  }
+
+  m = /^([A-Za-z]{3,})\s+(\d{1,2}),?\s+(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(s);
+  if (m) {
+    const month = MONTHS.indexOf(m[1].slice(0, 3).toLowerCase());
+    if (month >= 0) {
+      const now = new Date();
+      const build = (year: number) =>
+        new Date(year, month, +m![2], to24(+m![3], m![5]), +m![4], 0, 0);
+      let d = build(now.getFullYear());
+      if (d.getTime() < now.getTime()) d = build(now.getFullYear() + 1);
+      return d;
+    }
+  }
+
+  const fallback = new Date(s);
+  return Number.isNaN(fallback.getTime()) ? null : fallback;
 }
 
 function pad(n: number) {
@@ -14,10 +41,14 @@ function pad(n: number) {
 }
 
 export function Countdown({ deadline, color = '#ffcb3c' }: { deadline: string; color?: string }) {
-  const [target] = useState(() => parse(deadline));
+  const target = useMemo(() => parse(deadline), [deadline]);
   const [diff, setDiff] = useState(0);
 
   useEffect(() => {
+    if (!target) {
+      setDiff(0);
+      return;
+    }
     const tick = () => setDiff(Math.max(0, target.getTime() - Date.now()));
     tick();
     const id = setInterval(tick, 1000);

@@ -19,15 +19,22 @@ export const isValidDate = (v: string) => {
   return day >= 1 && day <= daysInMonth;
 };
 
-// Expiry: DD/MM (1- or 2-digit day/month), valid day for month. No year given, so Feb allows 29.
+// Expiry format: MM/YY — 1- or 2-digit month (1-12) and a strict 2-digit year (rejects 4-digit years).
 export const isValidExpiry = (v: string) => {
-  const m = /^(\d{1,2})\/(\d{1,2})$/.exec(v.trim());
+  const m = /^(\d{1,2})\/(\d{2})$/.exec(v.trim());
+  return !!m && +m[1] >= 1 && +m[1] <= 12;
+};
+
+// Expiry not yet passed: the current month counts as valid (e.g. 06/26 in June 2026).
+export const isExpiryActive = (v: string) => {
+  const m = /^(\d{1,2})\/(\d{2})$/.exec(v.trim());
   if (!m) return false;
-  const day = +m[1];
-  const month = +m[2];
-  if (month < 1 || month > 12) return false;
-  const daysInMonth = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
-  return day >= 1 && day <= daysInMonth;
+  const month = +m[1];
+  const year = 2000 + +m[2];
+  const now = new Date();
+  const curYear = now.getFullYear();
+  const curMonth = now.getMonth() + 1;
+  return year > curYear || (year === curYear && month >= curMonth);
 };
 
 // Card: 16 digits, spaces optional/ignored.
@@ -46,25 +53,51 @@ export const isValidDeadline = (v: string) => {
   return isValidDate(m[1]) && isValidTime(m[2]);
 };
 
+// True when a valid DD/MM/YYYY date is strictly after today (tomorrow or later).
+export const isFutureDate = (v: string) => {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(v.trim());
+  if (!m) return false;
+  const d = new Date(+m[3], +m[2] - 1, +m[1]);
+  d.setHours(0, 0, 0, 0);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return d.getTime() > today.getTime();
+};
+
+// True when the date portion of a valid deadline string is strictly after today.
+export const isDeadlineFuture = (v: string) => {
+  const m = /^(.+?),?\s+\d{1,2}:[0-5]\d\s?(?:AM|PM)$/i.exec(v.trim());
+  return !!m && isFutureDate(m[1]);
+};
+
 export const required = (v: string) => (isBlank(v) ? 'This field is required.' : null);
 
 export const emailError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidEmail(v) ? null : 'Enter a valid email address.';
 
 export const dateError = (v: string) =>
-  isBlank(v) ? 'This field is required.' : isValidDate(v) ? null : 'Enter a valid date in the format DD/MM/YYYY.';
+  isBlank(v) ? 'This field is required.'
+    : !isValidDate(v) ? 'Enter a valid date in the format DD/MM/YYYY.'
+    : !isFutureDate(v) ? 'Please select a date that is after today.'
+    : null;
 
 export const timeError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidTime(v) ? null : 'Enter a valid time in the format HH:MM AM/PM.';
 
 export const deadlineError = (v: string) =>
-  isBlank(v) ? 'This field is required.' : isValidDeadline(v) ? null : 'Enter a valid date and time in the format DD/MM/YYYY, HH:MM AM/PM.';
+  isBlank(v) ? 'This field is required.'
+    : !isValidDeadline(v) ? 'Enter a valid date and time in the format DD/MM/YYYY, HH:MM AM/PM.'
+    : !isDeadlineFuture(v) ? 'Please select a date that is after today.'
+    : null;
 
 export const cardError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidCard(v) ? null : 'Enter a valid 16-digit card number.';
 
 export const expiryError = (v: string) =>
-  isBlank(v) ? 'This field is required.' : isValidExpiry(v) ? null : 'Enter a valid date in the format DD/MM.';
+  isBlank(v) ? 'This field is required.'
+    : !isValidExpiry(v) ? 'Enter a valid date in the format MM/YY.'
+    : !isExpiryActive(v) ? 'Card has expired.'
+    : null;
 
 export const cvcError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidCVC(v) ? null : 'Enter a valid 3-digit CVC.';

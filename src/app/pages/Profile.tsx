@@ -7,24 +7,30 @@ import { MOCK_EVENTS, getActiveTier, type Route, type EventItem } from '../compo
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
+type Row = { event: EventItem; qty: number; amount: number; tab: Tab; ticketStatus: string };
 
-const MY_TICKETS: { event: EventItem; qty: number; amount: number; tab: Tab; ticketStatus: string }[] = [
+const MY_TICKETS: Row[] = [
   { event: MOCK_EVENTS[0], qty: 1, amount: 18, tab: 'upcoming', ticketStatus: 'Pledged' },
   { event: MOCK_EVENTS[1], qty: 2, amount: 20, tab: 'upcoming', ticketStatus: 'Pledged' },
   { event: MOCK_EVENTS[2], qty: 1, amount: 28, tab: 'past', ticketStatus: 'Attended' },
   { event: MOCK_EVENTS[5], qty: 1, amount: 8, tab: 'cancelled', ticketStatus: 'Refunded' },
 ];
 
-export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { eventId: string; qty: number; amount: number }[] }) {
+export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }: { go: (r: Route) => void; added?: { eventId: string; qty: number; amount: number }[]; events?: EventItem[]; cancelled?: { eventId: string; qty: number; amount: number }[] }) {
   const [tab, setTab] = useState<Tab>('upcoming');
-  const addedTickets = added
-    .map((a) => {
-      const ev = MOCK_EVENTS.find((e) => e.id === a.eventId);
-      if (!ev) return null;
-      return { event: ev, qty: a.qty, amount: a.amount, tab: 'upcoming' as Tab, ticketStatus: 'Pledged' };
-    })
-    .filter(Boolean) as { event: EventItem; qty: number; amount: number; tab: Tab; ticketStatus: string }[];
-  const merged = [...addedTickets, ...MY_TICKETS.filter((t) => !addedTickets.some((a) => a.event.id === t.event.id))];
+  // Resolve each row's event from the live `events` state so pledged events reflect updated backers/tiers.
+  const resolve = (id: string, fallback?: EventItem) => events.find((e) => e.id === id) ?? fallback;
+  const toRow = (t: { eventId: string; qty: number; amount: number }, rowTab: Tab, ticketStatus: string) => {
+    const ev = resolve(t.eventId);
+    return ev ? { event: ev, qty: t.qty, amount: t.amount, tab: rowTab, ticketStatus } : null;
+  };
+  const addedRows = added.map((a) => toRow(a, 'upcoming', 'Pledged')).filter(Boolean) as Row[];
+  const cancelledRows = cancelled.map((c) => toRow(c, 'cancelled', 'Refunded')).filter(Boolean) as Row[];
+  const takenIds = new Set([...added.map((a) => a.eventId), ...cancelled.map((c) => c.eventId)]);
+  const baseRows = MY_TICKETS
+    .map((t) => ({ ...t, event: resolve(t.event.id, t.event)! }))
+    .filter((t) => !takenIds.has(t.event.id));
+  const merged: Row[] = [...cancelledRows, ...addedRows, ...baseRows];
   const items = merged.filter((t) => t.tab === tab);
 
   return (
@@ -87,7 +93,10 @@ export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { 
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map(({ event, qty, amount, ticketStatus }) => (
+          {items.map(({ event, qty, amount, ticketStatus }) => {
+            const isRefunded = ticketStatus === 'Refunded';
+            const badgeStatus = isRefunded ? 'cancelled' : event.status;
+            return (
             <div key={event.id} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center"
               style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
               <div className="relative h-24 w-full overflow-hidden rounded-xl md:w-40 md:shrink-0">
@@ -96,7 +105,7 @@ export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { 
               <div className="flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h3 className="line-clamp-1">{event.title}</h3>
-                  <StatusBadge status={event.status} />
+                  <StatusBadge status={badgeStatus} />
                 </div>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
@@ -104,7 +113,7 @@ export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { 
                   <span>Ticket: {ticketStatus} · {qty} × ${amount}</span>
                 </div>
                 <div className="mt-3 max-w-md">
-                  <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="sm" showLabel={false} />
+                  <HypeMeter pct={event.hypePct} status={badgeStatus} tier={getActiveTier(event)} size="sm" showLabel={false} />
                 </div>
               </div>
               <div className="flex items-center gap-3 md:flex-col md:items-end">
@@ -112,13 +121,14 @@ export function Profile({ go, added = [] }: { go: (r: Route) => void; added?: { 
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Total</div>
                   <div style={{ fontWeight: 700, fontSize: 18 }}>${(qty * amount).toFixed(2)}</div>
                 </div>
-                <Button onClick={() => go({ name: 'event', id: event.id, fromProfile: true })} variant="outline"
+                <Button onClick={() => go(isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount })} variant="outline"
                   className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
                   View
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

@@ -5,12 +5,12 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { MOCK_EVENTS, getActiveTier, type Role, type Route } from '../components/types';
+import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { required, emailError, cardError, expiryError, cvcError } from '../components/validation';
 
-export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Route) => void }) {
-  const event = MOCK_EVENTS.find((e) => e.id === id) ?? MOCK_EVENTS[0];
+export function Checkout({ id, role, go, events, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; onPledge: (eventId: string, qty: number, amount: number) => void }) {
+  const event = events.find((e) => e.id === id) ?? events[0];
   const [qty, setQty] = useState(1);
   const fee = 1.2;
   const subtotal = event.price * qty;
@@ -44,6 +44,7 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
   const handleConfirm = () => {
     setAttempted(true);
     if (hasErr) return;
+    onPledge(event.id, qty, event.price);
     go({ name: 'confirmation', id, qty });
   };
 
@@ -98,12 +99,9 @@ export function Checkout({ id, role, go }: { id: string; role: Role; go: (r: Rou
             <div className="space-y-4">
               <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
               <div className="grid grid-cols-2 gap-4">
-                <Field label="Expiry" placeholder="01/05" value={form.expiry} onChange={set('expiry')} error={attempted ? errs.expiry : null} />
+                <Field label="Expiry" placeholder="MM/YY" value={form.expiry} onChange={set('expiry')} error={attempted ? errs.expiry : null} />
                 <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
               </div>
-            </div>
-            <div className="mt-4 rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
-              This is a simulated payment for the MVP — no real charges are made.
             </div>
           </section>
         </div>

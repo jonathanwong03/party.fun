@@ -1,16 +1,11 @@
-import { useEffect } from 'react';
 import { CheckCircle2, Calendar, MapPin, Ticket, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { MOCK_EVENTS, getActiveTier, type Role, type Route } from '../components/types';
+import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, go, onAdd }: { id: string; qty: number; role: Role; go: (r: Route) => void; onAdd?: (t: { eventId: string; qty: number; amount: number }) => void }) {
-  const event = MOCK_EVENTS.find((e) => e.id === id) ?? MOCK_EVENTS[0];
+export function Confirmation({ id, qty, go, events }: { id: string; qty: number; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+  const event = events.find((e) => e.id === id) ?? events[0];
   const ref = 'PF-' + event.id.toUpperCase() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
-
-  useEffect(() => {
-    onAdd?.({ eventId: event.id, qty, amount: event.price });
-  }, [event.id, qty, event.price]);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-16">
@@ -43,9 +38,9 @@ export function Confirmation({ id, qty, go, onAdd }: { id: string; qty: number; 
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span style={{ color: 'var(--muted-foreground)' }}>Current hype</span>
-            <span style={{ fontWeight: 600 }}>{event.backers + qty} / {event.threshold} backers</span>
+            <span style={{ fontWeight: 600 }}>{event.backers} / {event.threshold} backers</span>
           </div>
-          <HypeMeter pct={Math.min(100, event.hypePct + 2)} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
+          <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
         </div>
       </div>
 

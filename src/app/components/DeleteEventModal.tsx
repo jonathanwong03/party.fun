@@ -8,13 +8,23 @@ export function DeleteEventModal({
   eventName,
   onCancel,
   onConfirm,
+  confirmWord = 'DELETE',
+  title = 'Delete Event?',
+  leadIn = "You're about to delete",
+  warning = 'All pledges will be voided and any captured funds refunded. Backers will be notified by email.',
+  actionLabel = 'Delete Event',
 }: {
   eventName: string;
   onCancel: () => void;
   onConfirm: () => void;
+  confirmWord?: string;
+  title?: string;
+  leadIn?: string;
+  warning?: string;
+  actionLabel?: string;
 }) {
   const [confirmText, setConfirmText] = useState('');
-  const canDelete = confirmText.trim().toLowerCase() === 'delete';
+  const canDelete = confirmText.trim().toLowerCase() === confirmWord.toLowerCase();
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">
@@ -26,7 +36,7 @@ export function DeleteEventModal({
               <AlertTriangle size={18} />
             </div>
             <div>
-              <h3>Delete Event?</h3>
+              <h3>{title}</h3>
               <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>This action cannot be undone.</p>
             </div>
           </div>
@@ -37,22 +47,22 @@ export function DeleteEventModal({
 
         <div className="space-y-4 px-5 pb-5">
           <div className="rounded-lg p-3 text-sm" style={{ background: 'var(--surface-2)' }}>
-            <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>You're about to delete</div>
+            <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{leadIn}</div>
             <div className="mt-1" style={{ fontWeight: 700 }}>{eventName}</div>
           </div>
 
           <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.25)', color: '#ff7a93' }}>
-            All pledges will be voided and any captured funds refunded. Backers will be notified by email.
+            {warning}
           </div>
 
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>
-              Type <span style={{ color: '#ff3354', fontWeight: 700 }}>DELETE</span> to confirm
+              Type <span style={{ color: '#ff3354', fontWeight: 700 }}>{confirmWord}</span> to confirm
             </Label>
             <Input
               value={confirmText}
               onChange={(e) => setConfirmText(e.target.value)}
-              placeholder="DELETE"
+              placeholder={confirmWord}
               style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42 }}
             />
           </div>
@@ -67,7 +77,7 @@ export function DeleteEventModal({
               className="flex-1 bg-[#ff3354] text-white hover:bg-[#ff4865] disabled:opacity-40"
               style={{ borderRadius: 10, height: 44 }}
             >
-              Delete Event
+              {actionLabel}
             </Button>
           </div>
         </div>

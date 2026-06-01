@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import { MOCK_EVENTS, PLEDGED_EVENT_IDS, type EventItem, type Role, type Route } from './components/types';
+import { MOCK_EVENTS, PLEDGED_EVENT_IDS, applyPledge, reversePledge, type EventItem, type Role, type Route } from './components/types';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -29,19 +29,36 @@ export default function App() {
   const [role, setRole] = useState<Role | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [addedTickets, setAddedTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
-  const addTicket = (t: { eventId: string; qty: number; amount: number }) =>
-    setAddedTickets((prev) => [t, ...prev.filter((p) => p.eventId !== t.eventId)]);
 
   const [events, setEvents] = useState<EventItem[]>(MOCK_EVENTS);
   const addEvent = (e: EventItem) => setEvents((prev) => [e, ...prev]);
   const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
 
-  // Events already in "My Events" (pre-pledged base + anything just pledged this session).
-  // These are hidden from the "All Events" browse list so the same event can't be pledged twice.
-  const myEventIds = useMemo(
-    () => new Set<string>([...PLEDGED_EVENT_IDS, ...addedTickets.map((t) => t.eventId)]),
-    [addedTickets],
-  );
+  const [cancelledTickets, setCancelledTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
+
+  // Commit a confirmed pledge: record the ticket (for "My Events" + Landing hiding), remove it
+  // from the cancelled list, and bump the event's backers / active tier / hype.
+  const pledge = (eventId: string, qty: number, amount: number) => {
+    setAddedTickets((prev) => (prev.some((p) => p.eventId === eventId) ? prev : [{ eventId, qty, amount }, ...prev]));
+    setCancelledTickets((prev) => prev.filter((p) => p.eventId !== eventId));
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? applyPledge(e, qty) : e)));
+  };
+
+  // Cancel attendance: reverse the pledge stats, drop it from upcoming, and record it as a
+  // cancelled/refunded ticket. It stays in "My Events" (Cancelled tab) and returns to All Events.
+  const cancelEvent = (eventId: string, qty: number, amount: number) => {
+    setEvents((prev) => prev.map((e) => (e.id === eventId ? reversePledge(e, qty) : e)));
+    setAddedTickets((prev) => prev.filter((p) => p.eventId !== eventId));
+    setCancelledTickets((prev) => [{ eventId, qty, amount }, ...prev.filter((p) => p.eventId !== eventId)]);
+  };
+
+  // Events in "My Events" upcoming (pre-pledged base + anything pledged this session), minus any
+  // the user has cancelled. Hidden from the "All Events" browse list; cancelled events reappear there.
+  const myEventIds = useMemo(() => {
+    const ids = new Set<string>([...PLEDGED_EVENT_IDS, ...addedTickets.map((t) => t.eventId)]);
+    cancelledTickets.forEach((c) => ids.delete(c.eventId));
+    return ids;
+  }, [addedTickets, cancelledTickets]);
 
   const go = (r: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -84,16 +101,16 @@ export default function App() {
       )}
 
       {activeRoute.name === 'landing' && <Landing go={go} myEventIds={myEventIds} />}
-      {activeRoute.name === 'event' && role && <EventDetail id={activeRoute.id} role={role} go={go} fromProfile={activeRoute.fromProfile} fromAdmin={activeRoute.fromAdmin} />}
-      {activeRoute.name === 'checkout' && role && <Checkout id={activeRoute.id} role={role} go={go} />}
+      {activeRoute.name === 'event' && role && <EventDetail id={activeRoute.id} role={role} go={go} events={events} qty={activeRoute.qty} amount={activeRoute.amount} onCancelAttendance={cancelEvent} fromProfile={activeRoute.fromProfile} fromAdmin={activeRoute.fromAdmin} />}
+      {activeRoute.name === 'checkout' && role && <Checkout id={activeRoute.id} role={role} go={go} events={events} onPledge={pledge} />}
       {activeRoute.name === 'confirmation' && role && (
-        <Confirmation id={activeRoute.id} qty={activeRoute.qty} role={role} go={go} onAdd={addTicket} />
+        <Confirmation id={activeRoute.id} qty={activeRoute.qty} role={role} go={go} events={events} />
       )}
       {activeRoute.name === 'login' && <Login go={go} onLogin={handleLogin} />}
       {activeRoute.name === 'choose-account' && <ChooseAccount go={go} />}
       {activeRoute.name === 'register-user' && <RegisterUser go={go} onLogin={handleLogin} />}
       {activeRoute.name === 'register-admin' && <RegisterAdmin go={go} onLogin={handleLogin} />}
-      {activeRoute.name === 'profile' && <Profile go={go} added={addedTickets} />}
+      {activeRoute.name === 'profile' && <Profile go={go} added={addedTickets} events={events} cancelled={cancelledTickets} />}
       {activeRoute.name === 'admin' && <AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} />}
       {activeRoute.name === 'create-event' && <CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} />}
       {activeRoute.name === 'edit-event' && <CreateEvent route={activeRoute} go={go} editId={activeRoute.id} events={events} onDelete={deleteEvent} />}
