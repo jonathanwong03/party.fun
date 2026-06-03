@@ -1,18 +1,51 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { Search, Sparkles } from 'lucide-react';
 import { EventCard } from '../components/EventCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { MOCK_EVENTS, eventBadgeKey, type Route } from '../components/types';
+import { type EventItem, type Route } from '../components/types';
+import { supabase, mapDbEventToEventItem } from '../supabase';
+
 
 export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route) => void; myEventIds?: Set<string> }) {
+  // 1. Dynamic state variables to manage live Supabase event data and loading spinners
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Filter and search query states
   const [q, setQ] = useState('');
   const [loc, setLoc] = useState('all');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
-  // Hide events the user has already pledged for — they live in "My Events", not here.
-  const available = useMemo(() => MOCK_EVENTS.filter((e) => !myEventIds.has(e.id)), [myEventIds]);
+  // 2. React Mount Hook: Fetch active campaigns from Supabase on page load
+  useEffect(() => {
+    async function loadEvents() {
+      try {
+        const { data, error } = await supabase
+          .from('events_with_stats') // Query the PostgreSQL aggregation view
+          .select(`
+            *,
+            organiser:profiles(full_name), -- Join organizer profiles to fetch host names
+            tiers:pricing_tiers(*)         -- Join pricing tiers details
+          `);
+        if (error) throw error;
+        if (data) {
+          // Map raw Postgres rows into typed EventItem interfaces expected by components
+          const mapped = data.map(mapDbEventToEventItem);
+          setEvents(mapped);
+        }
+      } catch (err) {
+        console.error('Error fetching live events:', err);
+      } finally {
+        setLoading(false); // Stop loading indicator once query resolves
+      }
+    }
+    loadEvents();
+  }, []);
+
+  // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
+  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id)), [events, myEventIds]);
   const featured = available[0];
   const rest = available.slice(1);
 
@@ -27,6 +60,14 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
       return true;
     });
   }, [q, loc, hype, price, rest]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Loading live campus campaigns...
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-10">

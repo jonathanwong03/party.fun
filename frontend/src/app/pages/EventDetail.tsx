@@ -53,11 +53,11 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
               { icon: MapPin, label: 'Location', value: event.location.split(',')[0] },
               { icon: Users, label: 'Spots left', value: `${event.spotsLeft}` },
             ].map((m) => (
-              <div key={m.label} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+              <div key={m.label} className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
                 <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   <m.icon size={13} /> {m.label}
                 </div>
-                <div className="mt-1" style={{ fontWeight: 600 }}>{m.value}</div>
+                <div className="mt-1 font-bold text-white">{m.value}</div>
               </div>
             ))}
           </div>
@@ -69,7 +69,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
           </div>
 
           {/* Hype meter */}
-          <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-5">
               <TicketPricesOverTime tiers={event.tiers} />
             </div>
@@ -110,7 +110,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
           <PricingTier tiers={event.tiers} activeIndex={activeTier} />
 
           {/* how it works */}
-          <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="rounded-2xl glass p-6 transition-all duration-300">
             <h3 className="mb-3">How it works</h3>
             <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}>
               <li><strong>Buy early</strong> — earlier tiers are cheaper.</li>
@@ -149,7 +149,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
         </aside>
         ) : showOptOut ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Pledge confirmed</h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -216,7 +216,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
         </aside>
         ) : (
         <aside className="lg:sticky lg:top-24 lg:self-start">
-          <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
             <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.tierLabel}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
