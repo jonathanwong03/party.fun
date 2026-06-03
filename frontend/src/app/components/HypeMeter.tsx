@@ -22,10 +22,14 @@ export function HypeMeter({
   const t = Math.max(0, Math.min(3, tier));
   const color = status === 'cancelled' ? '#5a5a66' : '#ffffff';
   const tierColor = status === 'cancelled' ? '#5a5a66' : TIER_COLORS[t];
-  const gradient = status === 'cancelled' ? '#5a5a66' : '#ffffff';
-  const glow = status === 'cancelled' ? 'none' : '0 0 10px rgba(255,255,255,0.35)';
+  const gradient = status === 'cancelled' 
+    ? '#5a5a66' 
+    : pct >= 100 
+      ? 'linear-gradient(90deg, #10b981, #059669)' 
+      : 'linear-gradient(90deg, #f97316, #ff4d2e)';
+  const glow = status === 'cancelled' ? 'none' : pct >= 100 ? '0 0 12px rgba(16,185,129,0.3)' : '0 0 12px rgba(255,77,46,0.3)';
 
-  const trackH = size === 'sm' ? 'h-1.5' : size === 'lg' ? 'h-3' : 'h-2';
+  const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
   const tierLabel = ['Tier 1 · Early believers', 'Tier 2 · Growing hype', 'Tier 3 · Almost there', 'Greenlit'][t];
 
   return (
@@ -33,10 +37,10 @@ export function HypeMeter({
       {showLabel && size === 'lg' ? (
         <div className="mb-3 flex items-end justify-between">
           <div>
-            <div style={{ fontSize: 36, fontWeight: 800, color, lineHeight: 1 }}>{capped}%</div>
+            <div style={{ fontSize: 36, fontWeight: 800, color, lineHeight: 1, fontFamily: "'Space Grotesk', sans-serif" }}>{capped}%</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
               {backers !== undefined && threshold !== undefined
-                ? `${backers} of ${threshold} tickets`
+                ? `${backers} of ${threshold} backers`
                 : tierLabel}
             </div>
           </div>
@@ -48,17 +52,17 @@ export function HypeMeter({
       ) : showLabel ? (
         <div className="mb-1.5 flex items-baseline justify-between">
           <span className="text-xs" style={{ color: tierColor }}>{tierLabel}</span>
-          <span style={{ color, fontWeight: 700, fontSize: 13 }}>
+          <span style={{ color, fontWeight: 700, fontSize: 13, fontFamily: "'Space Grotesk', sans-serif" }}>
             {capped}%
           </span>
         </div>
       ) : null}
       <div
-        className={`relative w-full overflow-hidden rounded-full ${trackH}`}
-        style={{ background: 'rgba(255,255,255,0.06)' }}
+        className={`relative w-full overflow-hidden rounded-full ${trackH} border border-white/5`}
+        style={{ background: 'rgba(0, 0, 0, 0.4)' }}
       >
         <div
-          className="h-full rounded-full transition-all"
+          className="h-full rounded-full transition-all duration-700 ease-out"
           style={{
             width: `${capped}%`,
             background: gradient,
