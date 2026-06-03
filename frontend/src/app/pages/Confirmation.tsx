@@ -4,7 +4,14 @@ import { HypeMeter } from '../components/HypeMeter';
 import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 
 export function Confirmation({ id, qty, go, events }: { id: string; qty: number; role: Role; go: (r: Route) => void; events: EventItem[] }) {
-  const event = events.find((e) => e.id === id) ?? events[0];
+  const event = events.find((e) => e.id === id);
+  if (!event) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Loading confirmation...
+      </div>
+    );
+  }
   const ref = 'PF-' + event.id.toUpperCase() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
 
   return (

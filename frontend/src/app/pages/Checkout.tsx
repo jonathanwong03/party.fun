@@ -9,13 +9,11 @@ import { getActiveTier, type EventItem, type Role, type Route } from '../compone
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { required, emailError, cardError, expiryError, cvcError } from '../components/validation';
 
-export function Checkout({ id, role, go, events, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; onPledge: (eventId: string, qty: number, amount: number) => void }) {
-  const event = events.find((e) => e.id === id) ?? events[0];
+export function Checkout({ id, role, go, events, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
+  const event = events.find((e) => e.id === id);
   const [qty, setQty] = useState(1);
-  const fee = 1.2;
-  const subtotal = event.price * qty;
-  const total = subtotal + fee;
-
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
     fullName: 'Jamie Tan',
     email: 'jamie@u.nus.edu',
@@ -26,6 +24,17 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
     cvc: '',
   });
   const [attempted, setAttempted] = useState(false);
+
+  if (!event) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Loading checkout...
+      </div>
+    );
+  }
+  const fee = 1.2;
+  const subtotal = event.price * qty;
+  const total = subtotal + fee;
 
   // Phone / Telegram is the only optional field; everything else is required.
   const errs = {
@@ -41,11 +50,19 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
   const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     setAttempted(true);
+    setSubmitError(null);
     if (hasErr) return;
-    onPledge(event.id, qty, event.price);
-    go({ name: 'confirmation', id, qty });
+    try {
+      setSubmitting(true);
+      await onPledge(event.id, qty, event.price);
+      go({ name: 'confirmation', id, qty });
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -135,17 +152,18 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
 
               <Button
                 onClick={handleConfirm}
+                disabled={submitting}
                 className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
                 style={{ borderRadius: 12, height: 48 }}
               >
-                Confirm Pledge
+                {submitting ? 'Confirming...' : 'Confirm Pledge'}
               </Button>
 
-              {attempted && hasErr && (
+              {(attempted && hasErr) || submitError ? (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
-                  Please fill in all required details before confirming your pledge.
+                  {submitError || 'Please fill in all required details before confirming your pledge.'}
                 </div>
-              )}
+              ) : null}
 
               <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
                 style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>

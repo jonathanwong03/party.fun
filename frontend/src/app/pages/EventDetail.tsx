@@ -10,13 +10,20 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => void; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
-  const event = events.find((e) => e.id === id) ?? events[0];
+export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
+  const event = events.find((e) => e.id === id);
+  const [cancelling, setCancelling] = useState(false);
+  if (!event) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Loading event...
+      </div>
+    );
+  }
   const activeTier = getActiveTier(event);
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromAdmin;
-  const [cancelling, setCancelling] = useState(false);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -262,8 +269,9 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
           onCancel={() => setCancelling(false)}
           onConfirm={() => {
             setCancelling(false);
-            onCancelAttendance?.(event.id, qty ?? 1, amount ?? event.price);
-            go({ name: 'profile' });
+            Promise.resolve(onCancelAttendance?.(event.id, qty ?? 1, amount ?? event.price)).finally(() => {
+              go({ name: 'profile' });
+            });
           }}
         />
       )}
