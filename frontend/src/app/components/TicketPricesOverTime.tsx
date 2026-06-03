@@ -1,10 +1,10 @@
 type Tier = { label: string; price: number; qty: number; sold: number };
 
 const SEGMENTS = [
-  { bg: 'var(--tier-1)', text: '#08080a' },
-  { bg: 'var(--tier-2)', text: '#08080a' },
-  { bg: 'var(--tier-3)', text: '#08080a' },
-  { bg: 'var(--tier-greenlit)', text: '#fff' },
+  { bg: '#00f991', text: '#000000' },
+  { bg: '#fee900', text: '#000000' },
+  { bg: '#f46303', text: '#000000' },
+  { bg: '#ff0a0a', text: '#ffffff' },
 ];
 
 export function TicketPricesOverTime({ tiers }: { tiers: Tier[] }) {
@@ -25,7 +25,7 @@ export function TicketPricesOverTime({ tiers }: { tiers: Tier[] }) {
           return (
             <div
               key={i}
-              className="flex flex-1 items-center justify-center text-sm font-bold transition-all duration-300"
+              className="flex flex-1 items-center justify-center text-sm font-medium transition-all duration-300"
               style={{ 
                 background: style.bg, 
                 color: style.text,
