@@ -56,9 +56,9 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
 
           {/* Summary cards */}
           <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time" />
-            <SummaryCard icon={Zap} accent="#ffcb3c" label="Live events" value={created.filter((e) => e.status === 'live' || e.status === 'almost').length.toString()} hint="Gathering hype" />
-            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Greenlit" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Confirmed" />
+            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time events" />
+            <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={created.filter((e) => dashboardStatus(e) !== 'CANCELLED').length.toString()} hint="Ongoing events" />
+            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Greenlit" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Confirmed events" />
             <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${(totalPledged / 1000).toFixed(1)}k`} hint="Across all events" />
           </div>
 
