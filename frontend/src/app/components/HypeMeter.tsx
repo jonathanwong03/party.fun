@@ -23,12 +23,10 @@ export function HypeMeter({
   const t = Math.max(0, Math.min(3, tier));
   const color = status === 'cancelled' ? '#5a5a66' : '#ffffff';
   const tierColor = status === 'cancelled' ? '#5a5a66' : TIER_COLORS[t];
-  const gradient = status === 'cancelled' 
-    ? '#5a5a66' 
-    : pct >= 100 
-      ? 'linear-gradient(90deg, #10b981, #059669)' 
-      : 'linear-gradient(90deg, #f97316, #ff4d2e)';
-  const glow = status === 'cancelled' ? 'none' : pct >= 100 ? '0 0 12px rgba(16,185,129,0.3)' : '0 0 12px rgba(255,77,46,0.3)';
+  const gradient = status === 'cancelled'
+    ? '#5a5a66'
+    : 'linear-gradient(90deg, #f97316, #ff4d2e)';
+  const glow = status === 'cancelled' ? 'none' : '0 0 12px rgba(255,77,46,0.3)';
 
   const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
   const tierLabel = `Tier ${t + 1} · ${TIER_LABELS[t]}`;
@@ -80,7 +78,7 @@ export function HypeMeter({
             style={{ right: -2, filter: 'drop-shadow(0 0 6px rgba(255,107,46,0.9))' }}
           >
             <span className="animate-flicker block">
-              <Flame size={flameSize} color="#ff6b2e" fill="#ffcb3c" strokeWidth={2} />
+              <Flame size={flameSize} color="#ff4d2e" fill="#ff7a45" strokeWidth={2} />
             </span>
           </div>
         )}

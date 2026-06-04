@@ -15,7 +15,7 @@ function dashboardStatus(e: EventItem): 'GREENLIT' | 'PENDING' | 'CANCELLED' {
 
 const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
   GREENLIT: 'var(--foreground)',
-  PENDING: 'var(--muted-foreground)',
+  PENDING: 'var(--foreground)',
   CANCELLED: '#ff6b85',
 };
 
