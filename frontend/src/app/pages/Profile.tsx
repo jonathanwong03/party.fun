@@ -54,7 +54,7 @@ export function Profile({
       </div>
 
       <div className="mb-6 flex items-baseline justify-between">
-        <h2>My Events</h2>
+        <h2>Joined Events</h2>
         <Button onClick={() => go({ name: 'landing' })} variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
           Browse more
         </Button>

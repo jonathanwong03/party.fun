@@ -38,7 +38,7 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
               
-              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Your events</h1>
+              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Manage your events</h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
                 Track hype, pledges and greenlit events in one place.
               </p>
