@@ -1,4 +1,5 @@
-import { TIER_COLORS } from './types';
+import { Flame } from 'lucide-react';
+import { TIER_COLORS, TIER_LABELS } from './types';
 import type { EventStatus } from './types';
 
 export function HypeMeter({
@@ -30,7 +31,9 @@ export function HypeMeter({
   const glow = status === 'cancelled' ? 'none' : pct >= 100 ? '0 0 12px rgba(16,185,129,0.3)' : '0 0 12px rgba(255,77,46,0.3)';
 
   const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
-  const tierLabel = ['Tier 1 · Early believers', 'Tier 2 · Growing hype', 'Tier 3 · Almost there', 'Greenlit'][t];
+  const tierLabel = `Tier ${t + 1} · ${TIER_LABELS[t]}`;
+  const showFlame = capped >= 100 && status !== 'cancelled';
+  const flameSize = size === 'sm' ? 14 : size === 'lg' ? 24 : 18;
 
   return (
     <div className="w-full">
@@ -57,18 +60,30 @@ export function HypeMeter({
           </span>
         </div>
       ) : null}
-      <div
-        className={`relative w-full overflow-hidden rounded-full ${trackH} border border-white/5`}
-        style={{ background: 'rgba(0, 0, 0, 0.4)' }}
-      >
+      <div className="relative w-full">
         <div
-          className="h-full rounded-full transition-all duration-700 ease-out"
-          style={{
-            width: `${capped}%`,
-            background: gradient,
-            boxShadow: glow,
-          }}
-        />
+          className={`relative w-full overflow-hidden rounded-full ${trackH} border border-white/5`}
+          style={{ background: 'rgba(0, 0, 0, 0.4)' }}
+        >
+          <div
+            className="h-full rounded-full transition-all duration-700 ease-out"
+            style={{
+              width: `${capped}%`,
+              background: gradient,
+              boxShadow: glow,
+            }}
+          />
+        </div>
+        {showFlame && (
+          <div
+            className="pointer-events-none absolute top-1/2 -translate-y-1/2"
+            style={{ right: -2, filter: 'drop-shadow(0 0 6px rgba(255,107,46,0.9))' }}
+          >
+            <span className="animate-flicker block">
+              <Flame size={flameSize} color="#ff6b2e" fill="#ffcb3c" strokeWidth={2} />
+            </span>
+          </div>
+        )}
       </div>
       {showLabel && size === 'lg' && backers !== undefined && threshold !== undefined && (
         <div className="mt-2 flex justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>

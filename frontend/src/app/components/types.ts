@@ -69,7 +69,13 @@ export function reversePledge(e: EventItem, qty: number): EventItem {
 export const TIER_COLORS = ['#29e07a', '#ffcb3c', '#ff8a2e', '#ff3354'] as const;
 
 // Tier-stage labels shown on the status badge while an event is still gathering hype.
-export const TIER_LABELS = ['Early believers', 'Growing Hype', 'Almost There', 'Greenlit'] as const;
+export const TIER_LABELS = ['Early Birds', 'Hype Builders', 'Main Crowd', 'Final Wave'] as const;
+
+// Live "current tier" label, e.g. "Tier 2 · Hype Builders", derived from the active pricing tier.
+export function tierStageLabel(e: EventItem): string {
+  const t = getActiveTier(e);
+  return `Tier ${t + 1} · ${TIER_LABELS[t]}`;
+}
 
 // Badge styling for an event: greenlit -> "Confirmed", cancelled -> "Refunded",
 // otherwise the active pricing tier's stage name coloured by TIER_COLORS.
@@ -113,10 +119,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'almost',
     deadline: 'Jun 10, 11:59 PM',
     tiers: [
-      { label: 'Super Early', price: 12, qty: 50, sold: 50 },
-      { label: 'Early', price: 18, qty: 100, sold: 80 },
-      { label: 'Standard', price: 25, qty: 150, sold: 26 },
-      { label: 'Greenlit Door', price: 32, qty: 100, sold: 0 },
+      { label: 'Early Birds', price: 12, qty: 50, sold: 50 },
+      { label: 'Hype Builders', price: 18, qty: 100, sold: 80 },
+      { label: 'Main Crowd', price: 25, qty: 150, sold: 26 },
+      { label: 'Final Wave', price: 32, qty: 100, sold: 0 },
     ],
   },
   {
@@ -140,10 +146,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'live',
     deadline: 'Jun 18, 8:00 PM',
     tiers: [
-      { label: 'Super Early', price: 10, qty: 200, sold: 126 },
-      { label: 'Early', price: 14, qty: 200, sold: 0 },
-      { label: 'Standard', price: 20, qty: 300, sold: 0 },
-      { label: 'Greenlit Door', price: 25, qty: 100, sold: 0 },
+      { label: 'Early Birds', price: 10, qty: 200, sold: 126 },
+      { label: 'Hype Builders', price: 14, qty: 200, sold: 0 },
+      { label: 'Main Crowd', price: 20, qty: 300, sold: 0 },
+      { label: 'Final Wave', price: 25, qty: 100, sold: 0 },
     ],
   },
   {
@@ -168,10 +174,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'greenlit',
     deadline: 'Jun 25, 6:00 PM',
     tiers: [
-      { label: 'Super Early', price: 18, qty: 30, sold: 30 },
-      { label: 'Early', price: 24, qty: 40, sold: 40 },
-      { label: 'Standard', price: 28, qty: 30, sold: 22 },
-      { label: 'Greenlit Door', price: 35, qty: 20, sold: 0 },
+      { label: 'Early Birds', price: 18, qty: 30, sold: 30 },
+      { label: 'Hype Builders', price: 24, qty: 40, sold: 40 },
+      { label: 'Main Crowd', price: 28, qty: 30, sold: 22 },
+      { label: 'Final Wave', price: 35, qty: 20, sold: 0 },
     ],
   },
   {
@@ -195,10 +201,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'live',
     deadline: 'Jul 3, 11:59 PM',
     tiers: [
-      { label: 'Super Early', price: 15, qty: 80, sold: 27 },
-      { label: 'Early', price: 20, qty: 80, sold: 0 },
-      { label: 'Standard', price: 26, qty: 100, sold: 0 },
-      { label: 'Greenlit Door', price: 32, qty: 40, sold: 0 },
+      { label: 'Early Birds', price: 15, qty: 80, sold: 27 },
+      { label: 'Hype Builders', price: 20, qty: 80, sold: 0 },
+      { label: 'Main Crowd', price: 26, qty: 100, sold: 0 },
+      { label: 'Final Wave', price: 32, qty: 40, sold: 0 },
     ],
   },
   {
@@ -222,10 +228,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'almost',
     deadline: 'Jul 9, 9:00 PM',
     tiers: [
-      { label: 'Super Early', price: 16, qty: 60, sold: 60 },
-      { label: 'Early', price: 22, qty: 80, sold: 55 },
-      { label: 'Standard', price: 28, qty: 80, sold: 0 },
-      { label: 'Greenlit Door', price: 35, qty: 30, sold: 0 },
+      { label: 'Early Birds', price: 16, qty: 60, sold: 60 },
+      { label: 'Hype Builders', price: 22, qty: 80, sold: 55 },
+      { label: 'Main Crowd', price: 28, qty: 80, sold: 0 },
+      { label: 'Final Wave', price: 35, qty: 30, sold: 0 },
     ],
   },
   {
@@ -249,10 +255,10 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'cancelled',
     deadline: 'Jul 15, 8:00 PM',
     tiers: [
-      { label: 'Super Early', price: 8, qty: 60, sold: 11 },
-      { label: 'Early', price: 12, qty: 60, sold: 0 },
-      { label: 'Standard', price: 16, qty: 60, sold: 0 },
-      { label: 'Greenlit Door', price: 20, qty: 20, sold: 0 },
+      { label: 'Early Birds', price: 8, qty: 60, sold: 11 },
+      { label: 'Hype Builders', price: 12, qty: 60, sold: 0 },
+      { label: 'Main Crowd', price: 16, qty: 60, sold: 0 },
+      { label: 'Final Wave', price: 20, qty: 20, sold: 0 },
     ],
   },
 ];

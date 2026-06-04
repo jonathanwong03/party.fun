@@ -26,7 +26,8 @@ export function Profile({
     const ev = resolve(t.eventId);
     return ev ? { event: ev, qty: t.qty, amount: t.amount, tab: t.tab, ticketStatus: t.ticketStatus } : null;
   };
-  const merged = tickets.map(toRow).filter(Boolean) as Row[];
+  // "My Events" lists events you pledged/bought — never your own created events (mine).
+  const merged = (tickets.map(toRow).filter(Boolean) as Row[]).filter((r) => !r.event.mine);
   const items = merged.filter((t) => t.tab === tab);
   const pledgedCount = merged.filter((t) => t.tab === 'upcoming').length;
   const confirmedCount = merged.filter((t) => t.tab === 'past').length;

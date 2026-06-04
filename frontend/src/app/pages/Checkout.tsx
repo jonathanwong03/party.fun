@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { required, emailError, cardError, expiryError, cvcError } from '../components/validation';
 
@@ -87,7 +87,7 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Current tier</div>
-                <div style={{ fontWeight: 600 }}>{event.tierLabel}</div>
+                <div style={{ fontWeight: 600 }}>{tierStageLabel(event)}</div>
               </div>
               <div className="flex items-center gap-2 rounded-full border p-1" style={{ borderColor: 'var(--border-strong)' }}>
                 <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid size-8 place-items-center rounded-full hover:bg-white/5">

@@ -7,7 +7,7 @@ import { TicketPricesOverTime } from '../components/TicketPricesOverTime';
 import { PricingTier } from '../components/PricingTier';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
@@ -24,6 +24,8 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromAdmin;
+  // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
+  const showOwnEvent = !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -130,7 +132,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
         {showCancelledCard ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.tierLabel}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
@@ -221,10 +223,39 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
             </p>
           </div>
         </aside>
+        ) : showOwnEvent ? (
+        <aside className="lg:sticky lg:top-24 lg:self-start">
+          <div className="rounded-2xl glass p-6 transition-all duration-300">
+            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#ffd968' }}>Your event</div>
+            <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>You're the organiser</h3>
+            <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+              You can't pledge to your own event. Manage it from your dashboard.
+            </p>
+
+            <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
+
+            <Button
+              disabled
+              className="w-full"
+              style={{ background: '#2a2a33', color: 'rgba(255,255,255,0.55)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+            >
+              Can't pledge your own event
+            </Button>
+
+            <Button
+              onClick={() => go({ name: 'admin' })}
+              variant="outline"
+              className="mt-3 w-full border-white/15 bg-transparent hover:bg-white/5"
+              style={{ borderRadius: 12, height: 48, fontSize: 15, fontWeight: 700 }}
+            >
+              Go to dashboard
+            </Button>
+          </div>
+        </aside>
         ) : (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.tierLabel}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>

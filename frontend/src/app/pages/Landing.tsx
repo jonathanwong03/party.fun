@@ -26,7 +26,8 @@ export function Landing({
   const [price, setPrice] = useState('all');
 
   // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
-  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id)), [events, myEventIds]);
+  //    and events the admin created themselves (those belong only in the Admin Dashboard).
+  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id) && !e.mine), [events, myEventIds]);
   const featured = available[0];
   const rest = available.slice(1);
 
@@ -131,9 +132,9 @@ export function Landing({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All hype</SelectItem>
-            <SelectItem value="tier0">Early believers</SelectItem>
-            <SelectItem value="tier1">Growing Hype</SelectItem>
-            <SelectItem value="tier2">Almost There</SelectItem>
+            <SelectItem value="tier0">Early Birds</SelectItem>
+            <SelectItem value="tier1">Hype Builders</SelectItem>
+            <SelectItem value="tier2">Main Crowd</SelectItem>
             <SelectItem value="greenlit">Confirmed</SelectItem>
           </SelectContent>
         </Select>
