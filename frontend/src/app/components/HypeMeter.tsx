@@ -31,7 +31,7 @@ export function HypeMeter({
   const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
   const tierLabel = `Tier ${t + 1} · ${TIER_LABELS[t]}`;
   const showFlame = capped >= 100 && status !== 'cancelled';
-  const flameSize = size === 'sm' ? 20 : size === 'lg' ? 32 : 26;
+  const flameSize = size === 'sm' ? 16 : size === 'lg' ? 32 : 26;
 
   return (
     <div className="w-full">
@@ -75,7 +75,7 @@ export function HypeMeter({
         {showFlame && (
           <div
             className="pointer-events-none absolute"
-            style={{ right: -2, bottom: -2, filter: 'drop-shadow(0 0 6px rgba(255,107,46,0.9))' }}
+            style={{ right: -2, bottom: 0, filter: 'drop-shadow(0 0 6px rgba(255,107,46,0.9))' }}
           >
             <span className="animate-flicker block">
               <Flame size={flameSize} color="#ff4d2e" fill="#ff7a45" strokeWidth={2} />
