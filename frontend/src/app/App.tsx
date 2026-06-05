@@ -31,6 +31,7 @@ type RouteState = {
   fromPast?: boolean;
   qty?: number;
   amount?: number;
+  total?: number;
 };
 
 function pathForRoute(route: Route) {
@@ -70,6 +71,7 @@ function stateForRoute(route: Route): RouteState | undefined {
       fromPast: route.fromPast,
       qty: route.qty,
       amount: route.amount,
+      total: route.total,
     };
   }
 
@@ -116,6 +118,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
       fromPast: state?.fromPast,
       qty: state?.qty,
       amount: state?.amount,
+      total: state?.total,
     };
   }
 
@@ -314,6 +317,7 @@ function EventDetailRoute({
       events={events}
       qty={state.qty}
       amount={state.amount}
+      total={state.total}
       onCancelAttendance={onCancelAttendance}
       fromProfile={state.fromProfile}
       fromAdmin={state.fromAdmin}

@@ -1,5 +1,6 @@
 import { initialEvents } from '../data/mockEvents.js';
 import { initialPledges } from '../data/mockPledges.js';
+import { SERVICE_FEE } from '../data/mockPricing.js';
 
 const clone = (value) => structuredClone(value);
 
@@ -47,12 +48,35 @@ function reversePledgeFromEvent(event, qty) {
 }
 
 function publicTicket(ticket) {
+  const subtotal = ticket.amount * ticket.qty;
   return {
     eventId: ticket.eventId,
     qty: ticket.qty,
     amount: ticket.amount,
     tab: ticket.tab,
     ticketStatus: ticket.ticketStatus,
+    fee: SERVICE_FEE,
+    total: subtotal + SERVICE_FEE,
+  };
+}
+
+// Compute the cost of pledging `qty` tickets for an event: per-ticket price (the
+// active tier), subtotal, the fixed service fee and the grand total. All money
+// math for the app lives here on the backend.
+export function quotePledge(eventId, qty) {
+  const event = events.find((item) => item.id === eventId);
+  if (!event) return null;
+
+  const normalizedQty = Math.max(1, Number(qty) || 1);
+  const pricePerTicket = event.price;
+  const subtotal = pricePerTicket * normalizedQty;
+  return {
+    eventId,
+    pricePerTicket,
+    qty: normalizedQty,
+    subtotal,
+    fee: SERVICE_FEE,
+    total: subtotal + SERVICE_FEE,
   };
 }
 

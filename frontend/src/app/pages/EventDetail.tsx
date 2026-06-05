@@ -10,7 +10,7 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   if (!event) {
@@ -161,8 +161,11 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Pledge confirmed</h3>
+            <div className="mt-1 text-sm" style={{ color: 'var(--foreground)', fontWeight: 600 }}>
+              {(qty ?? 1)}× ticket{(qty ?? 1) === 1 ? '' : 's'}
+            </div>
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-              You've pledged <strong style={{ color: 'var(--foreground)' }}>${event.price}</strong> for this event. If it hits its threshold, your ticket is locked in. If not, you're refunded automatically.
+              You've pledged <strong style={{ color: 'var(--foreground)' }}>${(total ?? event.price).toFixed(2)}</strong> for this event. If it hits its threshold, your ticket is locked in. If not, you're refunded automatically.
             </p>
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
@@ -274,7 +277,7 @@ export function EventDetail({ id, go, role, events, qty, amount, onCancelAttenda
                 ? `Buy Ticket · $${event.price}`
                 : event.status === 'cancelled'
                 ? 'Event cancelled'
-                : `Pledge $${event.price}`}
+                : 'Pledge'}
               {event.status !== 'cancelled' && <ArrowRight size={16} className="ml-1" />}
             </Button>
 

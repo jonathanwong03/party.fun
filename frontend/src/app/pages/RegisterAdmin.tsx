@@ -42,6 +42,7 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
     >
       <form
         className="space-y-4"
+        autoComplete="off"
         onSubmit={async (e) => {
           e.preventDefault();
           setAttempted(true);
@@ -58,14 +59,14 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
           }
         }}
       >
-        <Field label="Admin name" placeholder="Jamie Tan" value={adminName} onChange={(e) => setAdminName(e.target.value)} error={attempted ? errs.adminName : null} />
-        <Field label="Email" type="email" placeholder="organiser@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
+        <Field label="Admin name" autoComplete="off" placeholder="Jamie Tan" value={adminName} onChange={(e) => setAdminName(e.target.value)} error={attempted ? errs.adminName : null} />
+        <Field label="Email" type="email" autoComplete="off" placeholder="organiser@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" type="password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
-          <Field label="Confirm" type="password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
+          <Field label="Password" type="password" autoComplete="new-password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
+          <Field label="Confirm" type="password" autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Contact / Telegram (optional)" placeholder="@nus_emc" value={contact} onChange={(e) => setContact(e.target.value)} />
-        <Field label="Social link (optional)" placeholder="instagram.com/nus.emc" value={social} onChange={(e) => setSocial(e.target.value)} />
+        <Field label="Contact / Telegram (optional)" autoComplete="off" placeholder="@nus_emc" value={contact} onChange={(e) => setContact(e.target.value)} />
+        <Field label="Social link (optional)" autoComplete="off" placeholder="instagram.com/nus.emc" value={social} onChange={(e) => setSocial(e.target.value)} />
 
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>

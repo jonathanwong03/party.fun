@@ -7,7 +7,7 @@ import { loginRequest } from '../api';
 import type { Role, Route } from '../components/types';
 
 export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role: Role) => void }) {
-  const [email, setEmail] = useState('jamie@u.nus.edu');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -40,11 +40,12 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role:
         </>
       }
     >
-      <form className="space-y-4" onSubmit={handleSubmit}>
+      <form className="space-y-4" onSubmit={handleSubmit} autoComplete="off">
         <div>
           <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Email or username</Label>
           <Input
             name="email"
+            autoComplete="off"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
@@ -58,6 +59,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role:
           <Input
             name="password"
             type="password"
+            autoComplete="new-password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}

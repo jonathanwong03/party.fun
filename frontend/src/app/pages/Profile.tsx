@@ -8,7 +8,7 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import type { ProfileTicket } from '../api';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
-type Row = { event: EventItem; qty: number; amount: number; tab: Tab; ticketStatus: string };
+type Row = { event: EventItem; qty: number; amount: number; total: number; tab: Tab; ticketStatus: string };
 
 export function Profile({
   go,
@@ -24,7 +24,7 @@ export function Profile({
   const resolve = (id: string) => events.find((e) => e.id === id);
   const toRow = (t: ProfileTicket) => {
     const ev = resolve(t.eventId);
-    return ev ? { event: ev, qty: t.qty, amount: t.amount, tab: t.tab, ticketStatus: t.ticketStatus } : null;
+    return ev ? { event: ev, qty: t.qty, amount: t.amount, total: t.total, tab: t.tab, ticketStatus: t.ticketStatus } : null;
   };
   // "My Events" lists events you pledged/bought — never your own created events (mine).
   const merged = (tickets.map(toRow).filter(Boolean) as Row[]).filter((r) => !r.event.mine);
@@ -93,7 +93,7 @@ export function Profile({
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map(({ event, qty, amount, ticketStatus }) => {
+          {items.map(({ event, qty, amount, total, ticketStatus }) => {
             const isRefunded = ticketStatus === 'Refunded';
             const badgeLabel =
               tab === 'past' ? 'Not available'
@@ -124,9 +124,9 @@ export function Profile({
               <div className="flex items-center gap-3 md:flex-col md:items-end">
                 <div className="text-right">
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Total</div>
-                  <div style={{ fontWeight: 700, fontSize: 18 }}>${(qty * amount).toFixed(2)}</div>
+                  <div style={{ fontWeight: 700, fontSize: 18 }}>${total.toFixed(2)}</div>
                 </div>
-                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount })} variant="outline"
+                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount, total })} variant="outline"
                   className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
                   View
                 </Button>

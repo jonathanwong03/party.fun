@@ -6,6 +6,17 @@ export type ProfileTicket = {
   amount: number;
   tab: 'upcoming' | 'past' | 'cancelled';
   ticketStatus: string;
+  fee: number;
+  total: number;
+};
+
+export type Quote = {
+  eventId: string;
+  pricePerTicket: number;
+  qty: number;
+  subtotal: number;
+  fee: number;
+  total: number;
 };
 
 export type ProfileResponse = {
@@ -89,6 +100,10 @@ export function fetchEvents(role: Role | null) {
 
 export function fetchProfile(role: Role) {
   return apiFetch<ProfileResponse>('/api/profile', role);
+}
+
+export function fetchQuote(role: Role | null, eventId: string, qty: number) {
+  return apiFetch<Quote>(`/api/checkout/${eventId}/quote?qty=${qty}`, role);
 }
 
 export function createPledge(role: Role, eventId: string, qty: number, amount: number) {

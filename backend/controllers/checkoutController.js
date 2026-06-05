@@ -1,9 +1,22 @@
 import { createPlaceholderHandler } from '../utils/apiPlaceholder.js';
-import { createPledge } from '../services/eventMemoryService.js';
+import { createPledge, quotePledge } from '../services/eventMemoryService.js';
 import { requireMockRole } from '../services/mockAuth.js';
 
 export const getCheckout = createPlaceholderHandler('checkout');
 export const postCheckout = createPlaceholderHandler('checkout');
+
+export function getQuote(req, res) {
+  const quote = quotePledge(req.params.eventId, req.query.qty);
+  if (!quote) {
+    res.status(404).json({
+      status: 'not_found',
+      route: req.originalUrl,
+      message: 'Event not found.',
+    });
+    return;
+  }
+  res.json(quote);
+}
 
 export function postPledge(req, res) {
   const auth = requireMockRole(req, res);

@@ -1,6 +1,6 @@
 export type Route =
   | { name: 'landing' }
-  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number }
+  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number; total?: number }
   | { name: 'checkout'; id: string }
   | { name: 'confirmation'; id: string; qty: number }
   | { name: 'login' }
