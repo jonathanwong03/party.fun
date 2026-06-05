@@ -50,8 +50,8 @@ export function Navbar({
 
         <nav className="hidden items-center gap-1 md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
-          {(role === 'user' || role === 'admin') && navItem('My Events', { name: 'profile' }, route.name === 'profile')}
-          {role === 'admin' && navItem('Admin Dashboard', { name: 'admin' }, route.name === 'admin')}
+          {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'profile' }, route.name === 'profile')}
+          {role === 'admin' && navItem('Hosted Events', { name: 'admin' }, route.name === 'admin')}
         </nav>
 
         <div className="flex items-center gap-3">

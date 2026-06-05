@@ -3,35 +3,35 @@ import { Calendar, MapPin, Ticket as TicketIcon, ArrowRight } from 'lucide-react
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { MOCK_EVENTS, getActiveTier, type Route, type EventItem } from '../components/types';
+import { getActiveTier, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import type { ProfileTicket } from '../api';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
 type Row = { event: EventItem; qty: number; amount: number; tab: Tab; ticketStatus: string };
 
-const MY_TICKETS: Row[] = [
-  { event: MOCK_EVENTS[0], qty: 1, amount: 18, tab: 'upcoming', ticketStatus: 'Pledged' },
-  { event: MOCK_EVENTS[1], qty: 2, amount: 20, tab: 'upcoming', ticketStatus: 'Pledged' },
-  { event: MOCK_EVENTS[2], qty: 1, amount: 28, tab: 'past', ticketStatus: 'Attended' },
-  { event: MOCK_EVENTS[5], qty: 1, amount: 8, tab: 'cancelled', ticketStatus: 'Refunded' },
-];
-
-export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }: { go: (r: Route) => void; added?: { eventId: string; qty: number; amount: number }[]; events?: EventItem[]; cancelled?: { eventId: string; qty: number; amount: number }[] }) {
+export function Profile({
+  go,
+  events,
+  tickets,
+}: {
+  go: (r: Route) => void;
+  events: EventItem[];
+  tickets: ProfileTicket[];
+}) {
   const [tab, setTab] = useState<Tab>('upcoming');
   // Resolve each row's event from the live `events` state so pledged events reflect updated backers/tiers.
-  const resolve = (id: string, fallback?: EventItem) => events.find((e) => e.id === id) ?? fallback;
-  const toRow = (t: { eventId: string; qty: number; amount: number }, rowTab: Tab, ticketStatus: string) => {
+  const resolve = (id: string) => events.find((e) => e.id === id);
+  const toRow = (t: ProfileTicket) => {
     const ev = resolve(t.eventId);
-    return ev ? { event: ev, qty: t.qty, amount: t.amount, tab: rowTab, ticketStatus } : null;
+    return ev ? { event: ev, qty: t.qty, amount: t.amount, tab: t.tab, ticketStatus: t.ticketStatus } : null;
   };
-  const addedRows = added.map((a) => toRow(a, 'upcoming', 'Pledged')).filter(Boolean) as Row[];
-  const cancelledRows = cancelled.map((c) => toRow(c, 'cancelled', 'Refunded')).filter(Boolean) as Row[];
-  const takenIds = new Set([...added.map((a) => a.eventId), ...cancelled.map((c) => c.eventId)]);
-  const baseRows = MY_TICKETS
-    .map((t) => ({ ...t, event: resolve(t.event.id, t.event)! }))
-    .filter((t) => !takenIds.has(t.event.id));
-  const merged: Row[] = [...cancelledRows, ...addedRows, ...baseRows];
+  // "My Events" lists events you pledged/bought — never your own created events (mine).
+  const merged = (tickets.map(toRow).filter(Boolean) as Row[]).filter((r) => !r.event.mine);
   const items = merged.filter((t) => t.tab === tab);
+  const pledgedCount = merged.filter((t) => t.tab === 'upcoming').length;
+  const confirmedCount = merged.filter((t) => t.tab === 'past').length;
+  const refundedCount = merged.filter((t) => t.tab === 'cancelled').length;
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -47,14 +47,14 @@ export function Profile({ go, added = [], events = MOCK_EVENTS, cancelled = [] }
           <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>@jamiet · jamie@u.nus.edu</div>
         </div>
         <div className="flex gap-6">
-          <Stat label="Pledged" value="2" />
-          <Stat label="Confirmed" value="0" />
-          <Stat label="Refunded" value="1" />
+          <Stat label="Pledged" value={String(pledgedCount)} />
+          <Stat label="Confirmed" value={String(confirmedCount)} />
+          <Stat label="Refunded" value={String(refundedCount)} />
         </div>
       </div>
 
       <div className="mb-6 flex items-baseline justify-between">
-        <h2>My Events</h2>
+        <h2>Joined Events</h2>
         <Button onClick={() => go({ name: 'landing' })} variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
           Browse more
         </Button>

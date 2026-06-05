@@ -48,7 +48,7 @@ export function Sidebar({
       <div
         onClick={onClose}
         aria-hidden
-        className="fixed inset-0 z-40 transition-opacity"
+        className="fixed inset-0 z-40 cursor-pointer transition-opacity"
         style={{
           background: 'rgba(0,0,0,0.55)',
           opacity: open ? 1 : 0,

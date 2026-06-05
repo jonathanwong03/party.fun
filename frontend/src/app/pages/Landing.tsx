@@ -3,16 +3,31 @@ import { Search, Sparkles } from 'lucide-react';
 import { EventCard } from '../components/EventCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { MOCK_EVENTS, eventBadgeKey, type Route } from '../components/types';
+import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 
-export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route) => void; myEventIds?: Set<string> }) {
+
+export function Landing({
+  go,
+  myEventIds = new Set<string>(),
+  events,
+  loading = false,
+  error = null,
+}: {
+  go: (r: Route) => void;
+  myEventIds?: Set<string>;
+  events: EventItem[];
+  loading?: boolean;
+  error?: string | null;
+}) {
+  // Filter and search query states
   const [q, setQ] = useState('');
   const [loc, setLoc] = useState('all');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
-  // Hide events the user has already pledged for — they live in "My Events", not here.
-  const available = useMemo(() => MOCK_EVENTS.filter((e) => !myEventIds.has(e.id)), [myEventIds]);
+  // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
+  //    and events the admin created themselves (those belong only in the Admin Dashboard).
+  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id) && !e.mine), [events, myEventIds]);
   const featured = available[0];
   const rest = available.slice(1);
 
@@ -27,6 +42,22 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
       return true;
     });
   }, [q, loc, hype, price, rest]);
+
+  if (loading) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Loading campus campaigns...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: '#ff9a82' }}>
+        Unable to load events from the backend.
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-10">
@@ -101,9 +132,9 @@ export function Landing({ go, myEventIds = new Set<string>() }: { go: (r: Route)
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All hype</SelectItem>
-            <SelectItem value="tier0">Early believers</SelectItem>
-            <SelectItem value="tier1">Growing Hype</SelectItem>
-            <SelectItem value="tier2">Almost There</SelectItem>
+            <SelectItem value="tier0">Early Birds</SelectItem>
+            <SelectItem value="tier1">Hype Builders</SelectItem>
+            <SelectItem value="tier2">Main Crowd</SelectItem>
             <SelectItem value="greenlit">Confirmed</SelectItem>
           </SelectContent>
         </Select>

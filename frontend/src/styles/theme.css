@@ -185,6 +185,11 @@
     line-height: 1.5;
   }
 
+  /* Show the hand cursor on anything clickable (Tailwind preflight strips it). */
+  button:not(:disabled), [role="button"], a, summary, select {
+    cursor: pointer;
+  }
+
   input {
     font-size: var(--text-base);
     font-weight: var(--font-weight-normal);

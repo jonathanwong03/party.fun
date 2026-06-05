@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BrowserRouter,
   Navigate,
@@ -11,7 +11,8 @@ import {
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
-import { MOCK_EVENTS, PLEDGED_EVENT_IDS, applyPledge, reversePledge, type EventItem, type Role, type Route } from './components/types';
+import { type EventItem, type Role, type Route } from './components/types';
+import { cancelTicket, createPledge, fetchEvents, fetchProfile, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -134,9 +135,10 @@ function AppShell() {
   const location = useLocation();
   const [role, setRole] = useState<Role | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [addedTickets, setAddedTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
-
-  const [events, setEvents] = useState<EventItem[]>(MOCK_EVENTS);
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
+  const [loadingData, setLoadingData] = useState(false);
+  const [dataError, setDataError] = useState<string | null>(null);
   const addEvent = (e: EventItem) => setEvents((prev) => [e, ...prev]);
   const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
   const updateEvent = (updated: EventItem) =>
@@ -148,25 +150,64 @@ function AppShell() {
     setDrafts((prev) => (prev.some((p) => p.id === d.id) ? prev.map((p) => (p.id === d.id ? d : p)) : [d, ...prev]));
   const deleteDraft = (id: string) => setDrafts((prev) => prev.filter((d) => d.id !== id));
 
-  const [cancelledTickets, setCancelledTickets] = useState<{ eventId: string; qty: number; amount: number }[]>([]);
-
-  const pledge = (eventId: string, qty: number, amount: number) => {
-    setAddedTickets((prev) => (prev.some((p) => p.eventId === eventId) ? prev : [{ eventId, qty, amount }, ...prev]));
-    setCancelledTickets((prev) => prev.filter((p) => p.eventId !== eventId));
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? applyPledge(e, qty) : e)));
+  const replaceEvent = (updated: EventItem) => {
+    setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
   };
 
-  const cancelEvent = (eventId: string, qty: number, amount: number) => {
-    setEvents((prev) => prev.map((e) => (e.id === eventId ? reversePledge(e, qty) : e)));
-    setAddedTickets((prev) => prev.filter((p) => p.eventId !== eventId));
-    setCancelledTickets((prev) => [{ eventId, qty, amount }, ...prev.filter((p) => p.eventId !== eventId)]);
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadBackendState() {
+      if (!role) {
+        setEvents([]);
+        setProfileTickets([]);
+        setDataError(null);
+        setLoadingData(false);
+        return;
+      }
+
+      setLoadingData(true);
+      setDataError(null);
+      try {
+        const [loadedEvents, profile] = await Promise.all([fetchEvents(role), fetchProfile(role)]);
+        if (ignore) return;
+        setEvents(loadedEvents);
+        setProfileTickets(profile.tickets);
+      } catch (error) {
+        if (ignore) return;
+        setDataError(error instanceof Error ? error.message : 'Unable to load app data.');
+      } finally {
+        if (!ignore) setLoadingData(false);
+      }
+    }
+
+    loadBackendState();
+    return () => {
+      ignore = true;
+    };
+  }, [role]);
+
+  const pledge = async (eventId: string, qty: number, amount: number) => {
+    if (!role) return;
+    const result = await createPledge(role, eventId, qty, amount);
+    replaceEvent(result.event);
+    setProfileTickets(result.profile.tickets);
+  };
+
+  const cancelEvent = async (eventId: string, qty: number, amount: number) => {
+    if (!role) return;
+    const result = await cancelTicket(role, eventId, qty, amount);
+    replaceEvent(result.event);
+    setProfileTickets(result.profile.tickets);
   };
 
   const myEventIds = useMemo(() => {
-    const ids = new Set<string>([...PLEDGED_EVENT_IDS, ...addedTickets.map((t) => t.eventId)]);
-    cancelledTickets.forEach((c) => ids.delete(c.eventId));
+    const ids = new Set<string>();
+    profileTickets.forEach((ticket) => {
+      if (ticket.tab !== 'cancelled') ids.add(ticket.eventId);
+    });
     return ids;
-  }, [addedTickets, cancelledTickets]);
+  }, [profileTickets]);
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
@@ -187,6 +228,8 @@ function AppShell() {
 
   const handleLogout = () => {
     setRole(null);
+    setEvents([]);
+    setProfileTickets([]);
     navigate('/login', { replace: true });
   };
 
@@ -221,11 +264,11 @@ function AppShell() {
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} onLogin={handleLogin} />} />
-        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} />} />
+        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
-        <BrowserRoute path="/profile" element={<Profile go={go} added={addedTickets} events={events} cancelled={cancelledTickets} />} />
+        <BrowserRoute path="/profile" element={<Profile go={go} events={events} tickets={profileTickets} />} />
         <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
@@ -249,7 +292,7 @@ function EventDetailRoute({
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onCancelAttendance: (id: string, qty: number, amount: number) => void;
+  onCancelAttendance: (id: string, qty: number, amount: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
   const location = useLocation();
@@ -282,7 +325,7 @@ function CheckoutRoute({
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onPledge: (eventId: string, qty: number, amount: number) => void;
+  onPledge: (eventId: string, qty: number, amount: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
 

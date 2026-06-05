@@ -2,18 +2,33 @@ import { useState } from 'react';
 import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, type EventItem, type Route } from '../components/types';
+import { getActiveTier, TIER_COLORS, TIER_LABELS, type EventItem, type Route } from '../components/types';
+
+// Lifecycle status shown in the dashboard's Status column, derived from the event's
+// status flag and whether it has reached its hype threshold.
+function dashboardStatus(e: EventItem): 'GREENLIT' | 'PENDING' | 'CANCELLED' {
+  if (e.status === 'cancelled') return 'CANCELLED';
+  if (e.status === 'greenlit' || e.backers >= e.threshold) return 'GREENLIT';
+  return 'PENDING';
+}
+
+const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
+  GREENLIT: 'var(--foreground)',
+  PENDING: 'var(--foreground)',
+  CANCELLED: '#ff6b85',
+};
 
 export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [tab, setTab] = useState<'created' | 'drafts'>('created');
 
   const isDrafts = tab === 'drafts';
-  const rows = isDrafts ? drafts : events;
+  // The dashboard is for events the admin created themselves (mine), not the full catalogue.
+  const created = events.filter((e) => e.mine);
+  const rows = isDrafts ? drafts : created;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
-  const totalPledged = events.reduce((s, e) => s + e.backers * e.price, 0);
+  const totalPledged = created.reduce((s, e) => s + e.backers * e.price, 0);
 
   return (
     <div>
@@ -23,7 +38,7 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
           <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
             <div>
               
-              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Your events</h1>
+              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Manage your events</h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
                 Track hype, pledges and greenlit events in one place.
               </p>
@@ -41,9 +56,9 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
 
           {/* Summary cards */}
           <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={events.length.toString()} hint="All-time" />
-            <SummaryCard icon={Zap} accent="#ffcb3c" label="Live events" value={events.filter((e) => e.status === 'live' || e.status === 'almost').length.toString()} hint="Gathering hype" />
-            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Greenlit" value={events.filter((e) => e.status === 'greenlit').length.toString()} hint="Confirmed" />
+            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time events" />
+            <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={created.filter((e) => dashboardStatus(e) !== 'CANCELLED').length.toString()} hint="Ongoing events" />
+            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Greenlit" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Confirmed events" />
             <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${(totalPledged / 1000).toFixed(1)}k`} hint="Across all events" />
           </div>
 
@@ -74,12 +89,13 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
             <div>
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '24%' }} />
-                  <col style={{ width: '12%' }} />
-                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '21%' }} />
+                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '9%' }} />
                   <col style={{ width: '12%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '12%' }} />
                   <col style={{ width: '10%' }} />
                 </colgroup>
                 <thead>
@@ -89,6 +105,7 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
                     <th className="px-3 py-3 text-left">Hype</th>
                     <th className="px-3 py-3 text-right">Revenue</th>
                     <th className="px-3 py-3 text-right">Threshold</th>
+                    <th className="px-3 py-3 text-left">Tier</th>
                     <th className="px-3 py-3 text-left">Status</th>
                     <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
@@ -111,7 +128,32 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
                         {e.backers}/{e.threshold}
                       </td>
-                      <td className="px-3 py-4">{isDrafts ? <StatusBadge event={e} label="Draft" /> : <StatusBadge event={e} />}</td>
+                      <td className="px-3 py-4">
+                        {(() => {
+                          const ti = getActiveTier(e);
+                          return (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
+                              style={{ background: `${TIER_COLORS[ti]}1f`, color: TIER_COLORS[ti], fontWeight: 600 }}
+                            >
+                              <span className="size-1.5 rounded-full" style={{ background: TIER_COLORS[ti] }} />
+                              {TIER_LABELS[ti]}
+                            </span>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-3 py-4">
+                        {isDrafts ? (
+                          <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>Draft</span>
+                        ) : (
+                          (() => {
+                            const s = dashboardStatus(e);
+                            return (
+                              <span className="text-xs uppercase tracking-wide" style={{ color: STATUS_COLORS[s], fontWeight: 600 }}>{s}</span>
+                            );
+                          })()
+                        )}
+                      </td>
                       <td className="px-3 py-3">
                         <div className="flex items-center justify-end gap-1">
                           {isDrafts ? (

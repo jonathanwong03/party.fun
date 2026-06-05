@@ -74,7 +74,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       description,
       image: '',
       price: t1p,
-      tierLabel: 'Tier 1 — Super Early',
+      tierLabel: 'Tier 1 · Early Birds',
       hypePct: 0,
       threshold,
       backers: 0,
@@ -83,10 +83,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       status: 'live',
       deadline,
       tiers: [
-        { label: 'Super Early', price: t1p, qty: t1q, sold: 0 },
-        { label: 'Early', price: t2p, qty: t2q, sold: 0 },
-        { label: 'Standard', price: t3p, qty: t3q, sold: 0 },
-        { label: 'Greenlit Door', price: tFp, qty: t3q, sold: 0 },
+        { label: 'Early Birds', price: t1p, qty: t1q, sold: 0 },
+        { label: 'Hype Builders', price: t2p, qty: t2q, sold: 0 },
+        { label: 'Main Crowd', price: t3p, qty: t3q, sold: 0 },
+        { label: 'Final Wave', price: tFp, qty: t3q, sold: 0 },
       ],
     };
     onPublish?.(newEvent);
@@ -107,7 +107,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       description,
       image: '',
       price: t1p,
-      tierLabel: 'Tier 1 — Super Early',
+      tierLabel: 'Tier 1 · Early Birds',
       hypePct: 0,
       threshold,
       backers: 0,
@@ -116,10 +116,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       status: 'live',
       deadline,
       tiers: [
-        { label: 'Super Early', price: t1p, qty: t1q, sold: 0 },
-        { label: 'Early', price: t2p, qty: t2q, sold: 0 },
-        { label: 'Standard', price: t3p, qty: t3q, sold: 0 },
-        { label: 'Greenlit Door', price: tFp, qty: t3q, sold: 0 },
+        { label: 'Early Birds', price: t1p, qty: t1q, sold: 0 },
+        { label: 'Hype Builders', price: t2p, qty: t2q, sold: 0 },
+        { label: 'Main Crowd', price: t3p, qty: t3q, sold: 0 },
+        { label: 'Final Wave', price: tFp, qty: t3q, sold: 0 },
       ],
     };
     onSaveDraft?.(draft);
@@ -243,11 +243,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     Pricing is locked — this event is greenlit.
                   </div>
                 )}
-                <TierRow label="Tier 1 — Super Early" price={t1p} qty={t1q} onPrice={setT1p} onQty={setT1q} disabled={locked} />
-                <TierRow label="Tier 2 — Early" price={t2p} qty={t2q} onPrice={setT2p} onQty={setT2q} disabled={locked} />
-                <TierRow label="Tier 3 — Standard" price={t3p} qty={t3q} onPrice={setT3p} onQty={setT3q} disabled={locked} />
+                <TierRow label="Tier 1 — Early Birds" price={t1p} qty={t1q} onPrice={setT1p} onQty={setT1q} disabled={locked} />
+                <TierRow label="Tier 2 — Hype Builders" price={t2p} qty={t2q} onPrice={setT2p} onQty={setT2q} disabled={locked} />
+                <TierRow label="Tier 3 — Main Crowd" price={t3p} qty={t3q} onPrice={setT3p} onQty={setT3q} disabled={locked} />
                 <div className="mt-3 grid grid-cols-2 gap-3">
-                  <Field label="Greenlit / door price"><NumberStepper value={tFp} onChange={setTFp} min={1} disabled={locked} /></Field>
+                  <Field label="Tier 4 — Final Wave price"><NumberStepper value={tFp} onChange={setTFp} min={1} disabled={locked} /></Field>
                   <Field label="Deadline to reach threshold" error={errOf('deadline')}><Input value={deadline} onChange={(e) => setDeadline(e.target.value)} placeholder="10/06/2025, 11:59 PM" style={errStyle(errOf('deadline'))} /></Field>
                 </div>
               </Section>
