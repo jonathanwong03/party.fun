@@ -44,3 +44,4 @@ export function postReset(_req, res) {
   resetUsers();
   res.json({ status: 'ok' });
 }
+
