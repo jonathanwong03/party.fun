@@ -33,7 +33,15 @@ app.use('/api', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`API server running at http://localhost:${PORT}`);
 });
-//? change needed?
+
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`Port ${PORT} is already in use. Stop the other process or set API_PORT to a free port.`);
+  } else {
+    console.error(err);
+  }
+  process.exit(1);
+});

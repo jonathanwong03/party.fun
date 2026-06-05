@@ -1,136 +1,47 @@
-import { createPlaceholderHandler } from "../utils/apiPlaceholder.js";
+import { createPlaceholderHandler } from '../utils/apiPlaceholder.js';
+import { authenticate, registerUser, resetUsers } from '../services/userMemoryService.js';
 
 const authNote = {
-  note: "Frontend-only mock auth for now. Real auth will be added later.",
+  note: 'Basic mock auth backed by the in-memory user list. No sessions yet.',
 };
 
-export const getLogin = createPlaceholderHandler("login", authNote);
-export const postLogin = createPlaceholderHandler("login", authNote);
-export const getRegister = createPlaceholderHandler("register", authNote);
-export const postRegister = createPlaceholderHandler("register", authNote);
-export const getLogout = createPlaceholderHandler("logout", authNote);
-export const postLogout = createPlaceholderHandler("logout", authNote);
+export const getLogin = createPlaceholderHandler('login', authNote);
+export const getRegister = createPlaceholderHandler('register', authNote);
+export const getLogout = createPlaceholderHandler('logout', authNote);
+export const postLogout = createPlaceholderHandler('logout', authNote);
 
-//evonne
-import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
-import supabase from "../config/supabase.js";
-//this is the const user part
+export function postLogin(req, res) {
+  const { identifier, email, username, password } = req.body ?? {};
+  const result = authenticate(identifier || email || username, password);
 
-const signToken = (user) => {
-  return jwt.sign(
-    { userId: user._id, username: user.username, isAdmin: user.isAdmin },
-    process.env.JWT_SECRET,
-    { expiresIn: "7d" },
-  );
-}; //this is the req res part
-
-export const postRegister = async (req, res) => {
-  try {
-    const { username, email, password, confirmPassword } = req.body;
-
-    const missingFields = [];
-    if (!username?.trim()) missingFields.push("username");
-    if (!email?.trim()) missingFields.push("email");
-    if (!password?.trim()) missingFields.push("password");
-    if (!confirmPassword?.trim()) missingFields.push("confirm password");
-
-    if (missingFields.length > 0) {
-      return res
-        .status(400)
-        .json({ error: `Please fill in: ${missingFields.join(" and ")}` });
-    }
-
-    if (password !== confirmPassword) {
-      return res.status(400).json({ error: "Passwords do not match" });
-    }
-
-    const { data: existing } = await supabase
-      .from("users")
-      .select("id")
-      .or(`username.eq.${username.trim()},email.eq.${email.trim()}`)
-      .maybeSingle();
-
-    if (existing) {
-      return res
-        .status(400)
-        .json({ error: "Username or email already exists" });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const { data: user, error } = await supabase
-      .from("users")
-      .insert({
-        username: username.trim(),
-        email: email.trim(),
-        password: hashedPassword,
-      })
-      .select()
-      .single();
-
-    if (error) throw error; //this is the post part, same logic as what i wrote but supabase take from
-
-    // returns me a token instead of the redirect
-    const token = signToken(user);
-    const role = user.isAdmin ? "admin" : "user";
-
-    res.status(201).json({ token, role, username: user.username });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+  if (result.status === 'not_found') {
+    res.status(404).json({ status: 'not_found', message: 'User not found.' });
+    return;
   }
-};
-
-export const postLogin = async (req, res) => {
-  try {
-    const { email, password } = req.body;
-
-    const missingFields = [];
-    if (!email?.trim()) missingFields.push("email");
-    if (!password?.trim()) missingFields.push("password");
-
-    if (missingFields.length > 0) {
-      return res
-        .status(400)
-        .json({ error: `Please fill in: ${missingFields.join(" and ")}` });
-    }
-
-    const { data: user } = await supabase
-      .from("users")
-      .select("*")
-      .eq("email", email.trim())
-      .maybeSingle();
-
-    if (!user) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-
-    const match = await bcrypt.compare(password, user.password);
-
-    if (!match) {
-      return res.status(400).json({ error: "Invalid credentials" });
-    }
-
-    const token = signToken(user);
-    const role = user.isAdmin ? "admin" : "user";
-
-    res.json({ token, role, username: user.username });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: "Server error" });
+  if (result.status === 'bad_password') {
+    res.status(401).json({ status: 'bad_password', message: 'Incorrect password.' });
+    return;
   }
-};
+  res.json({ status: 'ok', user: result.user });
+}
 
-//the token is deleted on the front end??
-export const postLogout = (_req, res) => {
-  res.json({ message: "Logged out" });
-};
+export function postRegister(req, res) {
+  const { username, email, password, role } = req.body ?? {};
+  if (!username || !email || !password) {
+    res.status(400).json({ status: 'invalid', message: 'Username, email and password are required.' });
+    return;
+  }
 
-//
-export const getLogin = (_req, res) =>
-  res.json({ message: "Use POST /api/auth/login" });
-export const getRegister = (_req, res) =>
-  res.json({ message: "Use POST /api/auth/register" });
-export const getLogout = (_req, res) =>
-  res.json({ message: "Use POST /api/auth/logout" });
+  const result = registerUser({ username, email, password, role });
+  if (result.status === 'exists') {
+    res.status(409).json({ status: 'exists', message: 'An account with that email already exists.' });
+    return;
+  }
+  res.status(201).json({ status: 'ok', user: result.user });
+}
+
+export function postReset(_req, res) {
+  resetUsers();
+  res.json({ status: 'ok' });
+}
+

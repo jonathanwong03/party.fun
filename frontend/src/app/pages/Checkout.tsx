@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronLeft, Minus, Plus, Shield, CreditCard } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -7,11 +7,13 @@ import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { fetchQuote, type Quote } from '../api';
 import { required, emailError, cardError, expiryError, cvcError } from '../components/validation';
 
 export function Checkout({ id, role, go, events, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
   const event = events.find((e) => e.id === id);
   const [qty, setQty] = useState(1);
+  const [quote, setQuote] = useState<Quote | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -25,6 +27,15 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
   });
   const [attempted, setAttempted] = useState(false);
 
+  // The backend computes subtotal/fee/total; the frontend only displays them.
+  useEffect(() => {
+    let ignore = false;
+    fetchQuote(role, id, qty)
+      .then((q) => { if (!ignore) setQuote(q); })
+      .catch(() => { if (!ignore) setQuote(null); });
+    return () => { ignore = true; };
+  }, [role, id, qty]);
+
   if (!event) {
     return (
       <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -32,9 +43,7 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
       </div>
     );
   }
-  const fee = 1.2;
-  const subtotal = event.price * qty;
-  const total = subtotal + fee;
+  const money = (n: number) => `$${n.toFixed(2)}`;
 
   // Phone / Telegram is the only optional field; everything else is required.
   const errs = {
@@ -142,12 +151,12 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
               <div className="h-px" style={{ background: 'var(--border)' }} />
 
               <div className="space-y-1.5 text-sm">
-                <Row label={`Ticket × ${qty}`} value={`$${subtotal.toFixed(2)}`} />
-                <Row label="Platform fee" value={`$${fee.toFixed(2)}`} />
+                <Row label={`Ticket × ${qty}`} value={quote ? money(quote.subtotal) : '—'} />
+                <Row label="Platform fee" value={quote ? money(quote.fee) : '—'} />
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total</span>
-                <span style={{ fontSize: 22, fontWeight: 800 }}>${total.toFixed(2)}</span>
+                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? money(quote.total) : '—'}</span>
               </div>
 
               <Button

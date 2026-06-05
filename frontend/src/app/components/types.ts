@@ -1,6 +1,6 @@
 export type Route =
   | { name: 'landing' }
-  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number }
+  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number; total?: number }
   | { name: 'checkout'; id: string }
   | { name: 'confirmation'; id: string; qty: number }
   | { name: 'login' }
@@ -8,6 +8,8 @@ export type Route =
   | { name: 'register-user' }
   | { name: 'register-admin' }
   | { name: 'profile' }
+  | { name: 'joined-events' }
+  | { name: 'settings' }
   | { name: 'admin' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };

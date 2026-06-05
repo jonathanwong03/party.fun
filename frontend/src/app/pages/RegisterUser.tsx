@@ -4,15 +4,18 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import type { Role, Route } from '../components/types';
+import { registerRequest } from '../api';
+import type { Route } from '../components/types';
 
-export function RegisterUser({ go, onLogin }: { go: (r: Route) => void; onLogin: (r: Role) => void }) {
+export function RegisterUser({ go }: { go: (r: Route) => void }) {
   const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [phone, setPhone] = useState('');
   const [attempted, setAttempted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const errs = {
     username: required(username),
@@ -37,23 +40,35 @@ export function RegisterUser({ go, onLogin }: { go: (r: Route) => void; onLogin:
     >
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        autoComplete="off"
+        onSubmit={async (e) => {
           e.preventDefault();
           setAttempted(true);
+          setSubmitError(null);
           if (hasErr) return;
-          onLogin('user');
+          setSubmitting(true);
+          try {
+            await registerRequest({ username, email, password, role: 'user' });
+            go({ name: 'login' });
+          } catch (err) {
+            setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
+          } finally {
+            setSubmitting(false);
+          }
         }}
       >
-        <Field label="Username" placeholder="jamiet" value={username} onChange={(e) => setUsername(e.target.value)} error={attempted ? errs.username : null} />
-        <Field label="Email" type="email" placeholder="you@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
+        <Field label="Username" autoComplete="off" placeholder="jamiet" value={username} onChange={(e) => setUsername(e.target.value)} error={attempted ? errs.username : null} />
+        <Field label="Email" type="email" autoComplete="off" placeholder="you@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Password" type="password" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
-          <Field label="Confirm" type="password" placeholder="********" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
+          <Field label="Password" type="password" autoComplete="new-password" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
+          <Field label="Confirm" type="password" autoComplete="new-password" placeholder="********" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Phone / Telegram (optional)" placeholder="@jamiet" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <Field label="Phone / Telegram (optional)" autoComplete="off" placeholder="@jamiet" value={phone} onChange={(e) => setPhone(e.target.value)} />
 
-        <Button type="submit" className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
-          Create account
+        {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
+
+        <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
+          {submitting ? 'Creating…' : 'Create account'}
         </Button>
       </form>
     </AuthShell>

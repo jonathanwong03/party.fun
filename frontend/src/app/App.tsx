@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { cancelTicket, createPledge, fetchEvents, fetchProfile, type ProfileTicket } from './api';
+import { cancelTicket, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -22,6 +22,8 @@ import { ChooseAccount } from './pages/ChooseAccount';
 import { RegisterUser } from './pages/RegisterUser';
 import { RegisterAdmin } from './pages/RegisterAdmin';
 import { Profile } from './pages/Profile';
+import { JoinedEvents } from './pages/JoinedEvents';
+import { Settings } from './pages/Settings';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CreateEvent } from './pages/CreateEvent';
 
@@ -31,6 +33,7 @@ type RouteState = {
   fromPast?: boolean;
   qty?: number;
   amount?: number;
+  total?: number;
 };
 
 function pathForRoute(route: Route) {
@@ -53,6 +56,10 @@ function pathForRoute(route: Route) {
       return '/signup/admin';
     case 'profile':
       return '/profile';
+    case 'joined-events':
+      return '/joined-events';
+    case 'settings':
+      return '/settings';
     case 'admin':
       return '/dashboard';
     case 'create-event':
@@ -70,6 +77,7 @@ function stateForRoute(route: Route): RouteState | undefined {
       fromPast: route.fromPast,
       qty: route.qty,
       amount: route.amount,
+      total: route.total,
     };
   }
 
@@ -91,6 +99,8 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/signup/admin') return { name: 'register-admin' };
   if (pathname === '/events') return { name: 'landing' };
   if (pathname === '/profile') return { name: 'profile' };
+  if (pathname === '/joined-events') return { name: 'joined-events' };
+  if (pathname === '/settings') return { name: 'settings' };
   if (pathname === '/dashboard') return { name: 'admin' };
   if (pathname === '/dashboard/events/new') return { name: 'create-event' };
 
@@ -116,6 +126,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
       fromPast: state?.fromPast,
       qty: state?.qty,
       amount: state?.amount,
+      total: state?.total,
     };
   }
 
@@ -134,7 +145,16 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [role, setRole] = useState<Role | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+  }, [theme]);
+
+  const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
+  const updateUsername = (name: string) => setUser((u) => (u ? { ...u, username: name } : u));
   const [events, setEvents] = useState<EventItem[]>([]);
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
   const [loadingData, setLoadingData] = useState(false);
@@ -153,6 +173,12 @@ function AppShell() {
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
   };
+
+  // On every full page load, drop any registered accounts back to the two seed
+  // users (there are no sessions, so created accounts shouldn't survive a refresh).
+  useEffect(() => {
+    resetUsers();
+  }, []);
 
   useEffect(() => {
     let ignore = false;
@@ -220,14 +246,16 @@ function AppShell() {
     });
   };
 
-  const handleLogin = (nextRole: Role) => {
+  const handleLogin = (account: AuthUser) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    setRole(nextRole);
-    navigate(nextRole === 'admin' ? '/dashboard' : '/events', { replace: true });
+    setRole(account.role);
+    setUser(account);
+    navigate(account.role === 'admin' ? '/dashboard' : '/events', { replace: true });
   };
 
   const handleLogout = () => {
     setRole(null);
+    setUser(null);
     setEvents([]);
     setProfileTickets([]);
     navigate('/login', { replace: true });
@@ -238,13 +266,13 @@ function AppShell() {
   }
 
   return (
-    <div className="dark min-h-screen pb-16 md:pb-0" style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
+    <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
       {!isAuthPage && role && (
         <Navbar
           role={role}
+          user={user}
           route={activeRoute}
           go={go}
-          onLogout={handleLogout}
           onMenuClick={() => setSidebarOpen(true)}
         />
       )}
@@ -262,13 +290,15 @@ function AppShell() {
         <BrowserRoute path="/" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
-        <BrowserRoute path="/signup/user" element={<RegisterUser go={go} onLogin={handleLogin} />} />
-        <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
+        <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
-        <BrowserRoute path="/profile" element={<Profile go={go} events={events} tickets={profileTickets} />} />
+        <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
+        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
+        <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
@@ -308,6 +338,7 @@ function EventDetailRoute({
       events={events}
       qty={state.qty}
       amount={state.amount}
+      total={state.total}
       onCancelAttendance={onCancelAttendance}
       fromProfile={state.fromProfile}
       fromAdmin={state.fromAdmin}

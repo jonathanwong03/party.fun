@@ -1,4 +1,14 @@
 /* party.fun custom brand tokens layered on top of shadcn theme */
+
+/* Light-mode surface tokens (applied when the root has no `.dark` class).
+   Other light values come from theme.css :root. */
+:root {
+  --background: #f6f6f9;
+  --surface: #ffffff;
+  --surface-2: #eef0f4;
+  --border-strong: rgba(0, 0, 0, 0.16);
+}
+
 .dark {
   --surface: #14141b;
   --surface-2: #1c1c26;

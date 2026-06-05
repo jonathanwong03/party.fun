@@ -20,11 +20,11 @@ export function Sidebar({
 
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
-    { label: 'My Events', icon: Bookmark, target: { name: 'profile' }, active: route.name === 'profile' },
+    { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
   ];
 
   const adminOnly: Item[] = [
-    { label: 'Dashboard', icon: LayoutDashboard, target: { name: 'admin' }, active: route.name === 'admin' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'admin' }, active: route.name === 'admin' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
     { label: 'Analytics', icon: BarChart3, target: { name: 'admin' }, active: false },
     { label: 'Attendees', icon: Users, target: { name: 'admin' }, active: false },
@@ -33,7 +33,7 @@ export function Sidebar({
 
   const tail: Item[] = [
     { label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' },
-    { label: 'Settings', icon: Settings, target: { name: 'profile' }, active: false },
+    { label: 'Settings', icon: Settings, target: { name: 'settings' }, active: route.name === 'settings' },
   ];
 
   const items = [...baseItems, ...(isAdmin ? adminOnly : []), ...tail];
