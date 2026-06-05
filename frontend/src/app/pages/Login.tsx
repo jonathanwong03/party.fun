@@ -3,10 +3,10 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
-import { loginRequest } from '../api';
-import type { Role, Route } from '../components/types';
+import { loginRequest, type AuthUser } from '../api';
+import type { Route } from '../components/types';
 
-export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role: Role) => void }) {
+export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user: AuthUser) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -18,7 +18,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role:
     setSubmitting(true);
     try {
       const user = await loginRequest(email, password);
-      onLogin(user.role);
+      onLogin(user);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to log in.');
     } finally {

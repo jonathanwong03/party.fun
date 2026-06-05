@@ -20,11 +20,11 @@ export function Sidebar({
 
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
-    { label: 'My Events', icon: Bookmark, target: { name: 'profile' }, active: route.name === 'profile' },
+    { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
   ];
 
   const adminOnly: Item[] = [
-    { label: 'Dashboard', icon: LayoutDashboard, target: { name: 'admin' }, active: route.name === 'admin' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'admin' }, active: route.name === 'admin' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
     { label: 'Analytics', icon: BarChart3, target: { name: 'admin' }, active: false },
     { label: 'Attendees', icon: Users, target: { name: 'admin' }, active: false },
@@ -81,7 +81,7 @@ export function Sidebar({
               <button
                 key={it.label}
                 type="button"
-                onClick={() => handleClick(it.target)}
+                onClick={() => (it.label === 'Settings' ? onClose() : handleClick(it.target))}
                 className="flex items-center gap-2.5 whitespace-nowrap rounded-[16px] px-3 py-2.5 text-sm text-[#8a8a99] transition hover:bg-[#ff4d2e1f] hover:text-white"
                 style={{
                   fontWeight: 500,

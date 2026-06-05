@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { cancelTicket, createPledge, fetchEvents, fetchProfile, resetUsers, type ProfileTicket } from './api';
+import { cancelTicket, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -22,6 +22,7 @@ import { ChooseAccount } from './pages/ChooseAccount';
 import { RegisterUser } from './pages/RegisterUser';
 import { RegisterAdmin } from './pages/RegisterAdmin';
 import { Profile } from './pages/Profile';
+import { JoinedEvents } from './pages/JoinedEvents';
 import { AdminDashboard } from './pages/AdminDashboard';
 import { CreateEvent } from './pages/CreateEvent';
 
@@ -54,6 +55,8 @@ function pathForRoute(route: Route) {
       return '/signup/admin';
     case 'profile':
       return '/profile';
+    case 'joined-events':
+      return '/joined-events';
     case 'admin':
       return '/dashboard';
     case 'create-event':
@@ -93,6 +96,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/signup/admin') return { name: 'register-admin' };
   if (pathname === '/events') return { name: 'landing' };
   if (pathname === '/profile') return { name: 'profile' };
+  if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/dashboard') return { name: 'admin' };
   if (pathname === '/dashboard/events/new') return { name: 'create-event' };
 
@@ -137,6 +141,7 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const [role, setRole] = useState<Role | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [events, setEvents] = useState<EventItem[]>([]);
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
@@ -229,14 +234,16 @@ function AppShell() {
     });
   };
 
-  const handleLogin = (nextRole: Role) => {
+  const handleLogin = (account: AuthUser) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    setRole(nextRole);
-    navigate(nextRole === 'admin' ? '/dashboard' : '/events', { replace: true });
+    setRole(account.role);
+    setUser(account);
+    navigate(account.role === 'admin' ? '/dashboard' : '/events', { replace: true });
   };
 
   const handleLogout = () => {
     setRole(null);
+    setUser(null);
     setEvents([]);
     setProfileTickets([]);
     navigate('/login', { replace: true });
@@ -251,9 +258,9 @@ function AppShell() {
       {!isAuthPage && role && (
         <Navbar
           role={role}
+          user={user}
           route={activeRoute}
           go={go}
-          onLogout={handleLogout}
           onMenuClick={() => setSidebarOpen(true)}
         />
       )}
@@ -277,7 +284,8 @@ function AppShell() {
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
-        <BrowserRoute path="/profile" element={<Profile go={go} events={events} tickets={profileTickets} />} />
+        <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
+        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
         <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />

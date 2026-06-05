@@ -8,6 +8,7 @@ export type Route =
   | { name: 'register-user' }
   | { name: 'register-admin' }
   | { name: 'profile' }
+  | { name: 'joined-events' }
   | { name: 'admin' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };

@@ -3,7 +3,7 @@ import type { Route } from './types';
 
 export function AdminSidebar({ route, go }: { route: Route; go: (r: Route) => void }) {
   const items = [
-    { label: 'Dashboard', icon: LayoutDashboard, target: { name: 'admin' } as Route, active: route.name === 'admin' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'admin' } as Route, active: route.name === 'admin' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' } as Route, active: route.name === 'create-event' },
     { label: 'Analytics', icon: BarChart3, target: { name: 'admin' } as Route, active: false },
     { label: 'Attendees', icon: Users, target: { name: 'admin' } as Route, active: false },

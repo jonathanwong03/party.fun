@@ -1,18 +1,19 @@
 import { Logo } from './Logo';
-import { LogOut, Menu, User as UserIcon } from 'lucide-react';
+import { Menu, Settings as SettingsIcon } from 'lucide-react';
 import type { Role, Route } from './types';
+import type { AuthUser } from '../api';
 
 export function Navbar({
   role,
+  user,
   route,
   go,
-  onLogout,
   onMenuClick,
 }: {
   role: Role;
+  user: AuthUser | null;
   route: Route;
   go: (r: Route) => void;
-  onLogout: () => void;
   onMenuClick: () => void;
 }) {
   const navItem = (label: string, target: Route, _active: boolean) => (
@@ -26,7 +27,7 @@ export function Navbar({
     </button>
   );
 
-  const initial = role === 'admin' ? 'A' : role === 'user' ? 'J' : '';
+  const initial = user?.username?.charAt(0).toUpperCase() ?? (role === 'admin' ? 'A' : role === 'user' ? 'J' : '');
 
   return (
     <header
@@ -50,35 +51,30 @@ export function Navbar({
 
         <nav className="hidden items-center gap-1 md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
-          {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'profile' }, route.name === 'profile')}
+          {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
           {role === 'admin' && navItem('Hosted Events', { name: 'admin' }, route.name === 'admin')}
         </nav>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           {(role === 'user' || role === 'admin') && (
             <>
               <button
                 type="button"
-                onClick={() => go({ name: 'profile' })}
-                className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-sm text-[#f5f5f7] transition hover:bg-white/5"
-                style={{ fontWeight: 600 }}
+                aria-label="Settings"
+                onClick={() => { /* Settings coming soon */ }}
+                className="grid size-9 place-items-center rounded-full text-white transition hover:bg-white/5"
               >
-                <UserIcon size={15} color="#f5f5f7" /> Profile
+                <SettingsIcon size={18} color="#f5f5f7" />
               </button>
               <button
                 type="button"
-                onClick={onLogout}
-                className="inline-flex items-center gap-1.5 rounded-full px-2 py-1 text-sm text-white transition hover:bg-white/5"
-                style={{ fontWeight: 600 }}
-              >
-                <LogOut size={15} color="#ffffff" /> Logout
-              </button>
-              <div
-                className="grid size-8 place-items-center rounded-full text-sm text-white"
+                aria-label="Profile"
+                onClick={() => go({ name: 'profile' })}
+                className="grid size-8 place-items-center rounded-full text-sm text-white transition hover:opacity-90"
                 style={{ background: '#ff4d2e', fontWeight: 600 }}
               >
                 {initial}
-              </div>
+              </button>
             </>
           )}
         </div>
