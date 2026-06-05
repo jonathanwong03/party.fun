@@ -45,3 +45,9 @@ export function registerUser({ username, email, password, role }) {
 export function resetUsers() {
   users = clone(initialUsers);
 }
+
+export function getUserById(userId) {
+  const user = users.find((u) => u.id === userId);
+  return user ? clone(user) : null;
+}
+

@@ -109,3 +109,32 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- ============================================================================
+-- 5. Notification Logs Table (tracks all sent notifications)
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS public.notification_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  
+  -- WHO: The recipient
+  user_id UUID REFERENCES public.profiles(id) ON DELETE SET NULL,
+  recipient_email TEXT NOT NULL,
+  
+  -- WHAT: The notification content
+  event_id UUID REFERENCES public.events(id) ON DELETE SET NULL,
+  notification_type TEXT NOT NULL CHECK (
+    notification_type IN ('pledge_confirmed', 'pledge_cancelled', 'event_greenlit')
+  ),
+  subject TEXT NOT NULL,
+  
+  -- DELIVERY STATUS: Success or failure tracking
+  status TEXT NOT NULL CHECK (
+    status IN ('pending', 'sent', 'failed')
+  ) DEFAULT 'pending',
+  error_message TEXT,            -- Stored on failure for debugging
+  
+  -- METADATA
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  sent_at TIMESTAMPTZ           -- NULL until successfully sent
+);
+

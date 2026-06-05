@@ -43,7 +43,8 @@ async function apiFetch<T>(path: string, role: Role | null, options: RequestInit
 
   if (role) {
     headers.set('X-Mock-Role', role);
-    headers.set('X-Mock-User-Id', MOCK_USER_ID);
+    const userId = localStorage.getItem('party_fun_user_id') || MOCK_USER_ID;
+    headers.set('X-Mock-User-Id', userId);
   }
 
   if (options.body && !headers.has('Content-Type')) {
@@ -75,6 +76,9 @@ async function authFetch(path: string, body: unknown): Promise<{ user: AuthUser 
 
 export async function loginRequest(identifier: string, password: string): Promise<AuthUser> {
   const { user } = await authFetch('/api/auth/login', { identifier, password });
+  if (user?.id) {
+    localStorage.setItem('party_fun_user_id', user.id);
+  }
   return user;
 }
 
@@ -85,12 +89,16 @@ export async function registerRequest(input: {
   role: Role;
 }): Promise<AuthUser> {
   const { user } = await authFetch('/api/auth/register', input);
+  if (user?.id) {
+    localStorage.setItem('party_fun_user_id', user.id);
+  }
   return user;
 }
 
 // Wipe any registered accounts back to the two seed users. Called on every full
 // page load so created accounts don't survive a refresh. Fire-and-forget.
 export function resetUsers(): void {
+  localStorage.removeItem('party_fun_user_id');
   fetch('/api/auth/reset', { method: 'POST' }).catch(() => {});
 }
 

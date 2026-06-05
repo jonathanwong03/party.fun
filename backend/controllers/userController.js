@@ -1,5 +1,6 @@
 import { cancelPledge, getProfile as readProfile } from '../services/eventMemoryService.js';
 import { requireMockRole } from '../services/mockAuth.js';
+import { notifyPledgeCancelled } from '../services/notificationService.js';
 
 export function getProfile(req, res) {
   const auth = requireMockRole(req, res);
@@ -27,6 +28,9 @@ export function cancelTicket(req, res) {
     });
     return;
   }
+
+  // Trigger cancellation notification asynchronously (fire-and-forget)
+  notifyPledgeCancelled(auth.userId, req.params.eventId, result.cancelledQty, result.cancelledAmount);
 
   res.json({
     status: 'ok',

@@ -258,6 +258,7 @@ function AppShell() {
     setUser(null);
     setEvents([]);
     setProfileTickets([]);
+    localStorage.removeItem('party_fun_user_id');
     navigate('/login', { replace: true });
   };
 

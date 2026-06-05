@@ -1,6 +1,7 @@
 import { initialEvents } from '../data/mockEvents.js';
 import { initialPledges } from '../data/mockPledges.js';
 import { SERVICE_FEE } from '../data/mockPricing.js';
+import { getUserById } from './userMemoryService.js';
 
 const clone = (value) => structuredClone(value);
 
@@ -20,7 +21,21 @@ function getActiveTierIndex(event) {
 function recalculateEvent(event) {
   event.hypePct = Math.min(100, Math.round((event.backers / event.threshold) * 100));
   event.spotsLeft = Math.max(0, event.capacity - event.backers);
+  
+  if (event.status === 'cancelled' || event.status === 'completed') {
+    // Keep terminal statuses
+    return;
+  }
+  
+  if (event.backers >= event.threshold) {
+    event.status = 'greenlit';
+  } else if (event.hypePct >= 75) {
+    event.status = 'almost';
+  } else {
+    event.status = 'live';
+  }
 }
+
 
 function applyPledgeToEvent(event, qty) {
   let remaining = qty;
@@ -147,6 +162,8 @@ export function cancelPledge({ userId, eventId, qty, amount }) {
   return {
     event: clone(event),
     profile: getProfile(userId),
+    cancelledQty: normalizedQty,
+    cancelledAmount: normalizedAmount,
   };
 }
 
@@ -156,14 +173,23 @@ export function getProfile(userId) {
     .filter((ticket) => ticket.tab !== 'cancelled')
     .map((ticket) => ticket.eventId);
 
+  const user = getUserById(userId);
+
   return {
     profile: {
       id: userId,
-      fullName: 'Jamie Tan',
-      email: 'jamie@u.nus.edu',
-      handle: '@jamiet',
+      fullName: user ? user.username : 'Jamie Tan',
+      email: user ? user.email : 'jamie@u.nus.edu',
+      handle: user ? `@${user.username.toLowerCase()}` : '@jamiet',
     },
     tickets,
     myEventIds,
   };
 }
+
+export function getEventBackers(eventId) {
+  return pledges
+    .filter((p) => p.eventId === eventId && p.active)
+    .map((p) => p.userId);
+}
+
