@@ -30,13 +30,21 @@ const isApiKeyValid = (key) => {
 export async function sendEmail({ to, subject, html }) {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.NOTIFICATION_FROM_EMAIL || 'onboarding@resend.dev';
+  
+  // Developer sandbox override: redirects all emails to a single test email if defined
+  const overrideEmail = process.env.NOTIFICATION_OVERRIDE_EMAIL;
+  const recipient = overrideEmail ? overrideEmail.trim() : to;
+  
+  if (overrideEmail) {
+    console.log(`[EmailProcessor] Override active: Redirecting email target from ${to} to ${recipient}`);
+  }
 
   if (!isApiKeyValid(apiKey)) {
     // MOCK MODE FALLBACK
     // Allows local testing without needing a valid Resend API key.
     console.log('\n=================== MOCK EMAIL SENT ===================');
     console.log(`From:    ${fromEmail}`);
-    console.log(`To:      ${to}`);
+    console.log(`To:      ${recipient}`);
     console.log(`Subject: ${subject}`);
     console.log('------------------ Content Preview ------------------');
     // Simple text version from HTML
@@ -62,7 +70,7 @@ export async function sendEmail({ to, subject, html }) {
 
       const response = await resend.emails.send({
         from: fromEmail,
-        to,
+        to: recipient,
         subject,
         html,
         // Resend SDK passes unknown keys through to fetch; AbortSignal prevents hangs.
