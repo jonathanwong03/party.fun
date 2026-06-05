@@ -1,10 +1,31 @@
+import { useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
+import { loginRequest } from '../api';
 import type { Role, Route } from '../components/types';
 
 export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role: Role) => void }) {
+  const [email, setEmail] = useState('jamie@u.nus.edu');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      const user = await loginRequest(email, password);
+      onLogin(user.role);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to log in.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <AuthShell
       maxWidthClass="max-w-xl"
@@ -19,31 +40,32 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (role:
         </>
       }
     >
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const email = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
-          const nextRole = email.toLowerCase().includes('admin') ? 'admin' : 'user';
-          onLogin(nextRole);
-        }}
-      >
+      <form className="space-y-4" onSubmit={handleSubmit}>
         <div>
           <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Email or username</Label>
-          <Input name="email" defaultValue="jamie@u.nus.edu" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }} />
-          <p className="mt-1 text-[11px]" style={{ color: 'var(--muted-foreground)' }}>
-            Tip: emails containing "admin" log in as an organiser.
-          </p>
+          <Input
+            name="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
+          />
         </div>
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">
             <Label className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Password</Label>
             <button type="button" className="text-xs text-[#ff4d2e]">Forgot?</button>
           </div>
-          <Input name="password" type="password" defaultValue="••••••••" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }} />
+          <Input
+            name="password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
+          />
         </div>
-        <Button type="submit" className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
-          Login
+        {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+        <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
+          {submitting ? 'Logging in…' : 'Login'}
         </Button>
       </form>
     </AuthShell>

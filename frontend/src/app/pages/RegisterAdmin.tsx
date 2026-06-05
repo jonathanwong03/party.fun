@@ -5,9 +5,10 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import type { Role, Route } from '../components/types';
+import { registerRequest } from '../api';
+import type { Route } from '../components/types';
 
-export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin: (r: Role) => void }) {
+export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
   const [adminName, setAdminName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,6 +16,8 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
   const [contact, setContact] = useState('');
   const [social, setSocial] = useState('');
   const [attempted, setAttempted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const errs = {
     adminName: required(adminName),
@@ -39,11 +42,20 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
     >
       <form
         className="space-y-4"
-        onSubmit={(e) => {
+        onSubmit={async (e) => {
           e.preventDefault();
           setAttempted(true);
+          setSubmitError(null);
           if (hasErr) return;
-          onLogin('admin');
+          setSubmitting(true);
+          try {
+            await registerRequest({ username: adminName, email, password, role: 'admin' });
+            go({ name: 'login' });
+          } catch (err) {
+            setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
+          } finally {
+            setSubmitting(false);
+          }
         }}
       >
         <Field label="Admin name" placeholder="Jamie Tan" value={adminName} onChange={(e) => setAdminName(e.target.value)} error={attempted ? errs.adminName : null} />
@@ -61,8 +73,10 @@ export function RegisterAdmin({ go, onLogin }: { go: (r: Route) => void; onLogin
           <span>Admins can create and manage events. We verify CCAs before greenlighting payouts.</span>
         </div>
 
-        <Button type="submit" className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
-          Create admin account
+        {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
+
+        <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
+          {submitting ? 'Creating…' : 'Create admin account'}
         </Button>
       </form>
     </AuthShell>

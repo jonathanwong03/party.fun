@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { cancelTicket, createPledge, fetchEvents, fetchProfile, type ProfileTicket } from './api';
+import { cancelTicket, createPledge, fetchEvents, fetchProfile, resetUsers, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -154,6 +154,12 @@ function AppShell() {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
   };
 
+  // On every full page load, drop any registered accounts back to the two seed
+  // users (there are no sessions, so created accounts shouldn't survive a refresh).
+  useEffect(() => {
+    resetUsers();
+  }, []);
+
   useEffect(() => {
     let ignore = false;
 
@@ -262,8 +268,8 @@ function AppShell() {
         <BrowserRoute path="/" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
-        <BrowserRoute path="/signup/user" element={<RegisterUser go={go} onLogin={handleLogin} />} />
-        <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
+        <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
