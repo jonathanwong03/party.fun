@@ -39,7 +39,7 @@ export function Profile({
         <div className="flex flex-col gap-3">
           <Button
             variant="outline"
-            onClick={() => { /* Settings coming soon */ }}
+            onClick={() => go({ name: 'settings' })}
             className="w-full justify-center gap-2 border-white/15 bg-transparent hover:bg-white/5"
             style={{ borderRadius: 12, height: 48 }}
           >

@@ -33,7 +33,7 @@ export function Sidebar({
 
   const tail: Item[] = [
     { label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' },
-    { label: 'Settings', icon: Settings, target: { name: 'profile' }, active: false },
+    { label: 'Settings', icon: Settings, target: { name: 'settings' }, active: route.name === 'settings' },
   ];
 
   const items = [...baseItems, ...(isAdmin ? adminOnly : []), ...tail];
@@ -81,7 +81,7 @@ export function Sidebar({
               <button
                 key={it.label}
                 type="button"
-                onClick={() => (it.label === 'Settings' ? onClose() : handleClick(it.target))}
+                onClick={() => handleClick(it.target)}
                 className="flex items-center gap-2.5 whitespace-nowrap rounded-[16px] px-3 py-2.5 text-sm text-[#8a8a99] transition hover:bg-[#ff4d2e1f] hover:text-white"
                 style={{
                   fontWeight: 500,

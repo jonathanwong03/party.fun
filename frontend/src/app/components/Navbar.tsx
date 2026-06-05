@@ -34,8 +34,8 @@ export function Navbar({
       className="sticky top-0 z-30 border-b backdrop-blur-xl"
       style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.75)' }}
     >
-      <div className="mx-auto flex h-16 max-w-[1536px] items-center justify-between px-6">
-        <div className="flex items-center gap-3">
+      <div className="mx-auto grid h-16 max-w-[1536px] grid-cols-[1fr_auto_1fr] items-center px-6">
+        <div className="flex items-center gap-3 justify-self-start">
           <button
             type="button"
             onClick={onMenuClick}
@@ -49,19 +49,19 @@ export function Navbar({
           </button>
         </div>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-1 justify-self-center md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
           {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
           {role === 'admin' && navItem('Hosted Events', { name: 'admin' }, route.name === 'admin')}
         </nav>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 justify-self-end">
           {(role === 'user' || role === 'admin') && (
             <>
               <button
                 type="button"
                 aria-label="Settings"
-                onClick={() => { /* Settings coming soon */ }}
+                onClick={() => go({ name: 'settings' })}
                 className="grid size-9 place-items-center rounded-full text-white transition hover:bg-white/5"
               >
                 <SettingsIcon size={18} color="#f5f5f7" />
