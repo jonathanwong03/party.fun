@@ -24,7 +24,7 @@ import { RegisterOrganiser } from './pages/RegisterOrganiser';
 import { Profile } from './pages/Profile';
 import { JoinedEvents } from './pages/JoinedEvents';
 import { Settings } from './pages/Settings';
-import { OrganiserDashboard } from './pages/OrganiserDashboard';
+import { OrganiserHostedEvents } from './pages/OrganiserHostedEvents';
 import { CreateEvent } from './pages/CreateEvent';
 
 type RouteState = {
@@ -60,12 +60,12 @@ function pathForRoute(route: Route) {
       return '/joined-events';
     case 'settings':
       return '/settings';
-    case 'organiser':
-      return '/dashboard';
+    case 'hosted-events':
+      return '/hosted-events';
     case 'create-event':
-      return route.draftId ? `/dashboard/drafts/${route.draftId}/edit` : '/dashboard/events/new';
+      return route.draftId ? `/hosted-events/drafts/${route.draftId}/edit` : '/hosted-events/events/new';
     case 'edit-event':
-      return `/dashboard/events/${route.id}/edit`;
+      return `/hosted-events/events/${route.id}/edit`;
   }
 }
 
@@ -85,6 +85,10 @@ function stateForRoute(route: Route): RouteState | undefined {
     return { qty: route.qty };
   }
 
+  if (route.name === 'checkout') {
+    return { qty: route.qty };
+  }
+
   return undefined;
 }
 
@@ -101,19 +105,19 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/settings') return { name: 'settings' };
-  if (pathname === '/dashboard') return { name: 'organiser' };
-  if (pathname === '/dashboard/events/new') return { name: 'create-event' };
+  if (pathname === '/hosted-events') return { name: 'hosted-events' };
+  if (pathname === '/hosted-events/events/new') return { name: 'create-event' };
 
-  const draftMatch = pathname.match(/^\/dashboard\/drafts\/([^/]+)\/edit$/);
+  const draftMatch = pathname.match(/^\/hosted-events\/drafts\/([^/]+)\/edit$/);
   if (draftMatch) return { name: 'create-event', draftId: draftMatch[1] };
 
   const checkoutMatch = pathname.match(/^\/checkout\/([^/]+)$/);
-  if (checkoutMatch) return { name: 'checkout', id: checkoutMatch[1] };
+  if (checkoutMatch) return { name: 'checkout', id: checkoutMatch[1], qty: state?.qty };
 
   const confirmationMatch = pathname.match(/^\/confirmation\/([^/]+)$/);
   if (confirmationMatch) return { name: 'confirmation', id: confirmationMatch[1], qty: state?.qty ?? 1 };
 
-  const editMatch = pathname.match(/^\/dashboard\/events\/([^/]+)\/edit$/);
+  const editMatch = pathname.match(/^\/hosted-events\/events\/([^/]+)\/edit$/);
   if (editMatch) return { name: 'edit-event', id: editMatch[1] };
 
   const eventMatch = pathname.match(/^\/events\/([^/]+)$/);
@@ -237,7 +241,7 @@ function AppShell() {
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
-  const isOrganiserConsole = location.pathname.startsWith('/dashboard');
+  const isOrganiserConsole = location.pathname.startsWith('/hosted-events');
 
   const go = (nextRoute: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -250,7 +254,7 @@ function AppShell() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
-    navigate(account.role === 'organiser' ? '/dashboard' : '/events', { replace: true });
+    navigate(account.role === 'organiser' ? '/hosted-events' : '/events', { replace: true });
   };
 
   const handleLogout = () => {
@@ -299,10 +303,10 @@ function AppShell() {
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/dashboard" element={<OrganiserDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
-        <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/dashboard/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
+        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
+        <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
         <BrowserRoute path="*" element={<Navigate to={role ? '/events' : '/login'} replace />} />
       </Routes>
 
@@ -359,10 +363,12 @@ function CheckoutRoute({
   onPledge: (eventId: string, qty: number, amount: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
+  const location = useLocation();
+  const state = (location.state ?? {}) as RouteState;
 
   if (!role) return <Navigate to="/login" replace />;
 
-  return <Checkout id={eventId} role={role} go={go} events={events} onPledge={onPledge} />;
+  return <Checkout id={eventId} role={role} go={go} events={events} qty={state.qty} onPledge={onPledge} />;
 }
 
 function ConfirmationRoute({

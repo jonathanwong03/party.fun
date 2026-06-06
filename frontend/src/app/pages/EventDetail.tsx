@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer } from 'lucide-react';
+import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
@@ -13,6 +13,7 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
+  const [buyQty, setBuyQty] = useState(1);
   if (!event) {
     return (
       <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -21,6 +22,8 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
     );
   }
   const activeTier = getActiveTier(event);
+  // Total tickets still available across all tiers (a pledge spills into the next tier).
+  const available = event.tiers.reduce((sum, t) => sum + Math.max(0, t.qty - t.sold), 0);
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromOrganiser;
@@ -210,12 +213,12 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
             </Button>
 
             <Button
-              onClick={() => go({ name: 'organiser' })}
+              onClick={() => go({ name: 'hosted-events' })}
               variant="outline"
               className="mt-3 w-full border-white/15 bg-transparent hover:bg-white/5"
               style={{ borderRadius: 12, height: 48, fontSize: 15, fontWeight: 700 }}
             >
-              Go to dashboard
+              Go to hosted events
             </Button>
           </div>
         </aside>
@@ -229,11 +232,29 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
             </div>
             <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>
 
+            {event.status !== 'cancelled' && (
+              <div className="mt-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
+                  <div className="flex items-center gap-2 rounded-full border p-1" style={{ borderColor: 'var(--border-strong)' }}>
+                    <button onClick={() => setBuyQty((q) => Math.max(1, q - 1))} className="grid size-8 place-items-center rounded-full hover:bg-white/5">
+                      <Minus size={14} />
+                    </button>
+                    <span className="w-6 text-center" style={{ fontWeight: 600 }}>{buyQty}</span>
+                    <button onClick={() => setBuyQty((q) => Math.min(available, q + 1))} disabled={buyQty >= available} className="grid size-8 place-items-center rounded-full hover:bg-white/5 disabled:opacity-40">
+                      <Plus size={14} />
+                    </button>
+                  </div>
+                </div>
+                <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{available} ticket{available === 1 ? '' : 's'} left</div>
+              </div>
+            )}
+
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
             <Button
-              onClick={() => go({ name: 'checkout', id: event.id })}
-              disabled={event.status === 'cancelled'}
+              onClick={() => go({ name: 'checkout', id: event.id, qty: buyQty })}
+              disabled={event.status === 'cancelled' || available === 0}
               className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
               style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
             >

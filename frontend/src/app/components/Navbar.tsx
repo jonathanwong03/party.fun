@@ -52,7 +52,7 @@ export function Navbar({
         <nav className="hidden items-center gap-1 justify-self-center md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
           {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
-          {role === 'organiser' && navItem('Hosted Events', { name: 'organiser' }, route.name === 'organiser')}
+          {role === 'organiser' && navItem('Hosted Events', { name: 'hosted-events' }, route.name === 'hosted-events')}
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end">

@@ -24,7 +24,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/profile', userRoutes);
 app.use('/api/confirmation', confirmationRoutes);
-app.use('/api/dashboard', organiserRoutes);
+app.use('/api/hosted-events', organiserRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

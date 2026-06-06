@@ -1,11 +1,11 @@
 # party.fun
 
-`party.fun` is a React + Vite frontend with a lightweight Express API skeleton. The UI still uses mocked frontend data and mocked frontend-only auth for now. Supabase, Clerk, real sessions, and database storage are planned for a later stage.
+`party.fun` is a React + Vite frontend with a lightweight Express API skeleton. The UI still uses mocked frontend data and mocked frontend-only auth for now. Supabase, real sessions, and database storage are planned for a later stage.
 
 ## Current accounts (Only 2) 
 # This will be subjected to change once we have proper database tables & user authentication
 1. Demo user account email: jamie@u.nus.edu , password: user123
-2. Demo admin account email: admin@smu.edu.sg, password: admin123
+2. Demo admin account email: organiser@smu.edu.sg, password: organiser123
 - For now, refer to backend/data/mockUsers.js for information
 
 ## Project Directory

@@ -3,12 +3,12 @@ import type { Route } from './types';
 
 export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) => void }) {
   const items = [
-    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'organiser' } as Route, active: route.name === 'organiser' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'hosted-events' } as Route, active: route.name === 'hosted-events' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' } as Route, active: route.name === 'create-event' },
-    { label: 'Analytics', icon: BarChart3, target: { name: 'organiser' } as Route, active: false },
-    { label: 'Attendees', icon: Users, target: { name: 'organiser' } as Route, active: false },
-    { label: 'Tickets', icon: Ticket, target: { name: 'organiser' } as Route, active: false },
-    { label: 'Settings', icon: Settings, target: { name: 'organiser' } as Route, active: false },
+    { label: 'Analytics', icon: BarChart3, target: { name: 'hosted-events' } as Route, active: false },
+    { label: 'Attendees', icon: Users, target: { name: 'hosted-events' } as Route, active: false },
+    { label: 'Tickets', icon: Ticket, target: { name: 'hosted-events' } as Route, active: false },
+    { label: 'Settings', icon: Settings, target: { name: 'hosted-events' } as Route, active: false },
   ];
 
   return (

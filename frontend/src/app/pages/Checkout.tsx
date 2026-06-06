@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Minus, Plus, Shield, CreditCard } from 'lucide-react';
+import { ChevronLeft, Shield, CreditCard } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -11,9 +11,8 @@ import { fetchQuote, type Quote } from '../api';
 import { MonthYearPicker } from '../components/MonthYearPicker';
 import { required, emailError, cardError, expiryError, cvcError, matricError } from '../components/validation';
 
-export function Checkout({ id, role, go, events, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
+export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
   const event = events.find((e) => e.id === id);
-  const [qty, setQty] = useState(1);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -99,14 +98,9 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
                 <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Current tier</div>
                 <div style={{ fontWeight: 600 }}>{tierStageLabel(event)}</div>
               </div>
-              <div className="flex items-center gap-2 rounded-full border p-1" style={{ borderColor: 'var(--border-strong)' }}>
-                <button onClick={() => setQty(Math.max(1, qty - 1))} className="grid size-8 place-items-center rounded-full hover:bg-white/5">
-                  <Minus size={14} />
-                </button>
-                <span className="w-6 text-center" style={{ fontWeight: 600 }}>{qty}</span>
-                <button onClick={() => setQty(Math.min(8, qty + 1))} className="grid size-8 place-items-center rounded-full hover:bg-white/5">
-                  <Plus size={14} />
-                </button>
+              <div className="text-right">
+                <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</div>
+                <div style={{ fontWeight: 600 }}>{qty} ticket{qty === 1 ? '' : 's'}</div>
               </div>
             </div>
           </section>
@@ -156,8 +150,11 @@ export function Checkout({ id, role, go, events, onPledge }: { id: string; role:
               <div className="h-px" style={{ background: 'var(--border)' }} />
 
               <div className="space-y-1.5 text-sm">
-                <Row label={`Ticket × ${qty}`} value={quote ? money(quote.subtotal) : '—'} />
-                <Row label="Platform fee" value={quote ? money(quote.fee) : '—'} />
+                {quote
+                  ? quote.lines.map((l) => (
+                      <Row key={l.label} label={`${l.label} × ${l.count}`} value={money(l.price * l.count)} />
+                    ))
+                  : <Row label={`Ticket × ${qty}`} value="—" />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total</span>

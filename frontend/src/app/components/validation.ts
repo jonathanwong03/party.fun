@@ -46,6 +46,22 @@ export const isValidCVC = (v: string) => /^\d{3}$/.test(v.trim());
 // Time: strictly 12-hour HH:MM AM/PM (e.g. "10:00 PM").
 export const isValidTime = (v: string) => /^(0?[1-9]|1[0-2]):[0-5]\d\s?(AM|PM)$/i.test(v.trim());
 
+// Minutes since midnight for a 12-hour time string (e.g. "12:30 AM" -> 30).
+const timeToMinutes = (v: string) => {
+  const m = /^(\d{1,2}):([0-5]\d)\s?(AM|PM)$/i.exec(v.trim());
+  if (!m) return null;
+  let h = +m[1] % 12;
+  if (m[3].toUpperCase() === 'PM') h += 12;
+  return h * 60 + +m[2];
+};
+
+// End time may run past midnight (an earlier clock time = next day), so the only
+// invalid case is an end equal to the start (a zero-length event).
+export const endTimeError = (start: string, end: string) => {
+  if (!isValidTime(start) || !isValidTime(end)) return null;
+  return timeToMinutes(start) === timeToMinutes(end) ? 'End time cannot be the same as the start time.' : null;
+};
+
 // Deadline: a DD/MM/YYYY date and a 12-hour time, e.g. "10/06/2025, 11:59 PM".
 export const isValidDeadline = (v: string) => {
   const m = /^(.+?),?\s+(\d{1,2}:[0-5]\d\s?(?:AM|PM))$/i.exec(v.trim());

@@ -2,7 +2,7 @@ import express from 'express';
 import {
   deleteEvent,
   getCreateEvent,
-  getDashboard,
+  getHostedEvents,
   getEditEvent,
   patchEvent,
   postCreateEvent,
@@ -10,7 +10,7 @@ import {
 
 const router = express.Router();
 
-router.get('/', getDashboard);
+router.get('/', getHostedEvents);
 router.get('/events/new', getCreateEvent);
 router.post('/events', postCreateEvent);
 router.get('/events/:eventId/edit', getEditEvent);

@@ -24,11 +24,11 @@ export function Sidebar({
   ];
 
   const organiserOnly: Item[] = [
-    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'organiser' }, active: route.name === 'organiser' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'hosted-events' }, active: route.name === 'hosted-events' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
-    { label: 'Analytics', icon: BarChart3, target: { name: 'organiser' }, active: false },
-    { label: 'Attendees', icon: Users, target: { name: 'organiser' }, active: false },
-    { label: 'Tickets', icon: Ticket, target: { name: 'organiser' }, active: false },
+    { label: 'Analytics', icon: BarChart3, target: { name: 'hosted-events' }, active: false },
+    { label: 'Attendees', icon: Users, target: { name: 'hosted-events' }, active: false },
+    { label: 'Tickets', icon: Ticket, target: { name: 'hosted-events' }, active: false },
   ];
 
   const tail: Item[] = [

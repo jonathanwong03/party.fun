@@ -19,7 +19,7 @@ const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
   CANCELLED: '#ff6b85',
 };
 
-export function OrganiserDashboard({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
+export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [tab, setTab] = useState<'created' | 'drafts'>('created');
 

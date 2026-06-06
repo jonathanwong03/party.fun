@@ -1,6 +1,5 @@
 import { initialEvents } from '../data/mockEvents.js';
 import { initialPledges } from '../data/mockPledges.js';
-import { SERVICE_FEE } from '../data/mockPricing.js';
 
 const clone = (value) => structuredClone(value);
 
@@ -20,6 +19,25 @@ function getActiveTierIndex(event) {
 function recalculateEvent(event) {
   event.hypePct = Math.min(100, Math.round((event.backers / event.threshold) * 100));
   event.spotsLeft = Math.max(0, event.capacity - event.backers);
+}
+
+// Allocate `qty` tickets across tiers from the active tier, spilling into the next
+// tier when one runs out. Non-mutating; returns the per-tier lines and the total cost.
+function tierAllocation(event, qty) {
+  let remaining = Math.max(1, Number(qty) || 1);
+  const lines = [];
+  let total = 0;
+  for (let i = getActiveTierIndex(event); i < event.tiers.length && remaining > 0; i += 1) {
+    const tier = event.tiers[i];
+    const available = Math.max(0, tier.qty - tier.sold);
+    const count = Math.min(available, remaining);
+    if (count > 0) {
+      lines.push({ label: tier.label, price: tier.price, count });
+      total += tier.price * count;
+      remaining -= count;
+    }
+  }
+  return { lines, total };
 }
 
 function applyPledgeToEvent(event, qty) {
@@ -48,35 +66,30 @@ function reversePledgeFromEvent(event, qty) {
 }
 
 function publicTicket(ticket) {
-  const subtotal = ticket.amount * ticket.qty;
   return {
     eventId: ticket.eventId,
     qty: ticket.qty,
     amount: ticket.amount,
     tab: ticket.tab,
     ticketStatus: ticket.ticketStatus,
-    fee: SERVICE_FEE,
-    total: subtotal + SERVICE_FEE,
+    total: ticket.total != null ? ticket.total : ticket.amount * ticket.qty,
   };
 }
 
-// Compute the cost of pledging `qty` tickets for an event: per-ticket price (the
-// active tier), subtotal, the fixed service fee and the grand total. All money
-// math for the app lives here on the backend.
+// Quote `qty` tickets for an event: the per-tier breakdown and the total cost,
+// spilling across tiers as each runs out. No service fee. All money math lives here.
 export function quotePledge(eventId, qty) {
   const event = events.find((item) => item.id === eventId);
   if (!event) return null;
 
   const normalizedQty = Math.max(1, Number(qty) || 1);
-  const pricePerTicket = event.price;
-  const subtotal = pricePerTicket * normalizedQty;
+  const { lines, total } = tierAllocation(event, normalizedQty);
   return {
     eventId,
-    pricePerTicket,
     qty: normalizedQty,
-    subtotal,
-    fee: SERVICE_FEE,
-    total: subtotal + SERVICE_FEE,
+    lines,
+    subtotal: total,
+    total,
   };
 }
 
@@ -99,6 +112,8 @@ export function createPledge({ userId, eventId, qty, amount }) {
 
   const existingActive = pledges.find((pledge) => pledge.userId === userId && pledge.eventId === eventId && pledge.active);
   if (!existingActive) {
+    // Compute the true multi-tier total before applying the pledge mutates `sold`.
+    const { total } = tierAllocation(event, normalizedQty);
     applyPledgeToEvent(event, normalizedQty);
     pledges = pledges.filter((pledge) => !(pledge.userId === userId && pledge.eventId === eventId && !pledge.active));
     pledges.unshift({
@@ -107,6 +122,7 @@ export function createPledge({ userId, eventId, qty, amount }) {
       eventId,
       qty: normalizedQty,
       amount: normalizedAmount,
+      total,
       tab: 'upcoming',
       ticketStatus: 'Pledged',
       active: true,
@@ -127,6 +143,7 @@ export function cancelPledge({ userId, eventId, qty, amount }) {
   const existingActive = pledges.find((pledge) => pledge.userId === userId && pledge.eventId === eventId && pledge.active);
   const normalizedQty = Math.max(1, Number(qty) || existingActive?.qty || 1);
   const normalizedAmount = Number(amount) || existingActive?.amount || event.price;
+  const total = existingActive?.total != null ? existingActive.total : normalizedAmount * normalizedQty;
 
   if (existingActive) {
     reversePledgeFromEvent(event, normalizedQty);
@@ -139,6 +156,7 @@ export function cancelPledge({ userId, eventId, qty, amount }) {
     eventId,
     qty: normalizedQty,
     amount: normalizedAmount,
+    total,
     tab: 'cancelled',
     // Opting out is non-refundable. Refunds only happen when an event fails to
     // reach its threshold by the deadline (represented elsewhere as 'Refunded').

@@ -14,7 +14,7 @@ export function MobileNav({
     { icon: Home, label: 'Home', target: { name: 'landing' } as Route, active: route.name === 'landing' },
     { icon: Search, label: 'Search', target: { name: 'landing' } as Route, active: false },
     { icon: Ticket, label: 'My Tickets', target: { name: 'joined-events' } as Route, active: route.name === 'joined-events' },
-    { icon: User, label: 'Account', target: role === 'organiser' ? ({ name: 'organiser' } as Route) : ({ name: 'profile' } as Route), active: route.name === 'profile' || route.name === 'organiser' },
+    { icon: User, label: 'Account', target: role === 'organiser' ? ({ name: 'hosted-events' } as Route) : ({ name: 'profile' } as Route), active: route.name === 'profile' || route.name === 'hosted-events' },
   ];
 
   return (

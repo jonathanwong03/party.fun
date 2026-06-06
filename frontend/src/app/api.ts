@@ -6,16 +6,16 @@ export type ProfileTicket = {
   amount: number;
   tab: 'upcoming' | 'past' | 'cancelled';
   ticketStatus: string;
-  fee: number;
   total: number;
 };
 
+export type QuoteLine = { label: string; price: number; count: number };
+
 export type Quote = {
   eventId: string;
-  pricePerTicket: number;
   qty: number;
+  lines: QuoteLine[];
   subtotal: number;
-  fee: number;
   total: number;
 };
 

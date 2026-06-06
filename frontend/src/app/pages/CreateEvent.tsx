@@ -11,7 +11,7 @@ import { MOCK_EVENTS, getActiveTier, type EventItem, type Route, type EventStatu
 import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
-import { required, dateError, timeError, deadlineError, priceError } from '../components/validation';
+import { required, dateError, timeError, deadlineError, priceError, endTimeError } from '../components/validation';
 
 export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? MOCK_EVENTS;
@@ -57,6 +57,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     date: dateError(date),
     start: timeError(start),
     end: timeError(end),
+    endVsStart: endTimeError(start, end),
     venue: required(venue),
     address: required(address),
     deadline: deadlineError(deadline),
@@ -68,7 +69,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   };
   // In edit mode the schedule/deadline fields hold human-readable values from the seed data
   // that the strict validators reject, so suppress those errors when editing.
-  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'deadline']);
+  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'endVsStart', 'deadline']);
   const errOf = (k: keyof typeof errs) => (showErrors && !(isEdit && relaxedInEdit.has(k)) ? errs[k] : null);
   const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
 
@@ -104,7 +105,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     };
     onPublish?.(newEvent);
     if (draftId) onDeleteDraft?.(draftId); // publishing a resumed draft removes it from Drafts
-    go({ name: 'organiser' });
+    go({ name: 'hosted-events' });
   };
 
   // Save the in-progress form as a draft — no validation, fields may be partial.
@@ -137,7 +138,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       ],
     };
     onSaveDraft?.(draft);
-    go({ name: 'organiser' });
+    go({ name: 'hosted-events' });
   };
 
   const handleSave = () => {
@@ -169,7 +170,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     };
     updated.price = updated.tiers[getActiveTier(updated)].price;
     onUpdate?.(updated);
-    go({ name: 'organiser' });
+    go({ name: 'hosted-events' });
   };
 
   return (
@@ -177,11 +178,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       <main className="flex-1 px-6 py-8">
         <div className="mx-auto max-w-[1536px]">
           <button
-            onClick={() => go({ name: 'organiser' })}
+            onClick={() => go({ name: 'hosted-events' })}
             className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
             style={{ color: 'var(--muted-foreground)' }}
           >
-            <ChevronLeft size={14} /> Back to dashboard
+            <ChevronLeft size={14} /> Back to hosted events
           </button>
 
           <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
@@ -232,7 +233,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                 <div className="grid gap-4 sm:grid-cols-3">
                   <Field label="Date" error={errOf('date')}><DatePicker value={date} onChange={setDate} error={!!errOf('date')} /></Field>
                   <Field label="Start time" error={errOf('start')}><TimePicker value={start} onChange={setStart} error={!!errOf('start')} placeholder="Start time" /></Field>
-                  <Field label="End time" error={errOf('end')}><TimePicker value={end} onChange={setEnd} error={!!errOf('end')} placeholder="End time" /></Field>
+                  <Field label="End time" error={errOf('end') || errOf('endVsStart')}><TimePicker value={end} onChange={setEnd} error={!!(errOf('end') || errOf('endVsStart'))} placeholder="End time" /></Field>
                 </div>
               </Section>
 
@@ -276,7 +277,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     <Button className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 44 }} onClick={handleSave}>
                       Save Changes
                     </Button>
-                    <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'organiser' })}>
+                    <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'hosted-events' })}>
                       Cancel
                     </Button>
                     <Button onClick={() => setDeleting(true)} className="ml-auto bg-[#ff3354] text-white hover:bg-[#ff4865]" style={{ borderRadius: 10, height: 44 }}>
@@ -329,7 +330,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
           onConfirm={() => {
             setDeleting(false);
             onDelete?.(existing.id);
-            go({ name: 'organiser' });
+            go({ name: 'hosted-events' });
           }}
         />
       )}

@@ -9,8 +9,8 @@ export const initialUsers = [
   {
     id: 'mock-organiser-smu',
     username: 'organiser',
-    email: 'admin@smu.edu.sg',
-    password: 'admin123',
+    email: 'organiser@smu.edu.sg',
+    password: 'organiser123',
     role: 'organiser',
   },
 ];
