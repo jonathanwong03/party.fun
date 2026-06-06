@@ -140,7 +140,9 @@ export function cancelPledge({ userId, eventId, qty, amount }) {
     qty: normalizedQty,
     amount: normalizedAmount,
     tab: 'cancelled',
-    ticketStatus: 'Refunded',
+    // Opting out is non-refundable. Refunds only happen when an event fails to
+    // reach its threshold by the deadline (represented elsewhere as 'Refunded').
+    ticketStatus: 'Cancelled',
     active: false,
   });
 

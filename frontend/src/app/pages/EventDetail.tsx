@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Calendar, Clock, MapPin, Users, Shield, ChevronLeft, ArrowRight, Timer } from 'lucide-react';
+import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
@@ -55,12 +55,11 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <div className="space-y-8">
           {/* meta */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
             {[
               { icon: Calendar, label: 'Date', value: event.date },
-              { icon: Clock, label: 'Time', value: event.time },
+              { icon: Clock, label: 'Time', value: `${event.time}${event.endTime ? ` – ${event.endTime}` : ''}` },
               { icon: MapPin, label: 'Location', value: event.location.split(',')[0] },
-              { icon: Users, label: 'Spots left', value: `${event.spotsLeft}` },
             ].map((m) => (
               <div key={m.label} className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
                 <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
@@ -157,7 +156,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
           </div>
         </aside>
         ) : showOptOut ? (
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Pledge confirmed</h3>
@@ -178,53 +177,18 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
               Cancel Event
             </Button>
 
-            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(255,203,60,0.08)', border: '1px solid rgba(255,203,60,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#ffd968' }}>
+            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(255,122,147,0.08)', border: '1px solid rgba(255,122,147,0.3)' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: '#ff7a93' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Opting out releases your spot back to the pool. You'll be refunded in full within 3–5 business days.</span>
+                <span>Cancelling is final — you will <strong>not</strong> be refunded. Refunds only happen automatically if the event misses its hype threshold by the deadline.</span>
               </div>
             </div>
           </div>
+          <WhosGoingCard event={event} />
         </aside>
         ) : showWhosGoing ? (
         <aside className="lg:sticky lg:top-24 lg:self-start" key="whos-going">
-          <div
-            className="rounded-2xl p-6"
-            style={{
-              background: '#14141b',
-              borderWidth: '0.625px',
-              borderStyle: 'solid',
-              borderColor: 'rgba(255,255,255,0.08)',
-            }}
-          >
-            <h3 className="mb-5" style={{ color: '#f5f5f7', fontSize: 18, fontWeight: 500 }}>Who's going?</h3>
-            <div className="mb-5 flex items-center">
-              {[
-                { c: '#ec2727', l: 'A' },
-                { c: '#91e357', l: 'B' },
-                { c: '#a1b3e0', l: 'C' },
-                { c: '#dbe12b', l: 'D' },
-                { c: '#30b2ea', l: 'E' },
-              ].map((a, i) => (
-                <div
-                  key={a.l}
-                  className="grid size-14 place-items-center rounded-full text-white"
-                  style={{
-                    background: a.c,
-                    marginLeft: i === 0 ? 0 : -12,
-                    border: '2px solid #14141b',
-                    fontSize: 28,
-                    fontWeight: 500,
-                  }}
-                >
-                  {a.l}
-                </div>
-              ))}
-            </div>
-            <p className="text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
-              {event.backers} students have locked in. {event.spotsLeft} spots remaining
-            </p>
-          </div>
+          <WhosGoingCard event={event} />
         </aside>
         ) : showOwnEvent ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
@@ -256,7 +220,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
           </div>
         </aside>
         ) : (
-        <aside className="lg:sticky lg:top-24 lg:self-start">
+        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
             <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
@@ -288,6 +252,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
               </div>
             </div>
           </div>
+          <WhosGoingCard event={event} />
         </aside>
         )}
       </div>
@@ -298,17 +263,59 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
           confirmWord="CONFIRM"
           title="Cancel Event?"
           leadIn="You're about to cancel your spot for"
-          warning="Your pledge will be released back to the pool and refunded in full. You'll no longer be attending this event."
+          warning="Cancelling is final — you will NOT be refunded. Your spot is released back to the pool and you'll no longer be attending. Refunds only happen if the event misses its hype threshold by the deadline."
           actionLabel="Cancel Event"
           onCancel={() => setCancelling(false)}
           onConfirm={() => {
             setCancelling(false);
             Promise.resolve(onCancelAttendance?.(event.id, qty ?? 1, amount ?? event.price)).finally(() => {
-              go({ name: 'profile' });
+              go({ name: 'joined-events' });
             });
           }}
         />
       )}
+    </div>
+  );
+}
+
+function WhosGoingCard({ event }: { event: EventItem }) {
+  return (
+    <div
+      className="rounded-2xl p-6"
+      style={{
+        background: '#14141b',
+        borderWidth: '0.625px',
+        borderStyle: 'solid',
+        borderColor: 'rgba(255,255,255,0.08)',
+      }}
+    >
+      <h3 className="mb-5" style={{ color: '#f5f5f7', fontSize: 18, fontWeight: 500 }}>Who's going?</h3>
+      <div className="mb-5 flex items-center">
+        {[
+          { c: '#ec2727', l: 'A' },
+          { c: '#91e357', l: 'B' },
+          { c: '#a1b3e0', l: 'C' },
+          { c: '#dbe12b', l: 'D' },
+          { c: '#30b2ea', l: 'E' },
+        ].map((a, i) => (
+          <div
+            key={a.l}
+            className="grid size-14 place-items-center rounded-full text-white"
+            style={{
+              background: a.c,
+              marginLeft: i === 0 ? 0 : -12,
+              border: '2px solid #14141b',
+              fontSize: 28,
+              fontWeight: 500,
+            }}
+          >
+            {a.l}
+          </div>
+        ))}
+      </div>
+      <p className="text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
+        {event.backers} students have locked in. {event.spotsLeft} spots remaining
+      </p>
     </div>
   );
 }

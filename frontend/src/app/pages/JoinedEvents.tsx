@@ -84,11 +84,13 @@ export function JoinedEvents({
       ) : (
         <div className="space-y-3">
           {items.map(({ event, qty, amount, total, ticketStatus }) => {
-            const isRefunded = ticketStatus === 'Refunded';
+            // A cancelled-tab ticket is either a buyer opt-out ('Cancelled', no refund) or an
+            // event-failure refund ('Refunded'); both are read-only here.
+            const isCancelledTicket = tab === 'cancelled';
             const badgeLabel =
               tab === 'past' ? 'Not available'
               : event.status === 'cancelled' ? undefined        // -> eventBadge: "Cancelled by Organiser"
-              : isRefunded ? 'Cancelled by Buyer'
+              : isCancelledTicket ? 'Cancelled by Buyer'
               : undefined;                                       // -> eventBadge: tier label
             const greyMeter = !!badgeLabel || event.status === 'cancelled';
             return (
@@ -105,7 +107,7 @@ export function JoinedEvents({
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
                   <span className="flex items-center gap-1"><MapPin size={12} /> {event.location.split(',')[0]}</span>
-                  <span>Ticket: {isRefunded ? 'Cancelled' : ticketStatus} · {qty} × ${amount}</span>
+                  <span>Ticket: {ticketStatus} · {qty} × ${amount}</span>
                 </div>
                 <div className="mt-3 max-w-md">
                   <HypeMeter pct={event.hypePct} status={greyMeter ? 'cancelled' : event.status} tier={getActiveTier(event)} size="sm" showLabel={false} />
@@ -116,7 +118,7 @@ export function JoinedEvents({
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Total</div>
                   <div style={{ fontWeight: 700, fontSize: 18 }}>${total.toFixed(2)}</div>
                 </div>
-                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isRefunded ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount, total })} variant="outline"
+                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isCancelledTicket ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount, total })} variant="outline"
                   className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
                   View
                 </Button>

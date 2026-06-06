@@ -66,7 +66,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
           Back to Events
         </Button>
         <Button
-          onClick={() => go({ name: 'profile' })}
+          onClick={() => go({ name: 'joined-events' })}
           className="flex-1 bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
           style={{ borderRadius: 12, height: 48 }}
         >

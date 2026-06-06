@@ -26,7 +26,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [address, setAddress] = useState(source?.location ?? '');
   const [date, setDate] = useState(source?.date ?? '');
   const [start, setStart] = useState(source?.time ?? '');
-  const [end, setEnd] = useState('');
+  const [end, setEnd] = useState(source?.endTime ?? '');
   const [capacity, setCapacity] = useState<number>(source?.capacity ?? 300);
   const [threshold, setThreshold] = useState<number>(source?.threshold ?? 150);
   const [deadline, setDeadline] = useState(source?.deadline ?? '');
@@ -70,6 +70,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       organiser,
       date,
       time: start,
+      endTime: end,
       location: `${venue}, ${address}`,
       description,
       image: '',
@@ -103,6 +104,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       organiser,
       date,
       time: start,
+      endTime: end,
       location: `${venue}, ${address}`,
       description,
       image: '',
@@ -146,6 +148,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       location: `${venue}, ${address}`,
       date,
       time: start,
+      endTime: end,
       capacity,
       threshold,
       deadline,

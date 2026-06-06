@@ -38,6 +38,7 @@ export type EventItem = {
   deadline: string;
   tiers: { label: string; price: number; qty: number; sold: number }[];
   mine?: boolean;
+  endTime?: string;
 };
 
 export function getActiveTier(e: EventItem): number {
@@ -106,6 +107,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'NUS Electronic Music Club',
     date: 'Fri, Jun 12',
     time: '10:00 PM',
+    endTime: '2:00 AM',
     location: 'The Projector, Golden Mile Tower',
     description:
       'A night of bass-heavy beats, UV body paint and free-flow mocktails. Capping our orientation week with the loudest party on campus.',
@@ -133,6 +135,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'NTU Cultural Council',
     date: 'Sat, Jun 20',
     time: '7:00 PM',
+    endTime: '11:00 PM',
     location: 'NTU North Spine Plaza',
     description:
       'Eight clubs, one yard. Live bands, dance crews, food trucks and a glow-stick finale.',
@@ -161,6 +164,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'SMU Photography Society',
     date: 'Sun, Jun 28',
     time: '5:30 PM',
+    endTime: '8:30 PM',
     location: 'Concourse Building, Level 12',
     description:
       'Golden-hour cocktails, lo-fi DJ sets and skyline views. Strictly limited capacity.',
@@ -188,6 +192,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'SUTD Dev Society',
     date: 'Sat, Jul 5',
     time: '9:00 PM',
+    endTime: '1:00 AM',
     location: 'Tanjong Pagar Distripark',
     description:
       'Forty-eight hours of code, one night of catharsis. Open bar for finalists.',
@@ -215,6 +220,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'NUS Adventure Club',
     date: 'Fri, Jul 11',
     time: '8:00 PM',
+    endTime: '11:00 PM',
     location: 'Tanjong Beach, Sentosa',
     description:
       'Three channels, one beach, zero noise complaints. Headphones provided.',
@@ -242,6 +248,7 @@ export const MOCK_EVENTS: EventItem[] = [
     organiser: 'SMU Writers Guild',
     date: 'Thu, Jul 17',
     time: '7:30 PM',
+    endTime: '10:30 PM',
     location: 'The Hangar, SMU Connexion',
     description:
       'Spoken word, acoustic sets and shared playlists. BYO notebooks.',
