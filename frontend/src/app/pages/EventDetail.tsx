@@ -3,8 +3,6 @@ import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus,
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { TicketPricesOverTime } from '../components/TicketPricesOverTime';
-import { PricingTier } from '../components/PricingTier';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
@@ -81,9 +79,6 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
 
           {/* Hype meter */}
           <div className="rounded-2xl glass p-6 transition-all duration-300">
-            <div className="mb-5">
-              <TicketPricesOverTime tiers={event.tiers} />
-            </div>
             <div className="mb-4 flex items-baseline justify-between">
               <h3>Hype meter</h3>
               <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Deadline: {event.deadline}</span>
@@ -116,9 +111,6 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
               </div>
             </div>
           </div>
-
-          {/* pricing tiers */}
-          <PricingTier tiers={event.tiers} activeIndex={activeTier} />
 
           {/* how it works */}
           <div className="rounded-2xl glass p-6 transition-all duration-300">

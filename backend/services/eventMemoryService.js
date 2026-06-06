@@ -19,6 +19,12 @@ function getActiveTierIndex(event) {
 function recalculateEvent(event) {
   event.hypePct = Math.min(100, Math.round((event.backers / event.threshold) * 100));
   event.spotsLeft = Math.max(0, event.capacity - event.backers);
+  // The event greenlights once its Early Bird tickets (= threshold) are filled; from then on
+  // the active tier (and price) is Main Crowd. Status only ever flips up to greenlit.
+  if (event.status !== 'cancelled' && event.backers >= event.threshold) {
+    event.status = 'greenlit';
+  }
+  event.price = event.tiers[getActiveTierIndex(event)].price;
 }
 
 // Allocate `qty` tickets across tiers from the active tier, spilling into the next

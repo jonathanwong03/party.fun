@@ -20,7 +20,7 @@ export function HypeMeter({
   threshold?: number;
 }) {
   const capped = Math.min(100, Math.max(0, pct));
-  const t = Math.max(0, Math.min(3, tier));
+  const t = Math.max(0, Math.min(TIER_COLORS.length - 1, tier));
   const color = status === 'cancelled' ? '#5a5a66' : '#ffffff';
   const tierColor = status === 'cancelled' ? '#5a5a66' : TIER_COLORS[t];
   const gradient = status === 'cancelled'
@@ -29,7 +29,7 @@ export function HypeMeter({
   const glow = status === 'cancelled' ? 'none' : '0 0 12px rgba(255,77,46,0.3)';
 
   const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
-  const tierLabel = `Tier ${t + 1} · ${TIER_LABELS[t]}`;
+  const tierLabel = TIER_LABELS[t];
   const showFlame = capped >= 100 && status !== 'cancelled';
   const flameSize = size === 'sm' ? 16 : size === 'lg' ? 32 : 26;
 

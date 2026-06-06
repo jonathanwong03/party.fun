@@ -70,6 +70,15 @@ const toDateTime = (date: string, time: string) => {
   return new Date(+dm[3], +dm[2] - 1, +dm[1], Math.floor(t / 60), t % 60);
 };
 
+// End (date + time) must not be earlier than start (date + time). With separate
+// dates, an overnight event simply uses the next day as the end date.
+export const scheduleError = (startDate: string, startTime: string, endDate: string, endTime: string) => {
+  const startAt = toDateTime(startDate, startTime);
+  const endAt = toDateTime(endDate, endTime);
+  if (!startAt || !endAt) return null;
+  return endAt.getTime() < startAt.getTime() ? 'End must be after the start.' : null;
+};
+
 // The threshold deadline must fall on or before the event's start (date + start time).
 export const deadlineEventError = (eventDate: string, startTime: string, deadlineDate: string, deadlineTime: string) => {
   const eventAt = toDateTime(eventDate, startTime);

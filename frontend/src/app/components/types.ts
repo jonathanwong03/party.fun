@@ -39,12 +39,14 @@ export type EventItem = {
   tiers: { label: string; price: number; qty: number; sold: number }[];
   mine?: boolean;
   endTime?: string;
+  endDate?: string;
 };
 
 export function getActiveTier(e: EventItem): number {
+  const last = Math.max(0, e.tiers.length - 1);
   const idx = e.tiers.findIndex((t) => t.sold < t.qty);
-  if (idx === -1) return 3;
-  return Math.min(idx, 3);
+  if (idx === -1) return last;
+  return Math.min(idx, last);
 }
 
 // Apply a pledge of `qty` tickets to an event: bump the active tier's sold count and the
@@ -69,15 +71,14 @@ export function reversePledge(e: EventItem, qty: number): EventItem {
   return { ...e, tiers, backers, hypePct, spotsLeft };
 }
 
-export const TIER_COLORS = ['#29e07a', '#ffcb3c', '#ff8a2e', '#ff3354'] as const;
+export const TIER_COLORS = ['#29e07a', '#ff8a2e'] as const;
 
-// Tier-stage labels shown on the status badge while an event is still gathering hype.
-export const TIER_LABELS = ['Early Birds', 'Hype Builders', 'Main Crowd', 'Final Wave'] as const;
+// The two pricing tiers: Early Birds fills the hype threshold; Main Crowd is the post-greenlit phase.
+export const TIER_LABELS = ['Early Birds', 'Main Crowd'] as const;
 
-// Live "current tier" label, e.g. "Tier 2 · Hype Builders", derived from the active pricing tier.
+// Live "current tier" label — "Early Birds", and "Main Crowd" once Early Birds sell out / the event greenlights.
 export function tierStageLabel(e: EventItem): string {
-  const t = getActiveTier(e);
-  return `Tier ${t + 1} · ${TIER_LABELS[t]}`;
+  return TIER_LABELS[getActiveTier(e)];
 }
 
 // Badge styling for an event: greenlit -> "Confirmed", cancelled -> "Refunded",
@@ -108,13 +109,14 @@ export const MOCK_EVENTS: EventItem[] = [
     date: 'Fri, Jun 12',
     time: '10:00 PM',
     endTime: '2:00 AM',
+    endDate: 'Sat, Jun 13',
     location: 'The Projector, Golden Mile Tower',
     description:
       'A night of bass-heavy beats, UV body paint and free-flow mocktails. Capping our orientation week with the loudest party on campus.',
     image:
       'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=1200&q=80&auto=format&fit=crop',
-    price: 18,
-    tierLabel: 'Tier 2 — Early',
+    price: 12,
+    tierLabel: 'Early Birds',
     hypePct: 78,
     threshold: 200,
     backers: 156,
@@ -123,10 +125,8 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'almost',
     deadline: 'Jun 10, 11:59 PM',
     tiers: [
-      { label: 'Early Birds', price: 12, qty: 50, sold: 50 },
-      { label: 'Hype Builders', price: 18, qty: 100, sold: 80 },
-      { label: 'Main Crowd', price: 25, qty: 150, sold: 26 },
-      { label: 'Final Wave', price: 32, qty: 100, sold: 0 },
+      { label: 'Early Birds', price: 12, qty: 200, sold: 156 },
+      { label: 'Main Crowd', price: 22, qty: 200, sold: 0 },
     ],
   },
   {
@@ -136,13 +136,14 @@ export const MOCK_EVENTS: EventItem[] = [
     date: 'Sat, Jun 20',
     time: '7:00 PM',
     endTime: '11:00 PM',
+    endDate: 'Sat, Jun 20',
     location: 'NTU North Spine Plaza',
     description:
       'Eight clubs, one yard. Live bands, dance crews, food trucks and a glow-stick finale.',
     image:
       'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=1200&q=80&auto=format&fit=crop',
     price: 10,
-    tierLabel: 'Tier 1 — Super Early',
+    tierLabel: 'Early Birds',
     hypePct: 42,
     threshold: 300,
     backers: 126,
@@ -151,10 +152,8 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'live',
     deadline: 'Jun 18, 8:00 PM',
     tiers: [
-      { label: 'Early Birds', price: 10, qty: 200, sold: 126 },
-      { label: 'Hype Builders', price: 14, qty: 200, sold: 0 },
-      { label: 'Main Crowd', price: 20, qty: 300, sold: 0 },
-      { label: 'Final Wave', price: 25, qty: 100, sold: 0 },
+      { label: 'Early Birds', price: 10, qty: 300, sold: 126 },
+      { label: 'Main Crowd', price: 18, qty: 500, sold: 0 },
     ],
   },
   {
@@ -165,13 +164,14 @@ export const MOCK_EVENTS: EventItem[] = [
     date: 'Sun, Jun 28',
     time: '5:30 PM',
     endTime: '8:30 PM',
+    endDate: 'Sun, Jun 28',
     location: 'Concourse Building, Level 12',
     description:
       'Golden-hour cocktails, lo-fi DJ sets and skyline views. Strictly limited capacity.',
     image:
       'https://images.unsplash.com/photo-1530103862676-de8c9debad1d?w=1200&q=80&auto=format&fit=crop',
-    price: 28,
-    tierLabel: 'Greenlit',
+    price: 32,
+    tierLabel: 'Main Crowd',
     hypePct: 100,
     threshold: 80,
     backers: 92,
@@ -180,10 +180,8 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'greenlit',
     deadline: 'Jun 25, 6:00 PM',
     tiers: [
-      { label: 'Early Birds', price: 18, qty: 30, sold: 30 },
-      { label: 'Hype Builders', price: 24, qty: 40, sold: 40 },
-      { label: 'Main Crowd', price: 28, qty: 30, sold: 22 },
-      { label: 'Final Wave', price: 35, qty: 20, sold: 0 },
+      { label: 'Early Birds', price: 18, qty: 80, sold: 80 },
+      { label: 'Main Crowd', price: 32, qty: 40, sold: 12 },
     ],
   },
   {
@@ -193,13 +191,14 @@ export const MOCK_EVENTS: EventItem[] = [
     date: 'Sat, Jul 5',
     time: '9:00 PM',
     endTime: '1:00 AM',
+    endDate: 'Sun, Jul 6',
     location: 'Tanjong Pagar Distripark',
     description:
       'Forty-eight hours of code, one night of catharsis. Open bar for finalists.',
     image:
       'https://images.unsplash.com/photo-1571266028243-d220c6a23f37?w=1200&q=80&auto=format&fit=crop',
     price: 15,
-    tierLabel: 'Tier 1 — Super Early',
+    tierLabel: 'Early Birds',
     hypePct: 18,
     threshold: 150,
     backers: 27,
@@ -208,10 +207,8 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'live',
     deadline: 'Jul 3, 11:59 PM',
     tiers: [
-      { label: 'Early Birds', price: 15, qty: 80, sold: 27 },
-      { label: 'Hype Builders', price: 20, qty: 80, sold: 0 },
-      { label: 'Main Crowd', price: 26, qty: 100, sold: 0 },
-      { label: 'Final Wave', price: 32, qty: 40, sold: 0 },
+      { label: 'Early Birds', price: 15, qty: 150, sold: 27 },
+      { label: 'Main Crowd', price: 27, qty: 150, sold: 0 },
     ],
   },
   {
@@ -221,13 +218,14 @@ export const MOCK_EVENTS: EventItem[] = [
     date: 'Fri, Jul 11',
     time: '8:00 PM',
     endTime: '11:00 PM',
+    endDate: 'Fri, Jul 11',
     location: 'Tanjong Beach, Sentosa',
     description:
       'Three channels, one beach, zero noise complaints. Headphones provided.',
     image:
       'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=1200&q=80&auto=format&fit=crop',
-    price: 22,
-    tierLabel: 'Tier 2 — Early',
+    price: 16,
+    tierLabel: 'Early Birds',
     hypePct: 64,
     threshold: 180,
     backers: 115,
@@ -236,26 +234,26 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'almost',
     deadline: 'Jul 9, 9:00 PM',
     tiers: [
-      { label: 'Early Birds', price: 16, qty: 60, sold: 60 },
-      { label: 'Hype Builders', price: 22, qty: 80, sold: 55 },
-      { label: 'Main Crowd', price: 28, qty: 80, sold: 0 },
-      { label: 'Final Wave', price: 35, qty: 30, sold: 0 },
+      { label: 'Early Birds', price: 16, qty: 180, sold: 115 },
+      { label: 'Main Crowd', price: 29, qty: 70, sold: 0 },
     ],
   },
   {
     id: 'e6',
+    mine: true,
     title: 'Open Mic & Lo-Fi Lounge',
     organiser: 'SMU Writers Guild',
     date: 'Thu, Jul 17',
     time: '7:30 PM',
     endTime: '10:30 PM',
+    endDate: 'Thu, Jul 17',
     location: 'The Hangar, SMU Connexion',
     description:
       'Spoken word, acoustic sets and shared playlists. BYO notebooks.',
     image:
       'https://images.unsplash.com/photo-1485579149621-3123dd979885?w=1200&q=80&auto=format&fit=crop',
     price: 8,
-    tierLabel: 'Tier 1 — Super Early',
+    tierLabel: 'Early Birds',
     hypePct: 9,
     threshold: 120,
     backers: 11,
@@ -264,10 +262,8 @@ export const MOCK_EVENTS: EventItem[] = [
     status: 'cancelled',
     deadline: 'Jul 15, 8:00 PM',
     tiers: [
-      { label: 'Early Birds', price: 8, qty: 60, sold: 11 },
-      { label: 'Hype Builders', price: 12, qty: 60, sold: 0 },
-      { label: 'Main Crowd', price: 16, qty: 60, sold: 0 },
-      { label: 'Final Wave', price: 20, qty: 20, sold: 0 },
+      { label: 'Early Birds', price: 8, qty: 120, sold: 11 },
+      { label: 'Main Crowd', price: 14, qty: 80, sold: 0 },
     ],
   },
 ];
