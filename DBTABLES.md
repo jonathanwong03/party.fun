@@ -70,13 +70,14 @@ This document describes the **authoritative data model** for party.fun, the life
 | status | text enum | `captured` \| `given_away` \| `partially_given_away` |
 | capturedAt | timestamptz | |
 | refundedAt | timestamptz \| null | |
+| **deletedAt** | timestamptz \| null | **soft-delete marker: NULL = live, a timestamp = deleted (hidden from the user, kept for audit/recovery)** |
 | createdAt / updatedAt | timestamptz | |
 
 ### `BOOKING_ITEMS` (per-tier line items of a booking)
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint (PK) | |
-| bookingId | bigint (FK → BOOKINGS.id, **ON DELETE CASCADE**) | |
+| bookingId | bigint (FK → BOOKINGS.id) | cascade no longer required — see soft-delete note below |
 | priceTierId | bigint (FK → PRICE_TIERS.id) | |
 | quantity | int | |
 | unitPrice | numeric | |
@@ -87,7 +88,7 @@ This document describes the **authoritative data model** for party.fun, the life
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint (PK) | |
-| bookingId | bigint (FK → BOOKINGS.id, **ON DELETE CASCADE**) | |
+| bookingId | bigint (FK → BOOKINGS.id) | cascade no longer required — see soft-delete note below |
 | bookingItemId | bigint (FK → BOOKING_ITEMS.id) | |
 | qrCode | text | |
 | status | text enum | **`active` \| `used` \| `given_away` \| `refunded`** |
@@ -103,8 +104,8 @@ USER 1──* BOOKINGS         (BOOKINGS.userId)
 EVENT 1──1 EVENT_SETTINGS  (EVENT_SETTINGS.eventId)
 EVENT 1──* PRICE_TIERS     (PRICE_TIERS.eventId)
 EVENT 1──* BOOKINGS        (BOOKINGS.eventId)
-BOOKINGS 1──* BOOKING_ITEMS (cascade delete)
-BOOKINGS 1──* TICKETS       (cascade delete)
+BOOKINGS 1──* BOOKING_ITEMS (soft delete — booking is marked deletedAt, not removed)
+BOOKINGS 1──* TICKETS       (soft delete — booking is marked deletedAt, not removed)
 PRICE_TIERS 1──* BOOKING_ITEMS (BOOKING_ITEMS.priceTierId)
 BOOKING_ITEMS 1──* TICKETS  (TICKETS.bookingItemId)
 ```
@@ -115,8 +116,8 @@ BOOKING_ITEMS 1──* TICKETS  (TICKETS.bookingItemId)
 
 - **`EVENT.status = 'cancelled'`** (+ `cancelledAt`, `cancellationReason`) — event-level cancellation. Such an event is **unavailable for everyone**: hidden from All Events, no pledge button (replaced with red "Event unavailable"), no re-pledge.
 - **Buyer give-away** — when all of a user's tickets for an event have `TICKETS.status = 'given_away'` (booking `activeTicketCount = 0`), that event is treated as cancelled **for that user** (same unavailable behaviour).
-- A booking is classified into a Joined Events tab as: `cancelled` if `EVENT.status='cancelled'` OR the booking has no active tickets; else `past` if `EVENT.status='completed'`; else `upcoming`.
-- **Delete from Cancelled/Past tab** = **hard delete** of the booking row. Because of `ON DELETE CASCADE`, its `BOOKING_ITEMS` and `TICKETS` are removed in one statement. No soft-delete column is used.
+- A booking is classified into a Joined Events tab as: `cancelled` if `EVENT.status='cancelled'` OR the booking has no active tickets; else `past` if `EVENT.status='completed'`; else `upcoming`. Bookings with `deletedAt` set are excluded from all tabs.
+- **Delete from Cancelled/Past tab** = **soft delete**. `ON DELETE CASCADE` is a *hard*-delete mechanism (deleting a parent row auto-deletes its child `TICKETS`/`BOOKING_ITEMS` in the same statement); we no longer use it. Instead the delete is an `UPDATE "BOOKINGS" SET "deletedAt" = now() WHERE id = $1 AND "userId" = $2;` and every read filters `deletedAt IS NULL`. The row (and its tickets/items) stays for audit/recovery; the soft-deleted booking is also excluded from hype/spot counts.
 
 ---
 
@@ -125,20 +126,19 @@ BOOKING_ITEMS 1──* TICKETS  (TICKETS.bookingItemId)
 Current Supabase tables (all empty): `USER, EVENT, EVENT_SETTINGS, PRICE_TIERS, BOOKINGS, TICKETS`.
 
 ### Add a new table
-- **`BOOKING_ITEMS`** — `id bigint identity PK`, `bookingId bigint FK→BOOKINGS.id ON DELETE CASCADE`, `priceTierId bigint FK→PRICE_TIERS.id`, `quantity int`, `unitPrice numeric`, `subtotal numeric`, `created_at timestamptz default now()`.
+- **`BOOKING_ITEMS`** — `id bigint identity PK`, `bookingId bigint FK→BOOKINGS.id`, `priceTierId bigint FK→PRICE_TIERS.id`, `quantity int`, `unitPrice numeric`, `subtotal numeric`, `created_at timestamptz default now()`.
 
 ### Add columns
 - **`USER`**: add `username text unique`, `role text` (`user`/`organiser`), `contact text null`, `socialLink text null`.
 - **`EVENT`**: add `startDate timestamptz`, `endDate timestamptz`, `imageUrl text`, `currentTierName text`, `greenlitAt timestamptz null`, **`cancelledAt timestamptz null`**, **`cancellationReason text null`**, `updatedAt timestamptz`.
 - **`EVENT_SETTINGS`**: add `maxCapacity int` (replaces `hardCapacity`), `updatedAt timestamptz`.
 - **`PRICE_TIERS`**: add `tierName text`, `ticketCapacity int`.
-- **`BOOKINGS`**: add `refundedAmount numeric default 0`, `capturedAt timestamptz`, `refundedAt timestamptz null`, `updatedAt timestamptz`.
+- **`BOOKINGS`**: add `refundedAmount numeric default 0`, `capturedAt timestamptz`, `refundedAt timestamptz null`, **`deletedAt timestamptz null`** (soft-delete marker), `updatedAt timestamptz`.
 - **`TICKETS`**: add `bookingItemId bigint FK→BOOKING_ITEMS.id`, **`status text`** (`active`/`used`/`given_away`/`refunded`, default `active`), `givenAwayAt timestamptz null`, `refundedAt timestamptz null`, `usedAt timestamptz null`.
 
-### Change constraints (required for hard delete)
-- Drop & recreate FK **`TICKETS.bookingId`** → `BOOKINGS.id` with **`ON DELETE CASCADE`**.
-- Create FK **`BOOKING_ITEMS.bookingId`** → `BOOKINGS.id` with **`ON DELETE CASCADE`**.
-- With cascade in place, deleting a booking is a single `DELETE FROM "BOOKINGS" WHERE id = $1 AND "userId" = $2;`.
+### Delete behaviour (soft delete — no cascade needed)
+- Deleting a booking is an **`UPDATE "BOOKINGS" SET "deletedAt" = now() WHERE id = $1 AND "userId" = $2;`** — not a `DELETE`. Every read filters `WHERE "deletedAt" IS NULL`.
+- The `TICKETS.bookingId` / `BOOKING_ITEMS.bookingId` FKs can stay plain (`NO ACTION`/`RESTRICT`); **`ON DELETE CASCADE` is not required** because rows are never physically removed. (Add cascade only if you later introduce a true purge job.)
 
 ### Columns to remove (only if fully aligning to the mock model — optional)
 - **`USER.walletBalance`** — unused by the app.
@@ -147,4 +147,4 @@ Current Supabase tables (all empty): `USER, EVENT, EVENT_SETTINGS, PRICE_TIERS, 
 - **`EVENT.date`** — superseded by `startDate` / `endDate`.
 - **`TICKETS.userId`** — redundant; the owner is reachable via `bookingId → BOOKINGS.userId` (keep if you prefer a denormalised shortcut).
 
-> No column needs to be removed *for the feature itself* — the feature only requires the cancellation fields (already partly present via `EVENT.status`) and the `ON DELETE CASCADE` constraints for hard delete.
+> No column needs to be removed *for the feature itself* — it only requires the cancellation fields (already partly present via `EVENT.status`) and the new **`BOOKINGS.deletedAt`** column for soft delete.

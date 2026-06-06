@@ -43,6 +43,11 @@ export type EventItem = {
   mine?: boolean;
   endTime?: string;
   endDate?: string;
+  // Raw ISO datetimes (for the countdown + edit-form validation); optional because
+  // in-form drafts are constructed without them.
+  startsAt?: string;
+  endsAt?: string;
+  deadlineAt?: string;
 };
 
 export function getActiveTier(e: EventItem): number {

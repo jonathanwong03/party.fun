@@ -11,5 +11,5 @@ export const initialBookings = [
 ];
 
 function booking(id, userId, eventId, amountPaid) {
-  return { id, userId, eventId, amountPaid, refundedAmount: 0, status: 'captured', capturedAt: '2026-06-02T00:00:00.000Z', refundedAt: null, createdAt: '2026-06-02T00:00:00.000Z', updatedAt: '2026-06-02T00:00:00.000Z' };
+  return { id, userId, eventId, amountPaid, refundedAmount: 0, status: 'captured', capturedAt: '2026-06-02T00:00:00.000Z', refundedAt: null, deletedAt: null, createdAt: '2026-06-02T00:00:00.000Z', updatedAt: '2026-06-02T00:00:00.000Z' };
 }

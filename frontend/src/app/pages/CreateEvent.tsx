@@ -11,7 +11,7 @@ import { getActiveTier, type EventItem, type Route, type EventStatus } from '../
 import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
-import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError } from '../components/validation';
+import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError, futureDateTimeError } from '../components/validation';
 
 export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? [];
@@ -26,22 +26,25 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [description, setDescription] = useState(source?.description ?? '');
   const [venue, setVenue] = useState(source?.location.split(',')[0] ?? '');
   const [address, setAddress] = useState(source?.location ?? '');
-  const [date, setDate] = useState(source?.date ?? '');
-  const [start, setStart] = useState(source?.time ?? '');
-  const [end, setEnd] = useState(source?.endTime ?? '');
-  const [endDate, setEndDate] = useState(source?.endDate ?? '');
+  // Prefill the pickers in DD/MM/YYYY + H:MM AM/PM so the validators apply uniformly.
+  // Seed/published events carry raw ISO (startsAt/endsAt/deadlineAt); drafts only the display strings.
+  const [date, setDate] = useState(isoToDateInput(source?.startsAt) || source?.date || '');
+  const [start, setStart] = useState(isoToTimeInput(source?.startsAt) || source?.time || '');
+  const [end, setEnd] = useState(isoToTimeInput(source?.endsAt) || source?.endTime || '');
+  const [endDate, setEndDate] = useState(isoToDateInput(source?.endsAt) || source?.endDate || '');
   // Deadline is split into a date + time picker; combined into "DD/MM/YYYY, H:MM AM/PM" on submit.
-  const dl0 = parseDeadline(source?.deadline);
+  const dl0 = source?.deadlineAt
+    ? { d: isoToDateInput(source.deadlineAt), t: isoToTimeInput(source.deadlineAt) }
+    : parseDeadline(source?.deadline);
   const [deadlineDate, setDeadlineDate] = useState(dl0.d);
   const [deadlineTime, setDeadlineTime] = useState(dl0.t);
   const deadline = deadlineDate || deadlineTime ? `${deadlineDate}, ${deadlineTime}` : (source?.deadline ?? '');
   const money = (n?: number) => (n != null ? n.toFixed(2) : '');
-  // Tier capacities determine the upper limit; the hype threshold is an independent lower bound.
+  // The Early Birds quantity doubles as the hype threshold; Main Crowd adds the rest of capacity.
   const [ebPrice, setEbPrice] = useState<string>(money(source?.tiers[0]?.price) || '10.00');
   const [ebQty, setEbQty] = useState<number>(source?.tiers[0]?.qty ?? source?.hypeThreshold ?? 150);
   const [mcPrice, setMcPrice] = useState<string>(money(source?.tiers[1]?.price) || '20.00');
   const [mcQty, setMcQty] = useState<number>(source?.tiers[1]?.qty ?? 150);
-  const [hypeThreshold, setHypeThreshold] = useState<number>(source?.hypeThreshold ?? 150);
   const maxCapacity = ebQty + mcQty;
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
@@ -63,11 +66,13 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     deadlineVsEvent: deadlineEventError(date, start, deadlineDate, deadlineTime),
     ebP: priceError(ebPrice),
     mcP: priceError(mcPrice),
-    hypeThreshold: hypeThreshold > maxCapacity ? 'Hype threshold cannot exceed maximum capacity.' : null,
+    startFuture: futureDateTimeError(date, start),
+    endFuture: futureDateTimeError(endDate, end),
   };
-  // In edit mode the schedule/deadline fields hold human-readable values from the seed data
-  // that the strict validators reject, so suppress those errors when editing.
-  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'schedule', 'deadline', 'deadlineVsEvent']);
+  // The deadline fields stay relaxed in edit mode (seed deadlines are human-readable; greenlit
+  // events lock the deadline anyway). Schedule/date/time checks DO run in edit mode now that the
+  // pickers are normalised to DD/MM/YYYY, enforcing future start/end and end-after-start.
+  const relaxedInEdit = new Set<keyof typeof errs>(['deadline', 'deadlineVsEvent']);
   const errOf = (k: keyof typeof errs) => (showErrors && !(isEdit && relaxedInEdit.has(k)) ? errs[k] : null);
   const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
 
@@ -90,7 +95,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       tierLabel: 'Early Birds',
       currentTierName: 'early_bird',
       hypePercentage: 0,
-      hypeThreshold,
+      hypeThreshold: ebQty,
       activeTicketCount: 0,
       maxCapacity,
       spotsLeft: maxCapacity,
@@ -124,7 +129,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       tierLabel: 'Early Birds',
       currentTierName: 'early_bird',
       hypePercentage: 0,
-      hypeThreshold,
+      hypeThreshold: ebQty,
       activeTicketCount: 0,
       maxCapacity,
       spotsLeft: maxCapacity,
@@ -141,10 +146,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
 
   const handleSave = () => {
     if (!existing) return;
-    // Relaxed validation: existing events store human-readable dates (e.g. "Fri, Jun 12")
-    // that the strict create validators reject, so only require the text fields here.
+    // Block on any active (non-relaxed) error: text fields plus the enforced schedule/future
+    // datetime checks (end after start, start & end in the future).
     setShowErrors(true);
-    if (required(title) || required(organiser) || required(description) || required(venue) || required(address) || errs.hypeThreshold) return;
+    if ((Object.keys(errs) as (keyof typeof errs)[]).some((k) => errOf(k))) return;
     const tiers = [
       { tierName: 'early_bird' as const, label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
       { tierName: 'main_crowd' as const, label: 'Main Crowd', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
@@ -160,7 +165,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       endTime: end,
       endDate,
       maxCapacity,
-      hypeThreshold,
+      hypeThreshold: ebQty,
       deadline,
       spotsLeft: Math.max(0, maxCapacity - existing.activeTicketCount),
       tiers,
@@ -249,18 +254,13 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                   </div>
                 )}
                 <div className="mb-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  The hype threshold confirms the event at its minimum viable attendance. Tier quantities set the maximum capacity of {maxCapacity}.
+                  The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Tier quantities set the maximum capacity of {maxCapacity}.
                 </div>
-                <div className="mb-4 max-w-[260px]">
-                  <Field label="Hype threshold" error={errOf('hypeThreshold')}>
-                    <NumberStepper value={hypeThreshold} onChange={setHypeThreshold} min={1} max={maxCapacity} disabled={locked} />
-                  </Field>
-                </div>
-                <TierRow label="Early Birds" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
+                <TierRow label="Early Birds - Hype Threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
                 <TierRow label="Main Crowd" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} /></Field>
-                  <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" /></Field>
+                  <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} disabled={locked} /></Field>
+                  <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" disabled={locked} /></Field>
                 </div>
               </Section>
 
@@ -394,6 +394,21 @@ function PriceInput({ value, onChange, disabled, error }: { value: string; onCha
 }
 
 const num = (s: string) => parseFloat(s) || 0;
+
+// Format a raw ISO datetime into the picker formats (Asia/Singapore) so the validators,
+// which expect DD/MM/YYYY and H:MM AM/PM, apply uniformly to seed/published events.
+function isoToDateInput(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', day: '2-digit', month: '2-digit', year: 'numeric' }).format(d);
+}
+function isoToTimeInput(iso?: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', hour12: true }).format(d).toUpperCase();
+}
 
 // Split a stored deadline string "DD/MM/YYYY, H:MM AM/PM" into its date + time parts.
 // Human-readable seed deadlines (e.g. "Jun 10, 11:59 PM") don't match and yield empty parts.

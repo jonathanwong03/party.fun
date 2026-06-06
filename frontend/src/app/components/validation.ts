@@ -76,7 +76,15 @@ export const scheduleError = (startDate: string, startTime: string, endDate: str
   const startAt = toDateTime(startDate, startTime);
   const endAt = toDateTime(endDate, endTime);
   if (!startAt || !endAt) return null;
-  return endAt.getTime() < startAt.getTime() ? 'End must be after the start.' : null;
+  // Strictly after: an end equal to (or before) the start is invalid.
+  return endAt.getTime() <= startAt.getTime() ? 'End must be after the start.' : null;
+};
+
+// A date + time combination must be strictly in the future (after now).
+export const futureDateTimeError = (date: string, time: string) => {
+  const at = toDateTime(date, time);
+  if (!at) return null;
+  return at.getTime() <= Date.now() ? 'Must be a date and time in the future.' : null;
 };
 
 // The hype deadline must fall on or before the event's start (date + start time).

@@ -92,10 +92,10 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
             {event.status !== 'greenlit' && event.status !== 'cancelled' && (
               <div className="mt-5 rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.03)' }}>
                 <div className="mb-3 flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  <Timer size={12} /> Hype deadline
-                  <span className="ml-auto font-medium" style={{ color: 'var(--foreground)' }}>{event.deadline}</span>
+                  <Timer size={12} /> Event starts in
+                  <span className="ml-auto font-medium" style={{ color: 'var(--foreground)' }}>{event.date}</span>
                 </div>
-                <Countdown deadline={event.deadline} />
+                <Countdown targetIso={event.startsAt} deadline={event.deadline} />
               </div>
             )}
 
@@ -225,7 +225,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
             </div>
-            <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>
+            {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>}
 
             {!unavailable && event.status !== 'completed' && (
               <div className="mt-4">
@@ -263,7 +263,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
                 style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
               >
                 {event.status === 'greenlit'
-                  ? `Buy Ticket · $${event.price}`
+                  ? 'Buy'
                   : event.status === 'completed'
                   ? 'Event completed'
                   : 'Pledge'}

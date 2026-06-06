@@ -21,10 +21,12 @@ const TIER_LABELS = { early_bird: 'Early Birds', main_crowd: 'Main Crowd' };
 
 const money = (value) => Number(Number(value).toFixed(2));
 const id = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const isDeleted = (bookingId) => !!bookings.find((booking) => booking.id === bookingId)?.deletedAt;
 const activeTickets = (bookingId) => tickets.filter((ticket) => ticket.bookingId === bookingId && ACTIVE_TICKET_STATUSES.has(ticket.status));
 const eventBookings = (eventId) => bookings.filter((booking) => booking.eventId === eventId);
 const eventTickets = (eventId) => {
-  const bookingIds = new Set(eventBookings(eventId).map((booking) => booking.id));
+  // Tickets of soft-deleted bookings are excluded so a deleted booking never counts toward hype/spots.
+  const bookingIds = new Set(eventBookings(eventId).filter((booking) => !booking.deletedAt).map((booking) => booking.id));
   return tickets.filter((ticket) => bookingIds.has(ticket.bookingId));
 };
 const activeEventTickets = (eventId) => eventTickets(eventId).filter((ticket) => ACTIVE_TICKET_STATUSES.has(ticket.status));
@@ -46,7 +48,7 @@ function ticketTier(ticket) {
 
 function tierActiveCount(tierId) {
   const itemIds = new Set(bookingItems.filter((item) => item.priceTierId === tierId).map((item) => item.id));
-  return tickets.filter((ticket) => itemIds.has(ticket.bookingItemId) && ACTIVE_TICKET_STATUSES.has(ticket.status)).length;
+  return tickets.filter((ticket) => itemIds.has(ticket.bookingItemId) && ACTIVE_TICKET_STATUSES.has(ticket.status) && !isDeleted(ticket.bookingId)).length;
 }
 
 function recalculateEvent(event) {
@@ -82,6 +84,9 @@ function publicEvent(event, userId) {
     time: formatDate(event.startDate, { hour: 'numeric', minute: '2-digit', hour12: true }),
     endTime: formatDate(event.endDate, { hour: 'numeric', minute: '2-digit', hour12: true }),
     endDate: formatDate(event.endDate, { weekday: 'short', month: 'short', day: 'numeric' }),
+    startsAt: event.startDate,
+    endsAt: event.endDate,
+    deadlineAt: settings.deadline,
     location: event.location,
     description: event.description,
     image: event.imageUrl,
@@ -151,7 +156,7 @@ export function createPledge({ userId, eventId, qty }) {
   const event = events.find((candidate) => candidate.id === eventId);
   if (!event) return { error: 'not_found' };
   if (event.hostId === userId) return { error: 'own_event' };
-  if (bookings.some((booking) => booking.userId === userId && booking.eventId === eventId && activeTickets(booking.id).length > 0)) {
+  if (bookings.some((booking) => booking.userId === userId && booking.eventId === eventId && !booking.deletedAt && activeTickets(booking.id).length > 0)) {
     return { error: 'active_booking_exists' };
   }
 
@@ -169,6 +174,7 @@ export function createPledge({ userId, eventId, qty }) {
     status: 'captured',
     capturedAt: now,
     refundedAt: null,
+    deletedAt: null,
     createdAt: now,
     updatedAt: now,
   };
@@ -207,10 +213,10 @@ export function deleteBooking({ userId, bookingId }) {
   const booking = bookings.find((candidate) => candidate.id === bookingId && candidate.userId === userId);
   if (!booking) return { error: 'not_found' };
 
-  // Hard delete: drop the booking and everything that hangs off it.
-  tickets = tickets.filter((ticket) => ticket.bookingId !== bookingId);
-  bookingItems = bookingItems.filter((item) => item.bookingId !== bookingId);
-  bookings = bookings.filter((candidate) => candidate.id !== bookingId);
+  // Soft delete: keep the row (audit/recovery), just mark it deleted so it's hidden everywhere.
+  const now = new Date().toISOString();
+  booking.deletedAt = now;
+  booking.updatedAt = now;
 
   const event = events.find((candidate) => candidate.id === booking.eventId);
   if (event) recalculateEvent(event);
@@ -238,7 +244,7 @@ function publicBooking(booking) {
 
 export function getProfile(userId) {
   const user = users.find((candidate) => candidate.id === userId);
-  const profileBookings = bookings.filter((booking) => booking.userId === userId).map(publicBooking);
+  const profileBookings = bookings.filter((booking) => booking.userId === userId && !booking.deletedAt).map(publicBooking);
   return {
     profile: {
       id: userId,
