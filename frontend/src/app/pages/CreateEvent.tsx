@@ -11,7 +11,7 @@ import { MOCK_EVENTS, getActiveTier, type EventItem, type Route, type EventStatu
 import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
-import { required, dateError, timeError, deadlineError, priceError, endTimeError } from '../components/validation';
+import { required, dateError, timeError, deadlineError, priceError, endTimeError, deadlineEventError } from '../components/validation';
 
 export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? MOCK_EVENTS;
@@ -61,6 +61,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     venue: required(venue),
     address: required(address),
     deadline: deadlineError(deadline),
+    deadlineVsEvent: deadlineEventError(date, start, deadlineDate, deadlineTime),
     t1: priceError(t1p),
     t2: priceError(t2p),
     t3: priceError(t3p),
@@ -69,7 +70,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   };
   // In edit mode the schedule/deadline fields hold human-readable values from the seed data
   // that the strict validators reject, so suppress those errors when editing.
-  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'endVsStart', 'deadline']);
+  const relaxedInEdit = new Set<keyof typeof errs>(['date', 'start', 'end', 'endVsStart', 'deadline', 'deadlineVsEvent']);
   const errOf = (k: keyof typeof errs) => (showErrors && !(isEdit && relaxedInEdit.has(k)) ? errs[k] : null);
   const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
 
@@ -266,7 +267,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                   <Field label="Tier 4 — Final Wave price" error={errOf('tF')}><PriceInput value={tFp} onChange={setTFp} disabled={locked} error={!!errOf('tF')} /></Field>
                 </div>
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Deadline date" error={errOf('deadline')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!errOf('deadline')} /></Field>
+                  <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} /></Field>
                   <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" /></Field>
                 </div>
               </Section>

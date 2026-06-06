@@ -96,6 +96,11 @@ function isAuthPath(pathname: string) {
   return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser';
 }
 
+// Pages a signed-out guest may view: the All Events list and any event detail.
+function isPublicPath(pathname: string) {
+  return pathname === '/events' || /^\/events\/[^/]+$/.test(pathname);
+}
+
 function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
   if (pathname === '/signup') return { name: 'choose-account' };
@@ -188,21 +193,20 @@ function AppShell() {
     let ignore = false;
 
     async function loadBackendState() {
-      if (!role) {
-        setEvents([]);
-        setProfileTickets([]);
-        setDataError(null);
-        setLoadingData(false);
-        return;
-      }
-
+      // Events are public, so they load for guests too; the profile only loads when signed in.
       setLoadingData(true);
       setDataError(null);
       try {
-        const [loadedEvents, profile] = await Promise.all([fetchEvents(role), fetchProfile(role)]);
+        const loadedEvents = await fetchEvents(role);
         if (ignore) return;
         setEvents(loadedEvents);
-        setProfileTickets(profile.tickets);
+        if (role) {
+          const profile = await fetchProfile(role);
+          if (ignore) return;
+          setProfileTickets(profile.tickets);
+        } else {
+          setProfileTickets([]);
+        }
       } catch (error) {
         if (ignore) return;
         setDataError(error instanceof Error ? error.message : 'Unable to load app data.');
@@ -245,7 +249,8 @@ function AppShell() {
 
   const go = (nextRoute: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    navigate(role || isAuthPath(pathForRoute(nextRoute)) ? pathForRoute(nextRoute) : '/login', {
+    const target = pathForRoute(nextRoute);
+    navigate(role || isAuthPath(target) || isPublicPath(target) ? target : '/login', {
       state: stateForRoute(nextRoute),
     });
   };
@@ -254,7 +259,7 @@ function AppShell() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
-    navigate(account.role === 'organiser' ? '/hosted-events' : '/events', { replace: true });
+    navigate('/events', { replace: true });
   };
 
   const handleLogout = () => {
@@ -265,13 +270,13 @@ function AppShell() {
     navigate('/login', { replace: true });
   };
 
-  if (!role && !isAuthPage) {
+  if (!role && !isAuthPage && !isPublicPath(location.pathname)) {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
-      {!isAuthPage && role && (
+      {!isAuthPage && (
         <Navbar
           role={role}
           user={user}
@@ -291,7 +296,7 @@ function AppShell() {
       )}
 
       <Routes>
-        <BrowserRoute path="/" element={<Login go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/" element={<Navigate to="/events" replace />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
@@ -307,7 +312,7 @@ function AppShell() {
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
-        <BrowserRoute path="*" element={<Navigate to={role ? '/events' : '/login'} replace />} />
+        <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
 
       {!isAuthPage && !isOrganiserConsole && role && (
@@ -331,8 +336,6 @@ function EventDetailRoute({
   const { eventId = '' } = useParams();
   const location = useLocation();
   const state = (location.state ?? {}) as RouteState;
-
-  if (!role) return <Navigate to="/login" replace />;
 
   return (
     <EventDetail

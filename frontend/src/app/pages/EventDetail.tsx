@@ -10,7 +10,7 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   const [buyQty, setBuyQty] = useState(1);
@@ -28,7 +28,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromOrganiser;
   // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
-  const showOwnEvent = !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
+  const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -253,7 +253,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
             <Button
-              onClick={() => go({ name: 'checkout', id: event.id, qty: buyQty })}
+              onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
               disabled={event.status === 'cancelled' || available === 0}
               className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
               style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}

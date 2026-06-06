@@ -10,7 +10,7 @@ export function Navbar({
   go,
   onMenuClick,
 }: {
-  role: Role;
+  role: Role | null;
   user: AuthUser | null;
   route: Route;
   go: (r: Route) => void;
@@ -36,14 +36,16 @@ export function Navbar({
     >
       <div className="mx-auto grid h-16 max-w-[1536px] grid-cols-[1fr_auto_1fr] items-center px-6">
         <div className="flex items-center gap-3 justify-self-start">
-          <button
-            type="button"
-            onClick={onMenuClick}
-            aria-label="Open menu"
-            className="grid size-9 place-items-center rounded-full hover:bg-white/5"
-          >
-            <Menu size={20} color="#ffffff" />
-          </button>
+          {role && (
+            <button
+              type="button"
+              onClick={onMenuClick}
+              aria-label="Open menu"
+              className="grid size-9 place-items-center rounded-full hover:bg-white/5"
+            >
+              <Menu size={20} color="#ffffff" />
+            </button>
+          )}
           <button onClick={() => go({ name: 'landing' })} className="flex items-center">
             <Logo />
           </button>
@@ -56,7 +58,7 @@ export function Navbar({
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end">
-          {(role === 'user' || role === 'organiser') && (
+          {role ? (
             <>
               <button
                 type="button"
@@ -76,6 +78,15 @@ export function Navbar({
                 {initial}
               </button>
             </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => go({ name: 'login' })}
+              className="rounded-full bg-[#ff4d2e] px-4 py-1.5 text-sm text-white transition hover:bg-[#ff6647]"
+              style={{ fontWeight: 600 }}
+            >
+              Login
+            </button>
           )}
         </div>
       </div>

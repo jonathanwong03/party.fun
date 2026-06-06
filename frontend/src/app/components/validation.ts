@@ -62,6 +62,22 @@ export const endTimeError = (start: string, end: string) => {
   return timeToMinutes(start) === timeToMinutes(end) ? 'End time cannot be the same as the start time.' : null;
 };
 
+// Combine a DD/MM/YYYY date and a H:MM AM/PM time into a Date (null if either is invalid).
+const toDateTime = (date: string, time: string) => {
+  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(date.trim());
+  const t = timeToMinutes(time);
+  if (!dm || t == null) return null;
+  return new Date(+dm[3], +dm[2] - 1, +dm[1], Math.floor(t / 60), t % 60);
+};
+
+// The threshold deadline must fall on or before the event's start (date + start time).
+export const deadlineEventError = (eventDate: string, startTime: string, deadlineDate: string, deadlineTime: string) => {
+  const eventAt = toDateTime(eventDate, startTime);
+  const deadlineAt = toDateTime(deadlineDate, deadlineTime);
+  if (!eventAt || !deadlineAt) return null;
+  return deadlineAt.getTime() > eventAt.getTime() ? 'Deadline must be on or before the event start.' : null;
+};
+
 // Deadline: a DD/MM/YYYY date and a 12-hour time, e.g. "10/06/2025, 11:59 PM".
 export const isValidDeadline = (v: string) => {
   const m = /^(.+?),?\s+(\d{1,2}:[0-5]\d\s?(?:AM|PM))$/i.exec(v.trim());
