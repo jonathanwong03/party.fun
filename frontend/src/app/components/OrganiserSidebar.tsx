@@ -1,14 +1,14 @@
 import { LayoutDashboard, CalendarPlus, Settings, BarChart3, Users, Ticket } from 'lucide-react';
 import type { Route } from './types';
 
-export function AdminSidebar({ route, go }: { route: Route; go: (r: Route) => void }) {
+export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) => void }) {
   const items = [
-    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'admin' } as Route, active: route.name === 'admin' },
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'organiser' } as Route, active: route.name === 'organiser' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' } as Route, active: route.name === 'create-event' },
-    { label: 'Analytics', icon: BarChart3, target: { name: 'admin' } as Route, active: false },
-    { label: 'Attendees', icon: Users, target: { name: 'admin' } as Route, active: false },
-    { label: 'Tickets', icon: Ticket, target: { name: 'admin' } as Route, active: false },
-    { label: 'Settings', icon: Settings, target: { name: 'admin' } as Route, active: false },
+    { label: 'Analytics', icon: BarChart3, target: { name: 'organiser' } as Route, active: false },
+    { label: 'Attendees', icon: Users, target: { name: 'organiser' } as Route, active: false },
+    { label: 'Tickets', icon: Ticket, target: { name: 'organiser' } as Route, active: false },
+    { label: 'Settings', icon: Settings, target: { name: 'organiser' } as Route, active: false },
   ];
 
   return (

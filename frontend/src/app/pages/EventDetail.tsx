@@ -10,7 +10,7 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromAdmin, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   if (!event) {
@@ -23,7 +23,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
   const activeTier = getActiveTier(event);
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
-  const showWhosGoing = !!fromAdmin;
+  const showWhosGoing = !!fromOrganiser;
   // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
   const showOwnEvent = !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
 
@@ -210,7 +210,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
             </Button>
 
             <Button
-              onClick={() => go({ name: 'admin' })}
+              onClick={() => go({ name: 'organiser' })}
               variant="outline"
               className="mt-3 w-full border-white/15 bg-transparent hover:bg-white/5"
               style={{ borderRadius: 12, height: 48, fontSize: 15, fontWeight: 700 }}

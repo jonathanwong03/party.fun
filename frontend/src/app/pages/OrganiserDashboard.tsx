@@ -19,12 +19,12 @@ const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
   CANCELLED: '#ff6b85',
 };
 
-export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
+export function OrganiserDashboard({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [tab, setTab] = useState<'created' | 'drafts'>('created');
 
   const isDrafts = tab === 'drafts';
-  // The dashboard is for events the admin created themselves (mine), not the full catalogue.
+  // The dashboard is for events the organiser created themselves (mine), not the full catalogue.
   const created = events.filter((e) => e.mine);
   const rows = isDrafts ? drafts : created;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
@@ -163,7 +163,7 @@ export function AdminDashboard({ route, go, events, onDelete, drafts, onDeleteDr
                             </>
                           ) : (
                             <>
-                              <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromAdmin: true })}><Eye size={14} /></IconBtn>
+                              <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
                               <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
                               <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
                             </>

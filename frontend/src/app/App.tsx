@@ -20,16 +20,16 @@ import { Confirmation } from './pages/Confirmation';
 import { Login } from './pages/Login';
 import { ChooseAccount } from './pages/ChooseAccount';
 import { RegisterUser } from './pages/RegisterUser';
-import { RegisterAdmin } from './pages/RegisterAdmin';
+import { RegisterOrganiser } from './pages/RegisterOrganiser';
 import { Profile } from './pages/Profile';
 import { JoinedEvents } from './pages/JoinedEvents';
 import { Settings } from './pages/Settings';
-import { AdminDashboard } from './pages/AdminDashboard';
+import { OrganiserDashboard } from './pages/OrganiserDashboard';
 import { CreateEvent } from './pages/CreateEvent';
 
 type RouteState = {
   fromProfile?: boolean;
-  fromAdmin?: boolean;
+  fromOrganiser?: boolean;
   fromPast?: boolean;
   qty?: number;
   amount?: number;
@@ -52,15 +52,15 @@ function pathForRoute(route: Route) {
       return '/signup';
     case 'register-user':
       return '/signup/user';
-    case 'register-admin':
-      return '/signup/admin';
+    case 'register-organiser':
+      return '/signup/organiser';
     case 'profile':
       return '/profile';
     case 'joined-events':
       return '/joined-events';
     case 'settings':
       return '/settings';
-    case 'admin':
+    case 'organiser':
       return '/dashboard';
     case 'create-event':
       return route.draftId ? `/dashboard/drafts/${route.draftId}/edit` : '/dashboard/events/new';
@@ -73,7 +73,7 @@ function stateForRoute(route: Route): RouteState | undefined {
   if (route.name === 'event') {
     return {
       fromProfile: route.fromProfile,
-      fromAdmin: route.fromAdmin,
+      fromOrganiser: route.fromOrganiser,
       fromPast: route.fromPast,
       qty: route.qty,
       amount: route.amount,
@@ -89,19 +89,19 @@ function stateForRoute(route: Route): RouteState | undefined {
 }
 
 function isAuthPath(pathname: string) {
-  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/admin';
+  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser';
 }
 
 function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
   if (pathname === '/signup') return { name: 'choose-account' };
   if (pathname === '/signup/user') return { name: 'register-user' };
-  if (pathname === '/signup/admin') return { name: 'register-admin' };
+  if (pathname === '/signup/organiser') return { name: 'register-organiser' };
   if (pathname === '/events') return { name: 'landing' };
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/settings') return { name: 'settings' };
-  if (pathname === '/dashboard') return { name: 'admin' };
+  if (pathname === '/dashboard') return { name: 'organiser' };
   if (pathname === '/dashboard/events/new') return { name: 'create-event' };
 
   const draftMatch = pathname.match(/^\/dashboard\/drafts\/([^/]+)\/edit$/);
@@ -122,7 +122,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
       name: 'event',
       id: eventMatch[1],
       fromProfile: state?.fromProfile,
-      fromAdmin: state?.fromAdmin,
+      fromOrganiser: state?.fromOrganiser,
       fromPast: state?.fromPast,
       qty: state?.qty,
       amount: state?.amount,
@@ -237,7 +237,7 @@ function AppShell() {
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
-  const isAdminConsole = location.pathname.startsWith('/dashboard');
+  const isOrganiserConsole = location.pathname.startsWith('/dashboard');
 
   const go = (nextRoute: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -250,7 +250,7 @@ function AppShell() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
-    navigate(account.role === 'admin' ? '/dashboard' : '/events', { replace: true });
+    navigate(account.role === 'organiser' ? '/dashboard' : '/events', { replace: true });
   };
 
   const handleLogout = () => {
@@ -291,7 +291,7 @@ function AppShell() {
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
-        <BrowserRoute path="/signup/admin" element={<RegisterAdmin go={go} />} />
+        <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
@@ -299,14 +299,14 @@ function AppShell() {
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/dashboard" element={<AdminDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/dashboard" element={<OrganiserDashboard route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/dashboard/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/dashboard/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
         <BrowserRoute path="*" element={<Navigate to={role ? '/events' : '/login'} replace />} />
       </Routes>
 
-      {!isAuthPage && !isAdminConsole && role && (
+      {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
     </div>
@@ -341,7 +341,7 @@ function EventDetailRoute({
       total={state.total}
       onCancelAttendance={onCancelAttendance}
       fromProfile={state.fromProfile}
-      fromAdmin={state.fromAdmin}
+      fromOrganiser={state.fromOrganiser}
       fromPast={state.fromPast}
     />
   );

@@ -27,7 +27,7 @@ export function Navbar({
     </button>
   );
 
-  const initial = user?.username?.charAt(0).toUpperCase() ?? (role === 'admin' ? 'A' : role === 'user' ? 'J' : '');
+  const initial = user?.username?.charAt(0).toUpperCase() ?? (role === 'organiser' ? 'A' : role === 'user' ? 'J' : '');
 
   return (
     <header
@@ -51,12 +51,12 @@ export function Navbar({
 
         <nav className="hidden items-center gap-1 justify-self-center md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
-          {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
-          {role === 'admin' && navItem('Hosted Events', { name: 'admin' }, route.name === 'admin')}
+          {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
+          {role === 'organiser' && navItem('Hosted Events', { name: 'organiser' }, route.name === 'organiser')}
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end">
-          {(role === 'user' || role === 'admin') && (
+          {(role === 'user' || role === 'organiser') && (
             <>
               <button
                 type="button"

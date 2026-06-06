@@ -1,5 +1,5 @@
 // Shared form validators + message helpers, reused across Checkout, Create Event,
-// Register User and Register Admin so every form behaves identically.
+// Register User and Register Organiser so every form behaves identically.
 
 export const isBlank = (v: string) => v.trim() === '';
 
@@ -104,3 +104,19 @@ export const cvcError = (v: string) =>
 
 export const confirmError = (pw: string, c: string) =>
   isBlank(c) ? 'This field is required.' : c !== pw ? 'Passwords do not match.' : null;
+
+// Matric / Student ID: one letter, one-or-more digits, one trailing letter (e.g. A0234567X).
+export const isValidMatric = (v: string) => /^[A-Za-z]\d+[A-Za-z]$/.test(v.trim());
+
+export const matricError = (v: string) =>
+  isBlank(v) ? 'This field is required.'
+    : isValidMatric(v) ? null
+    : 'Format: a letter, digits, then a letter (e.g. A0234567X).';
+
+// Price: a number with strictly two decimal places (e.g. 8.95, 1.00, 25.67).
+export const isValidPrice = (v: string) => /^\d+\.\d{2}$/.test(v.trim());
+
+export const priceError = (v: string) =>
+  isBlank(v) ? 'This field is required.'
+    : isValidPrice(v) ? null
+    : 'Enter a price with 2 decimals (e.g. 8.95).';

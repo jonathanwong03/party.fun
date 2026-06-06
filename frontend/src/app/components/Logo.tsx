@@ -19,6 +19,7 @@ export function Logo({ size = 28 }: { size?: number }) {
           fontWeight: 700,
           fontSize: 18,
           letterSpacing: '-0.02em',
+          color: '#ffffff',
         }}
       >
         party<span className="text-[#ff4d2e]">.fun</span>

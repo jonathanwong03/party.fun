@@ -26,7 +26,7 @@ export function Landing({
   const [price, setPrice] = useState('all');
 
   // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
-  //    and events the admin created themselves (those belong only in the Admin Dashboard).
+  //    and events the organiser created themselves (those belong only in the organiser dashboard).
   const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id) && !e.mine), [events, myEventIds]);
   const featured = available[0];
   const rest = available.slice(1);

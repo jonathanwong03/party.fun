@@ -8,8 +8,8 @@ import { required, emailError, confirmError } from '../components/validation';
 import { registerRequest } from '../api';
 import type { Route } from '../components/types';
 
-export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
-  const [adminName, setAdminName] = useState('');
+export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
+  const [organiserName, setOrganiserName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -20,7 +20,7 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
   const [submitting, setSubmitting] = useState(false);
 
   const errs = {
-    adminName: required(adminName),
+    organiserName: required(organiserName),
     email: emailError(email),
     password: required(password),
     confirm: confirmError(password, confirm),
@@ -50,7 +50,7 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
           if (hasErr) return;
           setSubmitting(true);
           try {
-            await registerRequest({ username: adminName, email, password, role: 'admin' });
+            await registerRequest({ username: organiserName, email, password, role: 'organiser' });
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
@@ -59,7 +59,7 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
           }
         }}
       >
-        <Field label="Admin name" autoComplete="off" placeholder="Jamie Tan" value={adminName} onChange={(e) => setAdminName(e.target.value)} error={attempted ? errs.adminName : null} />
+        <Field label="Organiser name" autoComplete="off" placeholder="Jamie Tan" value={organiserName} onChange={(e) => setOrganiserName(e.target.value)} error={attempted ? errs.organiserName : null} />
         <Field label="Email" type="email" autoComplete="off" placeholder="organiser@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Password" type="password" autoComplete="new-password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
@@ -71,13 +71,13 @@ export function RegisterAdmin({ go }: { go: (r: Route) => void }) {
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
           <Shield size={14} className="mt-0.5 shrink-0" />
-          <span>Admins can create and manage events. We verify CCAs before greenlighting payouts.</span>
+          <span>Organisers can create and manage events. We verify CCAs before greenlighting payouts.</span>
         </div>
 
         {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
 
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
-          {submitting ? 'Creating…' : 'Create admin account'}
+          {submitting ? 'Creating…' : 'Create organiser account'}
         </Button>
       </form>
     </AuthShell>

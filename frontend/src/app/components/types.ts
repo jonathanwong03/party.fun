@@ -1,20 +1,20 @@
 export type Route =
   | { name: 'landing' }
-  | { name: 'event'; id: string; fromProfile?: boolean; fromAdmin?: boolean; fromPast?: boolean; qty?: number; amount?: number; total?: number }
+  | { name: 'event'; id: string; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean; qty?: number; amount?: number; total?: number }
   | { name: 'checkout'; id: string }
   | { name: 'confirmation'; id: string; qty: number }
   | { name: 'login' }
   | { name: 'choose-account' }
   | { name: 'register-user' }
-  | { name: 'register-admin' }
+  | { name: 'register-organiser' }
   | { name: 'profile' }
   | { name: 'joined-events' }
   | { name: 'settings' }
-  | { name: 'admin' }
+  | { name: 'organiser' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };
 
-export type Role = 'user' | 'admin';
+export type Role = 'user' | 'organiser';
 
 export type EventStatus = 'live' | 'almost' | 'greenlit' | 'cancelled';
 
