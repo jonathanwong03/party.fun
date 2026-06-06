@@ -62,18 +62,18 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     schedule: scheduleError(date, start, endDate, end),
     venue: required(venue),
     address: required(address),
-    deadline: deadlineError(deadline),
-    deadlineVsEvent: deadlineEventError(date, start, deadlineDate, deadlineTime),
+    // Deadline is only validated when editable (greenlit events lock it, so no deadline checks).
+    deadline: locked ? null : deadlineError(deadline),
+    deadlineVsEvent: locked ? null : deadlineEventError(date, start, deadlineDate, deadlineTime),
+    deadlineFuture: locked ? null : futureDateTimeError(deadlineDate, deadlineTime),
     ebP: priceError(ebPrice),
     mcP: priceError(mcPrice),
+    // Start/end must be strictly in the future and end strictly after start (greenlit & non-greenlit).
     startFuture: futureDateTimeError(date, start),
     endFuture: futureDateTimeError(endDate, end),
   };
-  // The deadline fields stay relaxed in edit mode (seed deadlines are human-readable; greenlit
-  // events lock the deadline anyway). Schedule/date/time checks DO run in edit mode now that the
-  // pickers are normalised to DD/MM/YYYY, enforcing future start/end and end-after-start.
-  const relaxedInEdit = new Set<keyof typeof errs>(['deadline', 'deadlineVsEvent']);
-  const errOf = (k: keyof typeof errs) => (showErrors && !(isEdit && relaxedInEdit.has(k)) ? errs[k] : null);
+  // Dates are normalised to DD/MM/YYYY on prefill, so every check parses and runs in edit mode too.
+  const errOf = (k: keyof typeof errs) => (showErrors ? errs[k] : null);
   const errStyle = (e: string | null): React.CSSProperties => ({ ...fieldStyle, borderColor: e ? '#ff4d2e' : 'var(--border)' });
 
   const handlePublish = () => {
@@ -146,10 +146,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
 
   const handleSave = () => {
     if (!existing) return;
-    // Block on any active (non-relaxed) error: text fields plus the enforced schedule/future
-    // datetime checks (end after start, start & end in the future).
+    // Block on any active error: text fields plus the schedule/future datetime checks and
+    // (for non-greenlit) the deadline checks. errs is already gated by `locked`, so read it
+    // directly here — errOf() depends on the not-yet-applied showErrors state.
     setShowErrors(true);
-    if ((Object.keys(errs) as (keyof typeof errs)[]).some((k) => errOf(k))) return;
+    if (Object.values(errs).some(Boolean)) return;
     const tiers = [
       { tierName: 'early_bird' as const, label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
       { tierName: 'main_crowd' as const, label: 'Main Crowd', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
@@ -233,10 +234,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
 
               <Section title="Schedule">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Start date" error={errOf('date')}><DatePicker value={date} onChange={setDate} error={!!errOf('date')} /></Field>
-                  <Field label="Start time" error={errOf('start')}><TimePicker value={start} onChange={setStart} error={!!errOf('start')} placeholder="Start time" /></Field>
-                  <Field label="End date" error={errOf('schedule')}><DatePicker value={endDate} onChange={setEndDate} error={!!errOf('schedule')} /></Field>
-                  <Field label="End time" error={errOf('end')}><TimePicker value={end} onChange={setEnd} error={!!(errOf('end') || errOf('schedule'))} placeholder="End time" /></Field>
+                  <Field label="Start date" error={errOf('date') || errOf('startFuture')}><DatePicker value={date} onChange={setDate} error={!!(errOf('date') || errOf('startFuture'))} /></Field>
+                  <Field label="Start time" error={errOf('start') || errOf('startFuture')}><TimePicker value={start} onChange={setStart} error={!!(errOf('start') || errOf('startFuture'))} placeholder="Start time" /></Field>
+                  <Field label="End date" error={errOf('schedule') || errOf('endFuture')}><DatePicker value={endDate} onChange={setEndDate} error={!!(errOf('schedule') || errOf('endFuture'))} /></Field>
+                  <Field label="End time" error={errOf('end') || errOf('schedule') || errOf('endFuture')}><TimePicker value={end} onChange={setEnd} error={!!(errOf('end') || errOf('schedule') || errOf('endFuture'))} placeholder="End time" /></Field>
                 </div>
               </Section>
 
@@ -253,14 +254,14 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     Pricing is locked — this event is greenlit.
                   </div>
                 )}
-                <div className="mb-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <div className="mb-8 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Tier quantities set the maximum capacity of {maxCapacity}.
                 </div>
                 <TierRow label="Early Birds - Hype Threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
                 <TierRow label="Main Crowd" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                  <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} disabled={locked} /></Field>
-                  <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" disabled={locked} /></Field>
+                  <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} disabled={locked} /></Field>
+                  <Field label="Deadline time" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} placeholder="Deadline time" disabled={locked} /></Field>
                 </div>
               </Section>
 

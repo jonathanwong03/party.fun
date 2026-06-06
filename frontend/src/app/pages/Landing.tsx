@@ -23,7 +23,6 @@ export function Landing({
 }) {
   // Filter and search query states
   const [q, setQ] = useState('');
-  const [loc, setLoc] = useState('all');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
@@ -39,14 +38,13 @@ export function Landing({
   const filtered = useMemo(() => {
     return rest.filter((e) => {
       if (q && !`${e.title} ${e.organiser}`.toLowerCase().includes(q.toLowerCase())) return false;
-      if (loc !== 'all' && !e.location.toLowerCase().includes(loc)) return false;
       if (price === 'lt15' && e.price >= 15) return false;
       if (price === '15-25' && (e.price < 15 || e.price > 25)) return false;
       if (price === 'gt25' && e.price <= 25) return false;
       if (hype !== 'all' && eventBadgeKey(e) !== hype) return false;
       return true;
     });
-  }, [q, loc, hype, price, rest]);
+  }, [q, hype, price, rest]);
 
   if (loading) {
     return (
@@ -108,18 +106,6 @@ export function Landing({
             style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
           />
         </div>
-        <Select value={loc} onValueChange={setLoc}>
-          <SelectTrigger className="w-full md:w-40" style={{ background: 'var(--surface)' }}>
-            <SelectValue placeholder="Location" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All locations</SelectItem>
-            <SelectItem value="nus">NUS</SelectItem>
-            <SelectItem value="ntu">NTU</SelectItem>
-            <SelectItem value="smu">SMU</SelectItem>
-            <SelectItem value="sentosa">Sentosa</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={price} onValueChange={setPrice}>
           <SelectTrigger className="w-full md:w-36" style={{ background: 'var(--surface)' }}>
             <SelectValue placeholder="Price" />
@@ -139,7 +125,6 @@ export function Landing({
             <SelectItem value="all">All hype</SelectItem>
             <SelectItem value="tier0">Early Birds</SelectItem>
             <SelectItem value="tier1">Main Crowd</SelectItem>
-            <SelectItem value="greenlit">Confirmed</SelectItem>
           </SelectContent>
         </Select>
       </div>
