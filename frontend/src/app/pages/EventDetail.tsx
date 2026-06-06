@@ -44,7 +44,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <StatusBadge event={event} />
+            <StatusBadge event={event} detail />
             <h1 className="mt-3 text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>

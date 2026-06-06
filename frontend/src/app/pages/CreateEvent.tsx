@@ -248,8 +248,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                 <div className="mb-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   Early Birds quantity is the hype threshold ({threshold} backers); total capacity is {capacity}.
                 </div>
-                <TierRow label="Early Birds — quantity = hype threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
-                <TierRow label="Main Crowd — after greenlight" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
+                <TierRow label="Early Birds — Hype threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
+                <TierRow label="Main Crowd — After greenlit" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} /></Field>
                   <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" /></Field>
