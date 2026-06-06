@@ -1,6 +1,6 @@
 import { DEFAULT_MOCK_USER_ID } from '../data/mockPledges.js';
 
-const VALID_ROLES = new Set(['user', 'admin']);
+const VALID_ROLES = new Set(['user', 'organiser']);
 
 export function readMockAuth(req) {
   const role = req.get('X-Mock-Role');
@@ -15,7 +15,7 @@ export function requireMockRole(req, res) {
     return null;
   }
   if (!VALID_ROLES.has(auth.role)) {
-    res.status(403).json({ status: 'forbidden', message: 'X-Mock-Role must be user or admin.' });
+    res.status(403).json({ status: 'forbidden', message: 'X-Mock-Role must be user or organiser.' });
     return null;
   }
   return auth;

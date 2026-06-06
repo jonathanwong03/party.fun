@@ -7,10 +7,10 @@ export const initialUsers = [
     role: 'user',
   },
   {
-    id: 'mock-admin-smu',
-    username: 'admin',
+    id: 'mock-organiser-smu',
+    username: 'organiser',
     email: 'admin@smu.edu.sg',
     password: 'admin123',
-    role: 'admin',
+    role: 'organiser',
   },
 ];

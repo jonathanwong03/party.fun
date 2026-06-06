@@ -1,5 +1,5 @@
 import express from 'express';
-import adminRoutes from './routes/adminRoutes.js';
+import organiserRoutes from './routes/organiserRoutes.js';
 import authRoutes from './routes/authRoutes.js';
 import checkoutRoutes from './routes/checkoutRoutes.js';
 import confirmationRoutes from './routes/confirmationRoutes.js';
@@ -24,7 +24,7 @@ app.use('/api/events', eventRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/profile', userRoutes);
 app.use('/api/confirmation', confirmationRoutes);
-app.use('/api/dashboard', adminRoutes);
+app.use('/api/dashboard', organiserRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

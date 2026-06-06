@@ -36,7 +36,7 @@ export function registerUser({ username, email, password, role }) {
     username: String(username ?? '').trim(),
     email: normalizedEmail,
     password,
-    role: role === 'admin' ? 'admin' : 'user',
+    role: role === 'organiser' ? 'organiser' : 'user',
   };
   users.push(user);
   return { status: 'ok', user: publicUser(user) };

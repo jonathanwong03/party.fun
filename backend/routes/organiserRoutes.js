@@ -6,7 +6,7 @@ import {
   getEditEvent,
   patchEvent,
   postCreateEvent,
-} from '../controllers/adminController.js';
+} from '../controllers/organiserController.js';
 
 const router = express.Router();
 
