@@ -1,11 +1,11 @@
 import { getEvent as findEvent, listEvents as findEvents } from '../services/eventMemoryService.js';
 
-export function listEvents(_req, res) {
-  res.json(findEvents());
+export function listEvents(req, res) {
+  res.json(findEvents(req.get('X-Mock-User-Id')));
 }
 
 export function getEvent(req, res) {
-  const event = findEvent(req.params.eventId);
+  const event = findEvent(req.params.eventId, req.get('X-Mock-User-Id'));
   if (!event) {
     res.status(404).json({
       status: 'not_found',

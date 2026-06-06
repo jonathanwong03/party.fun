@@ -25,7 +25,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
           You're in. Hype incoming.
         </h1>
         <p className="mt-2" style={{ color: 'var(--muted-foreground)' }}>
-          Your pledge is locked. We'll capture the funds only when the event hits its threshold.
+          Your payment was captured and your tickets are locked in.
         </p>
       </div>
 
@@ -45,15 +45,15 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span style={{ color: 'var(--muted-foreground)' }}>Current hype</span>
-            <span style={{ fontWeight: 600 }}>{event.backers} / {event.threshold} tickets</span>
+            <span style={{ fontWeight: 600 }}>{event.activeTicketCount} / {event.hypeThreshold} tickets</span>
           </div>
-          <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
+          <HypeMeter pct={event.hypePercentage} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
         </div>
       </div>
 
       <div className="mt-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <h3 className="mb-3">What happens next</h3>
-        <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}><li>Hype builds toward the threshold by {event.deadline}.</li><li>If greenlit, your card is charged and your ticket is emailed.</li><li>If the threshold isn't reached, you're refunded automatically. No questions.</li></ol>
+        <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}><li>Hype builds toward the threshold by {event.deadline}.</li><li>If the threshold is reached, the event is confirmed.</li><li>If the threshold is not reached, active tickets are refunded automatically.</li></ol>
       </div>
 
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">

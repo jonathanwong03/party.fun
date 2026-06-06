@@ -79,7 +79,7 @@ export const scheduleError = (startDate: string, startTime: string, endDate: str
   return endAt.getTime() < startAt.getTime() ? 'End must be after the start.' : null;
 };
 
-// The threshold deadline must fall on or before the event's start (date + start time).
+// The hype deadline must fall on or before the event's start (date + start time).
 export const deadlineEventError = (eventDate: string, startTime: string, deadlineDate: string, deadlineTime: string) => {
   const eventAt = toDateTime(eventDate, startTime);
   const deadlineAt = toDateTime(deadlineDate, deadlineTime);

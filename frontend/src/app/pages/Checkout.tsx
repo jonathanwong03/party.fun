@@ -145,7 +145,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.date} · {event.time}</div>
               </div>
 
-              <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="sm" />
+              <HypeMeter pct={event.hypePercentage} status={event.status} tier={getActiveTier(event)} size="sm" />
 
               <div className="h-px" style={{ background: 'var(--border)' }} />
 
@@ -179,7 +179,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
                 style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Funds are only captured when the event reaches its hype threshold. Refunded automatically if not.</span>
+                <span>Your payment is captured now. If the event misses its hype threshold, active tickets are refunded automatically.</span>
               </div>
             </div>
           </div>

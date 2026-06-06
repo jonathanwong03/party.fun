@@ -8,16 +8,16 @@ export function HypeMeter({
   tier,
   size = 'md',
   showLabel = true,
-  backers,
-  threshold,
+  activeTicketCount,
+  hypeThreshold,
 }: {
   pct: number;
   status: EventStatus;
   tier: number;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
-  backers?: number;
-  threshold?: number;
+  activeTicketCount?: number;
+  hypeThreshold?: number;
 }) {
   const capped = Math.min(100, Math.max(0, pct));
   const t = Math.max(0, Math.min(TIER_COLORS.length - 1, tier));
@@ -40,8 +40,8 @@ export function HypeMeter({
           <div>
             <div style={{ fontSize: 36, fontWeight: 800, color, lineHeight: 1, fontFamily: "'Space Grotesk', sans-serif" }}>{capped}%</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-              {backers !== undefined && threshold !== undefined
-                ? `${backers} of ${threshold} backers`
+              {activeTicketCount !== undefined && hypeThreshold !== undefined
+                ? `${activeTicketCount} of ${hypeThreshold} tickets pledged`
                 : tierLabel}
             </div>
           </div>
@@ -83,10 +83,10 @@ export function HypeMeter({
           </div>
         )}
       </div>
-      {showLabel && size === 'lg' && backers !== undefined && threshold !== undefined && (
+      {showLabel && size === 'lg' && activeTicketCount !== undefined && hypeThreshold !== undefined && (
         <div className="mt-2 flex justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>
           <span>0</span>
-          <span style={{ color, fontWeight: 600 }}>{threshold} needed</span>
+          <span style={{ color, fontWeight: 600 }}>{hypeThreshold} needed</span>
         </div>
       )}
     </div>

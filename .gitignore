@@ -6,6 +6,7 @@ backend/node_modules/
 config.env
 .env
 .env.*
+.mcp.json
 !.env.example
 frontend/.env
 frontend/.env.*
@@ -39,6 +40,9 @@ backend/.cache/
 .codex/
 .vscode/
 .idea/
+
+# MCP config (contains a Supabase personal access token)
+.mcp.json
 
 # OS files
 .DS_Store

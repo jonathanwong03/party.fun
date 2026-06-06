@@ -7,14 +7,14 @@ import { Textarea } from '../components/ui/textarea';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { MOCK_EVENTS, getActiveTier, type EventItem, type Route, type EventStatus } from '../components/types';
+import { getActiveTier, type EventItem, type Route, type EventStatus } from '../components/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
 import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError } from '../components/validation';
 
 export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
-  const list = events ?? MOCK_EVENTS;
+  const list = events ?? [];
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const draftSource = draftId ? (drafts ?? []).find((d) => d.id === draftId) : undefined;
   const isEdit = !!existing;
@@ -36,17 +36,17 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [deadlineTime, setDeadlineTime] = useState(dl0.t);
   const deadline = deadlineDate || deadlineTime ? `${deadlineDate}, ${deadlineTime}` : (source?.deadline ?? '');
   const money = (n?: number) => (n != null ? n.toFixed(2) : '');
-  // Two tiers: Early Birds (whose quantity IS the hype threshold) then the pricier Main Crowd.
+  // Tier capacities determine the upper limit; the hype threshold is an independent lower bound.
   const [ebPrice, setEbPrice] = useState<string>(money(source?.tiers[0]?.price) || '10.00');
-  const [ebQty, setEbQty] = useState<number>(source?.tiers[0]?.qty ?? source?.threshold ?? 150);
+  const [ebQty, setEbQty] = useState<number>(source?.tiers[0]?.qty ?? source?.hypeThreshold ?? 150);
   const [mcPrice, setMcPrice] = useState<string>(money(source?.tiers[1]?.price) || '20.00');
   const [mcQty, setMcQty] = useState<number>(source?.tiers[1]?.qty ?? 150);
-  const threshold = ebQty;
-  const capacity = ebQty + mcQty;
+  const [hypeThreshold, setHypeThreshold] = useState<number>(source?.hypeThreshold ?? 150);
+  const maxCapacity = ebQty + mcQty;
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
-  const status: EventStatus = existing?.status ?? 'live';
+  const status: EventStatus = existing?.status ?? 'pending';
   const locked = isEdit && status === 'greenlit';
 
   const errs = {
@@ -63,6 +63,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     deadlineVsEvent: deadlineEventError(date, start, deadlineDate, deadlineTime),
     ebP: priceError(ebPrice),
     mcP: priceError(mcPrice),
+    hypeThreshold: hypeThreshold > maxCapacity ? 'Hype threshold cannot exceed maximum capacity.' : null,
   };
   // In edit mode the schedule/deadline fields hold human-readable values from the seed data
   // that the strict validators reject, so suppress those errors when editing.
@@ -87,16 +88,17 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       image: '',
       price: num(ebPrice),
       tierLabel: 'Early Birds',
-      hypePct: 0,
-      threshold,
-      backers: 0,
-      capacity,
-      spotsLeft: capacity,
-      status: 'live',
+      currentTierName: 'early_bird',
+      hypePercentage: 0,
+      hypeThreshold,
+      activeTicketCount: 0,
+      maxCapacity,
+      spotsLeft: maxCapacity,
+      status: 'pending',
       deadline,
       tiers: [
-        { label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
+        { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
+        { tierName: 'main_crowd', label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
       ],
     };
     onPublish?.(newEvent);
@@ -120,16 +122,17 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       image: '',
       price: num(ebPrice),
       tierLabel: 'Early Birds',
-      hypePct: 0,
-      threshold,
-      backers: 0,
-      capacity,
-      spotsLeft: capacity,
-      status: 'live',
+      currentTierName: 'early_bird',
+      hypePercentage: 0,
+      hypeThreshold,
+      activeTicketCount: 0,
+      maxCapacity,
+      spotsLeft: maxCapacity,
+      status: 'pending',
       deadline,
       tiers: [
-        { label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
+        { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
+        { tierName: 'main_crowd', label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
       ],
     };
     onSaveDraft?.(draft);
@@ -141,10 +144,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     // Relaxed validation: existing events store human-readable dates (e.g. "Fri, Jun 12")
     // that the strict create validators reject, so only require the text fields here.
     setShowErrors(true);
-    if (required(title) || required(organiser) || required(description) || required(venue) || required(address)) return;
+    if (required(title) || required(organiser) || required(description) || required(venue) || required(address) || errs.hypeThreshold) return;
     const tiers = [
-      { label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
-      { label: 'Main Crowd', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
+      { tierName: 'early_bird' as const, label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
+      { tierName: 'main_crowd' as const, label: 'Main Crowd', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
     ];
     const updated: EventItem = {
       ...existing,
@@ -156,10 +159,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       time: start,
       endTime: end,
       endDate,
-      capacity,
-      threshold,
+      maxCapacity,
+      hypeThreshold,
       deadline,
-      spotsLeft: Math.max(0, capacity - existing.backers),
+      spotsLeft: Math.max(0, maxCapacity - existing.activeTicketCount),
       tiers,
     };
     updated.price = updated.tiers[getActiveTier(updated)].price;
@@ -185,19 +188,19 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                 {isEdit ? 'Edit event' : 'Create new event'}
               </h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                {isEdit ? 'Update the details below. Changes are visible to backers immediately.' : 'Set up your event details, threshold and pricing tiers.'}
+                {isEdit ? 'Update the details below. Changes are visible to attendees immediately.' : 'Set up your event details, hype threshold and pricing tiers.'}
               </p>
             </div>
             {isEdit && existing && <div className="flex items-center gap-3"><span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status</span><StatusBadge event={existing} /></div>}
           </div>
 
-          {isEdit && (status === 'live' || status === 'almost') && (
+          {isEdit && status === 'pending' && (
             <div className="mb-6 flex items-start gap-2 rounded-xl p-4 text-sm"
               style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
               <div>
                 <div style={{ fontWeight: 700 }}>This event is live</div>
-                <div className="opacity-90">Editing pricing or threshold while backers are pledging may impact trust. Changes are logged.</div>
+                <div className="opacity-90">Editing pricing or the hype threshold while people are pledging may impact trust. Changes are logged.</div>
               </div>
             </div>
           )}
@@ -246,10 +249,15 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                   </div>
                 )}
                 <div className="mb-3 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  Early Birds quantity is the hype threshold ({threshold} backers); total capacity is {capacity}.
+                  The hype threshold confirms the event at its minimum viable attendance. Tier quantities set the maximum capacity of {maxCapacity}.
                 </div>
-                <TierRow label="Early Birds — Hype threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
-                <TierRow label="Main Crowd — After greenlit" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
+                <div className="mb-4 max-w-[260px]">
+                  <Field label="Hype threshold" error={errOf('hypeThreshold')}>
+                    <NumberStepper value={hypeThreshold} onChange={setHypeThreshold} min={1} max={maxCapacity} disabled={locked} />
+                  </Field>
+                </div>
+                <TierRow label="Early Birds" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
+                <TierRow label="Main Crowd" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent'))} /></Field>
                   <Field label="Deadline time"><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!errOf('deadline')} placeholder="Deadline time" /></Field>
@@ -295,7 +303,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
                       {date || 'Date'} · {venue || 'Venue'}
                     </div>
-                    <HypeMeter pct={isEdit ? (existing?.hypePct ?? 0) : 0} status={status} tier={0} size="sm" />
+                    <HypeMeter pct={isEdit ? (existing?.hypePercentage ?? 0) : 0} status={status} tier={0} size="sm" />
                     <div className="flex items-baseline justify-between">
                       <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>From</span>
                       <span style={{ fontWeight: 700 }}>${ebPrice}</span>
