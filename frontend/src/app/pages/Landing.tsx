@@ -9,12 +9,14 @@ import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 export function Landing({
   go,
   myEventIds = new Set<string>(),
+  cancelledEventIds = new Set<string>(),
   events,
   loading = false,
   error = null,
 }: {
   go: (r: Route) => void;
   myEventIds?: Set<string>;
+  cancelledEventIds?: Set<string>;
   events: EventItem[];
   loading?: boolean;
   error?: string | null;
@@ -27,7 +29,10 @@ export function Landing({
 
   // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
   //    and events the organiser created themselves (those belong only in the organiser dashboard).
-  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id) && !e.mine), [events, myEventIds]);
+  const available = useMemo(
+    () => events.filter((e) => !myEventIds.has(e.id) && !e.mine && e.status !== 'cancelled' && !cancelledEventIds.has(e.id)),
+    [events, myEventIds, cancelledEventIds],
+  );
   const featured = available[0];
   const rest = available.slice(1);
 

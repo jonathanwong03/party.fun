@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -232,6 +232,13 @@ function AppShell() {
     setProfileTickets(result.profile.tickets);
   };
 
+  const removeBooking = async (bookingId: string) => {
+    if (!role) return;
+    const result = await deleteBooking(role, bookingId);
+    if (result.event) replaceEvent(result.event);
+    setProfileTickets(result.profile.tickets);
+  };
+
   const myEventIds = useMemo(() => {
     const ids = new Set<string>();
     profileTickets.forEach((ticket) => {
@@ -239,6 +246,12 @@ function AppShell() {
     });
     return ids;
   }, [profileTickets]);
+
+  // Events that sit in the user's Cancelled tab — unavailable to re-pledge and hidden from All Events.
+  const cancelledEventIds = useMemo(
+    () => new Set(profileTickets.filter((ticket) => ticket.tab === 'cancelled').map((ticket) => ticket.eventId)),
+    [profileTickets],
+  );
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
@@ -298,12 +311,12 @@ function AppShell() {
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
-        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
-        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onGiveAway={giveAway} />} />
+        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} cancelledEventIds={cancelledEventIds} events={events} loading={loadingData} error={dataError} />} />
+        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} cancelledEventIds={cancelledEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
-        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
+        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} onDelete={removeBooking} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
@@ -323,11 +336,13 @@ function EventDetailRoute({
   role,
   go,
   events,
+  cancelledEventIds,
   onGiveAway,
 }: {
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
+  cancelledEventIds: Set<string>;
   onGiveAway: (bookingId: string, quantity: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
@@ -340,6 +355,7 @@ function EventDetailRoute({
       role={role}
       go={go}
       events={events}
+      cancelledEventIds={cancelledEventIds}
       qty={state.qty}
       bookingId={state.bookingId}
       onGiveAway={onGiveAway}

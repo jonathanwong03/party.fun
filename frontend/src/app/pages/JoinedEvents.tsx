@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Calendar, MapPin, Ticket as TicketIcon, ArrowRight } from 'lucide-react';
+import { Calendar, MapPin, Ticket as TicketIcon, ArrowRight, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { getActiveTier, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import type { ProfileTicket } from '../api';
@@ -10,8 +11,9 @@ import type { ProfileTicket } from '../api';
 type Tab = 'upcoming' | 'past' | 'cancelled';
 type Row = ProfileTicket & { event: EventItem };
 
-export function JoinedEvents({ go, events, tickets }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[] }) {
+export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; onDelete: (bookingId: string) => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('upcoming');
+  const [deleting, setDeleting] = useState<Row | null>(null);
   const rows = tickets
     .map((booking) => {
       const event = events.find((candidate) => candidate.id === booking.eventId);
@@ -83,20 +85,44 @@ export function JoinedEvents({ go, events, tickets }: { go: (route: Route) => vo
                     <HypeMeter pct={booking.event.hypePercentage} status={isCancelled ? 'cancelled' : booking.event.status} tier={getActiveTier(booking.event)} size="sm" showLabel={false} />
                   </div>
                 </div>
-                <Button
-                  onClick={() => go(isCancelled
-                    ? { name: 'event', id: booking.event.id }
-                    : { name: 'event', id: booking.event.id, fromProfile: true, bookingId: booking.bookingId, qty: booking.activeTicketCount })}
-                  variant="outline"
-                  className="border-white/15 bg-transparent hover:bg-white/5"
-                  style={{ borderRadius: 9999 }}
-                >
-                  View
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => go(isCancelled
+                      ? { name: 'event', id: booking.event.id }
+                      : { name: 'event', id: booking.event.id, fromProfile: true, bookingId: booking.bookingId, qty: booking.activeTicketCount })}
+                    variant="outline"
+                    className="border-white/15 bg-transparent hover:bg-white/5"
+                    style={{ borderRadius: 9999 }}
+                  >
+                    View
+                  </Button>
+                  {(booking.tab === 'cancelled' || booking.tab === 'past') && (
+                    <button
+                      onClick={() => setDeleting(booking)}
+                      aria-label="Delete"
+                      title="Delete"
+                      className="grid size-9 shrink-0 place-items-center rounded-full border transition hover:bg-[rgba(255,51,84,0.12)]"
+                      style={{ borderColor: 'rgba(255,51,84,0.4)', color: '#ff3354' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
             );
           })}
         </div>
+      )}
+
+      {deleting && (
+        <ConfirmDeleteModal
+          eventName={deleting.event.title}
+          onCancel={() => setDeleting(null)}
+          onConfirm={async () => {
+            await onDelete(deleting.bookingId);
+            setDeleting(null);
+          }}
+        />
       )}
     </div>
   );

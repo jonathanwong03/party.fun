@@ -122,3 +122,9 @@ export function giveAwayTickets(role: Role, bookingId: string, quantity: number)
     body: JSON.stringify({ quantity }),
   });
 }
+
+export function deleteBooking(role: Role, bookingId: string) {
+  return apiFetch<MutationResponse>(`/api/profile/bookings/${bookingId}`, role, {
+    method: 'DELETE',
+  });
+}

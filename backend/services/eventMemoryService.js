@@ -203,11 +203,29 @@ export function giveAwayTickets({ userId, bookingId, quantity }) {
   return { event: publicEvent(event, userId), profile: getProfile(userId) };
 }
 
+export function deleteBooking({ userId, bookingId }) {
+  const booking = bookings.find((candidate) => candidate.id === bookingId && candidate.userId === userId);
+  if (!booking) return { error: 'not_found' };
+
+  // Hard delete: drop the booking and everything that hangs off it.
+  tickets = tickets.filter((ticket) => ticket.bookingId !== bookingId);
+  bookingItems = bookingItems.filter((item) => item.bookingId !== bookingId);
+  bookings = bookings.filter((candidate) => candidate.id !== bookingId);
+
+  const event = events.find((candidate) => candidate.id === booking.eventId);
+  if (event) recalculateEvent(event);
+  return { event: event ? publicEvent(event, userId) : null, profile: getProfile(userId) };
+}
+
 function publicBooking(booking) {
   const activeTicketCount = activeTickets(booking.id).length;
   const originalTicketCount = tickets.filter((ticket) => ticket.bookingId === booking.id).length;
   const event = events.find((candidate) => candidate.id === booking.eventId);
-  const tab = activeTicketCount > 0 ? (event?.status === 'completed' ? 'past' : 'upcoming') : 'cancelled';
+  const tab = event?.status === 'cancelled'
+    ? 'cancelled'
+    : activeTicketCount > 0
+      ? (event?.status === 'completed' ? 'past' : 'upcoming')
+      : 'cancelled';
   return {
     bookingId: booking.id,
     eventId: booking.eventId,

@@ -8,7 +8,7 @@ import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; cancelledEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   const [giveAwayQty, setGiveAwayQty] = useState(1);
@@ -23,6 +23,8 @@ export function EventDetail({ id, go, role, events, bookingId, qty, onGiveAway, 
   const activeTier = getActiveTier(event);
   // Total tickets still available across all tiers (a pledge spills into the next tier).
   const available = event.tiers.reduce((sum, t) => sum + Math.max(0, t.qty - t.sold), 0);
+  // A cancelled event — or one the user already gave away all their tickets for — can't be (re-)pledged.
+  const unavailable = event.status === 'cancelled' || !!cancelledEventIds?.has(event.id);
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromOrganiser;
@@ -225,7 +227,7 @@ export function EventDetail({ id, go, role, events, bookingId, qty, onGiveAway, 
             </div>
             <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>
 
-            {event.status !== 'cancelled' && event.status !== 'completed' && (
+            {!unavailable && event.status !== 'completed' && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
@@ -245,21 +247,29 @@ export function EventDetail({ id, go, role, events, bookingId, qty, onGiveAway, 
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
-            <Button
-              onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
-              disabled={event.status === 'cancelled' || event.status === 'completed' || available === 0}
-              className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
-              style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
-            >
-              {event.status === 'greenlit'
-                ? `Buy Ticket · $${event.price}`
-                : event.status === 'completed'
-                ? 'Event completed'
-                : event.status === 'cancelled'
-                ? 'Event cancelled'
-                : 'Pledge'}
-              {event.status !== 'cancelled' && event.status !== 'completed' && <ArrowRight size={16} className="ml-1" />}
-            </Button>
+            {unavailable ? (
+              <Button
+                disabled
+                className="w-full disabled:opacity-100"
+                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              >
+                Event unavailable
+              </Button>
+            ) : (
+              <Button
+                onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
+                disabled={event.status === 'completed' || available === 0}
+                className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
+                style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              >
+                {event.status === 'greenlit'
+                  ? `Buy Ticket · $${event.price}`
+                  : event.status === 'completed'
+                  ? 'Event completed'
+                  : 'Pledge'}
+                {event.status !== 'completed' && <ArrowRight size={16} className="ml-1" />}
+              </Button>
+            )}
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
