@@ -123,8 +123,8 @@ export function Landing({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All hype</SelectItem>
-            <SelectItem value="tier0">Early Birds</SelectItem>
-            <SelectItem value="tier1">Main Crowd</SelectItem>
+            <SelectItem value="early_bird">Early Birds</SelectItem>
+            <SelectItem value="greenlit">Greenlit</SelectItem>
           </SelectContent>
         </Select>
       </div>

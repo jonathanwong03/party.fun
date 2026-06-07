@@ -3,7 +3,6 @@ import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus,
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
@@ -47,8 +46,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <StatusBadge event={event} detail />
-            <h1 className="mt-3 text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            <h1 className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
             <p className="mt-1 text-white/70 text-sm">Hosted by {event.organiser}</p>
@@ -227,7 +225,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
             </div>
             {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>}
 
-            {!unavailable && event.status !== 'completed' && (
+            {!unavailable && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
@@ -258,16 +256,12 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
             ) : (
               <Button
                 onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
-                disabled={event.status === 'completed' || available === 0}
+                disabled={available === 0}
                 className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
                 style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
               >
-                {event.status === 'greenlit'
-                  ? 'Buy'
-                  : event.status === 'completed'
-                  ? 'Event completed'
-                  : 'Pledge'}
-                {event.status !== 'completed' && <ArrowRight size={16} className="ml-1" />}
+                {event.status === 'greenlit' ? 'Buy' : 'Pledge'}
+                <ArrowRight size={16} className="ml-1" />
               </Button>
             )}
 

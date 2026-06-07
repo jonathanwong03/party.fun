@@ -16,8 +16,10 @@ export type Route =
 
 export type Role = 'user' | 'organiser';
 
-export type EventStatus = 'pending' | 'greenlit' | 'cancelled' | 'completed';
-export type TierName = 'early_bird' | 'main_crowd';
+// Status and pricing tier are one and the same concept now: early_bird (hype < 100%),
+// greenlit (hype = 100%, event confirmed) and cancelled.
+export type EventStatus = 'early_bird' | 'greenlit' | 'cancelled';
+export type TierName = 'early_bird' | 'greenlit';
 
 export type EventItem = {
   id: string;
@@ -51,7 +53,7 @@ export type EventItem = {
 };
 
 export function getActiveTier(e: EventItem): number {
-  return e.currentTierName === 'main_crowd' ? 1 : 0;
+  return e.status === 'greenlit' ? 1 : 0;
 }
 
 // Apply a pledge of `qty` tickets to an event, then recompute hype and capacity values.
@@ -74,10 +76,11 @@ export function reversePledge(e: EventItem, qty: number): EventItem {
   return { ...e, tiers, activeTicketCount, hypePercentage, spotsLeft };
 }
 
-export const TIER_COLORS = ['#29e07a', '#ff8a2e'] as const;
+// Status colors: Early Birds = yellow, Greenlit = green (cancelled handled separately, red).
+export const TIER_COLORS = ['#ffcb3c', '#29e07a'] as const;
 
-// The two pricing tiers remain independent from the event lifecycle status.
-export const TIER_LABELS = ['Early Birds', 'Main Crowd'] as const;
+// The two statuses, indexed by getActiveTier (0 = early_bird, 1 = greenlit).
+export const TIER_LABELS = ['Early Birds', 'Greenlit'] as const;
 
 // Live "current tier" label — "Early Birds", and "Main Crowd" once Early Birds sell out / the event greenlights.
 export function tierStageLabel(e: EventItem): string {
@@ -87,18 +90,14 @@ export function tierStageLabel(e: EventItem): string {
 // Badge styling for an event: greenlit -> "Confirmed", cancelled -> "Refunded",
 // otherwise the active pricing tier's stage name coloured by TIER_COLORS.
 export function eventBadge(e: EventItem): { label: string; bg: string; fg: string; dot: string } {
-  if (e.status === 'cancelled') return { label: 'Cancelled by Organiser', bg: 'rgba(255,255,255,0.06)', fg: '#8a8a99', dot: '#8a8a99' };
-  if (e.status === 'completed') return { label: 'Completed', bg: 'rgba(255,255,255,0.06)', fg: '#b5b5bf', dot: '#8a8a99' };
-  if (e.status === 'greenlit') return { label: 'Confirmed', bg: 'rgba(255,51,84,0.14)', fg: '#ff6b85', dot: '#ff3354' };
-  const t = getActiveTier(e);
-  const c = TIER_COLORS[t];
-  return { label: TIER_LABELS[t], bg: `${c}1f`, fg: c, dot: c };
+  if (e.status === 'cancelled') return { label: 'Cancelled', bg: 'rgba(255,51,84,0.14)', fg: '#ff6b85', dot: '#ff3354' };
+  if (e.status === 'greenlit') return { label: 'Greenlit', bg: 'rgba(41,224,122,0.14)', fg: '#29e07a', dot: '#29e07a' };
+  return { label: 'Early Birds', bg: 'rgba(255,203,60,0.16)', fg: '#ffcb3c', dot: '#ffcb3c' };
 }
 
 // Key matching what the badge shows, used by the landing filter.
 export function eventBadgeKey(e: EventItem): string {
   if (e.status === 'cancelled') return 'cancelled';
-  if (e.status === 'completed') return 'completed';
   if (e.status === 'greenlit') return 'greenlit';
-  return `tier${getActiveTier(e)}`;
+  return 'early_bird';
 }

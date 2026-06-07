@@ -49,7 +49,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
-  const status: EventStatus = existing?.status ?? 'pending';
+  const status: EventStatus = existing?.status ?? 'early_bird';
   const locked = isEdit && status === 'greenlit';
 
   const errs = {
@@ -99,11 +99,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       activeTicketCount: 0,
       maxCapacity,
       spotsLeft: maxCapacity,
-      status: 'pending',
+      status: 'early_bird',
       deadline,
       tiers: [
         { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { tierName: 'main_crowd', label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
+        { tierName: 'greenlit', label: 'Greenlit', price: num(mcPrice), qty: mcQty, sold: 0 },
       ],
     };
     onPublish?.(newEvent);
@@ -133,11 +133,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       activeTicketCount: 0,
       maxCapacity,
       spotsLeft: maxCapacity,
-      status: 'pending',
+      status: 'early_bird',
       deadline,
       tiers: [
         { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { tierName: 'main_crowd', label: 'Main Crowd', price: num(mcPrice), qty: mcQty, sold: 0 },
+        { tierName: 'greenlit', label: 'Greenlit', price: num(mcPrice), qty: mcQty, sold: 0 },
       ],
     };
     onSaveDraft?.(draft);
@@ -153,7 +153,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     if (Object.values(errs).some(Boolean)) return;
     const tiers = [
       { tierName: 'early_bird' as const, label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
-      { tierName: 'main_crowd' as const, label: 'Main Crowd', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
+      { tierName: 'greenlit' as const, label: 'Greenlit', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
     ];
     const updated: EventItem = {
       ...existing,
@@ -200,7 +200,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
             {isEdit && existing && <div className="flex items-center gap-3"><span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status</span><StatusBadge event={existing} /></div>}
           </div>
 
-          {isEdit && status === 'pending' && (
+          {isEdit && status === 'early_bird' && (
             <div className="mb-6 flex items-start gap-2 rounded-xl p-4 text-sm"
               style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
               <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -248,7 +248,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                 </div>
               </Section>
 
-              <Section title="Pricing tiers">
+              <Section title="Pricing statuses">
                 {locked && (
                   <div className="mb-3 rounded-lg p-2 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
                     Pricing is locked — this event is greenlit.
@@ -258,7 +258,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                   The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Tier quantities set the maximum capacity of {maxCapacity}.
                 </div>
                 <TierRow label="Early Birds - Hype Threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
-                <TierRow label="Main Crowd" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
+                <TierRow label="Greenlit" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} disabled={locked} /></Field>
                   <Field label="Deadline time" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} placeholder="Deadline time" disabled={locked} /></Field>

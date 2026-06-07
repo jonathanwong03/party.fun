@@ -3,20 +3,20 @@ import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } 
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, TIER_COLORS, TIER_LABELS, type EventItem, type Route } from '../components/types';
+import { getActiveTier, type EventItem, type Route } from '../components/types';
 
-// Lifecycle status shown in the dashboard's Status column, derived from the event's
-// status flag and whether it has reached its hype threshold.
-function dashboardStatus(e: EventItem): 'GREENLIT' | 'PENDING' | 'CANCELLED' {
+// The single status shown in the dashboard's Status column: early_birds (< 100% hype),
+// greenlit (reached the hype threshold) or cancelled.
+function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' {
   if (e.status === 'cancelled') return 'CANCELLED';
   if (e.status === 'greenlit' || e.activeTicketCount >= e.hypeThreshold) return 'GREENLIT';
-  return 'PENDING';
+  return 'EARLY BIRDS';
 }
 
-const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
-  GREENLIT: 'var(--foreground)',
-  PENDING: 'var(--foreground)',
-  CANCELLED: '#ff6b85',
+const STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED', string> = {
+  GREENLIT: '#29e07a',
+  'EARLY BIRDS': '#ffcb3c',
+  CANCELLED: '#ff3354',
 };
 
 export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
@@ -89,14 +89,13 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
             <div>
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '21%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '24%' }} />
                   <col style={{ width: '11%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '13%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '11%' }} />
                 </colgroup>
                 <thead>
                   <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
@@ -105,7 +104,6 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                     <th className="px-3 py-3 text-left">Hype</th>
                     <th className="px-3 py-3 text-right">Revenue</th>
                     <th className="px-3 py-3 text-right">Threshold</th>
-                    <th className="px-3 py-3 text-left">Tier</th>
                     <th className="px-3 py-3 text-left">Status</th>
                     <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
@@ -127,20 +125,6 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                       <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(e.activeTicketCount * e.price).toLocaleString()}</td>
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
                         {e.activeTicketCount}/{e.hypeThreshold}
-                      </td>
-                      <td className="px-3 py-4">
-                        {(() => {
-                          const ti = getActiveTier(e);
-                          return (
-                            <span
-                              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
-                              style={{ background: `${TIER_COLORS[ti]}1f`, color: TIER_COLORS[ti], fontWeight: 600 }}
-                            >
-                              <span className="size-1.5 rounded-full" style={{ background: TIER_COLORS[ti] }} />
-                              {TIER_LABELS[ti]}
-                            </span>
-                          );
-                        })()}
                       </td>
                       <td className="px-3 py-4">
                         {isDrafts ? (

@@ -72,12 +72,10 @@ export function EventCard({
           onClick={onView}
           className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
           style={{ borderRadius: 9999 }}
-          disabled={event.status === 'cancelled' || event.status === 'completed'}
+          disabled={event.status === 'cancelled'}
         >
           {event.status === 'greenlit'
             ? `Buy Ticket · $${event.price}`
-            : event.status === 'completed'
-            ? 'Completed'
             : event.status === 'cancelled'
             ? 'Cancelled'
             : `Pledge · $${event.price}`}
