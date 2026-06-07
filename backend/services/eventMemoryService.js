@@ -16,8 +16,8 @@ let bookingItems = clone(initialBookingItems);
 let tickets = clone(initialTickets);
 
 const ACTIVE_TICKET_STATUSES = new Set(['active', 'used']);
-const TIER_ORDER = ['early_bird', 'main_crowd'];
-const TIER_LABELS = { early_bird: 'Early Birds', main_crowd: 'Main Crowd' };
+const TIER_ORDER = ['early_bird', 'greenlit'];
+const TIER_LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
 const money = (value) => Number(Number(value).toFixed(2));
 const id = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -56,10 +56,10 @@ function recalculateEvent(event) {
   const count = activeEventTickets(event.id).length;
   const early = getTiers(event.id).find((tier) => tier.tierName === 'early_bird');
   if (event.currentTierName === 'early_bird' && early && tierActiveCount(early.id) >= early.ticketCapacity) {
-    event.currentTierName = 'main_crowd';
+    event.currentTierName = 'greenlit';
   }
-  if (event.status !== 'cancelled' && event.status !== 'completed') {
-    event.status = count >= settings.hypeThreshold ? 'greenlit' : 'pending';
+  if (event.status !== 'cancelled') {
+    event.status = count >= settings.hypeThreshold ? 'greenlit' : 'early_bird';
     if (event.status === 'greenlit' && !event.greenlitAt) event.greenlitAt = new Date().toISOString();
   }
   event.updatedAt = new Date().toISOString();
@@ -227,10 +227,12 @@ function publicBooking(booking) {
   const activeTicketCount = activeTickets(booking.id).length;
   const originalTicketCount = tickets.filter((ticket) => ticket.bookingId === booking.id).length;
   const event = events.find((candidate) => candidate.id === booking.eventId);
+  // "Past" is derived from the event's end date (there is no longer a 'completed' status).
+  const isPast = !!event && new Date(event.endDate).getTime() < Date.now();
   const tab = event?.status === 'cancelled'
     ? 'cancelled'
     : activeTicketCount > 0
-      ? (event?.status === 'completed' ? 'past' : 'upcoming')
+      ? (isPast ? 'past' : 'upcoming')
       : 'cancelled';
   return {
     bookingId: booking.id,

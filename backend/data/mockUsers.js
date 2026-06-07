@@ -1,10 +1,12 @@
+// Profile table — simulates Supabase's public.USER. Credentials are NOT stored here;
+// they live in mockAuthUsers.js (the auth.users simulation), keyed by the same id.
+// In real Supabase each id is the auth.users UUID.
 export const initialUsers = [
   {
     id: 'mock-user-jamie',
     name: 'Jamie Tan',
     username: 'Jamie',
     email: 'jamie@u.nus.edu',
-    passwordHash: '$2b$10$504ExS.4pQsF3ZsNrVu82exPBdFCbe11WxzgerQeBjIEQ9qT8HTOG',
     role: 'user',
     contact: '@jamiet',
     socialLink: null,
@@ -15,7 +17,6 @@ export const initialUsers = [
     name: 'SMU Photography Society',
     username: 'organiser',
     email: 'organiser@smu.edu.sg',
-    passwordHash: '$2b$10$JCQXjH8nmZeGza0d7/EQKuzzOGVK4Z3xBKdchnfUf9x/a02o0qvXa',
     role: 'organiser',
     contact: '@smuphotosoc',
     socialLink: null,
@@ -33,7 +34,6 @@ export const initialUsers = [
     name,
     username: id,
     email: `${id}@example.invalid`,
-    passwordHash: '$2b$10$invalidSeedAccountHashNotUsedForLogin000000000000000000',
     role: id === 'seed-community' ? 'user' : 'organiser',
     contact: null,
     socialLink: null,
