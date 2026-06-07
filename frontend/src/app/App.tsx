@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { cancelTicket, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -31,9 +31,8 @@ type RouteState = {
   fromProfile?: boolean;
   fromOrganiser?: boolean;
   fromPast?: boolean;
+  bookingId?: string;
   qty?: number;
-  amount?: number;
-  total?: number;
 };
 
 function pathForRoute(route: Route) {
@@ -75,9 +74,8 @@ function stateForRoute(route: Route): RouteState | undefined {
       fromProfile: route.fromProfile,
       fromOrganiser: route.fromOrganiser,
       fromPast: route.fromPast,
+      bookingId: route.bookingId,
       qty: route.qty,
-      amount: route.amount,
-      total: route.total,
     };
   }
 
@@ -133,9 +131,8 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
       fromProfile: state?.fromProfile,
       fromOrganiser: state?.fromOrganiser,
       fromPast: state?.fromPast,
+      bookingId: state?.bookingId,
       qty: state?.qty,
-      amount: state?.amount,
-      total: state?.total,
     };
   }
 
@@ -228,20 +225,33 @@ function AppShell() {
     setProfileTickets(result.profile.tickets);
   };
 
-  const cancelEvent = async (eventId: string, qty: number, amount: number) => {
+  const giveAway = async (bookingId: string, quantity: number) => {
     if (!role) return;
-    const result = await cancelTicket(role, eventId, qty, amount);
+    const result = await giveAwayTickets(role, bookingId, quantity);
     replaceEvent(result.event);
+    setProfileTickets(result.profile.tickets);
+  };
+
+  const removeBooking = async (bookingId: string) => {
+    if (!role) return;
+    const result = await deleteBooking(role, bookingId);
+    if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
   };
 
   const myEventIds = useMemo(() => {
     const ids = new Set<string>();
     profileTickets.forEach((ticket) => {
-      if (ticket.tab !== 'cancelled') ids.add(ticket.eventId);
+      if (ticket.activeTicketCount > 0) ids.add(ticket.eventId);
     });
     return ids;
   }, [profileTickets]);
+
+  // Events that sit in the user's Cancelled tab — unavailable to re-pledge and hidden from All Events.
+  const cancelledEventIds = useMemo(
+    () => new Set(profileTickets.filter((ticket) => ticket.tab === 'cancelled').map((ticket) => ticket.eventId)),
+    [profileTickets],
+  );
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
@@ -301,12 +311,12 @@ function AppShell() {
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
-        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} events={events} loading={loadingData} error={dataError} />} />
-        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} onCancelAttendance={cancelEvent} />} />
+        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} cancelledEventIds={cancelledEventIds} events={events} loading={loadingData} error={dataError} />} />
+        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} cancelledEventIds={cancelledEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
-        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} />} />
+        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} onDelete={removeBooking} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
@@ -326,12 +336,14 @@ function EventDetailRoute({
   role,
   go,
   events,
-  onCancelAttendance,
+  cancelledEventIds,
+  onGiveAway,
 }: {
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onCancelAttendance: (id: string, qty: number, amount: number) => Promise<void>;
+  cancelledEventIds: Set<string>;
+  onGiveAway: (bookingId: string, quantity: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
   const location = useLocation();
@@ -343,10 +355,10 @@ function EventDetailRoute({
       role={role}
       go={go}
       events={events}
+      cancelledEventIds={cancelledEventIds}
       qty={state.qty}
-      amount={state.amount}
-      total={state.total}
-      onCancelAttendance={onCancelAttendance}
+      bookingId={state.bookingId}
+      onGiveAway={onGiveAway}
       fromProfile={state.fromProfile}
       fromOrganiser={state.fromOrganiser}
       fromPast={state.fromPast}

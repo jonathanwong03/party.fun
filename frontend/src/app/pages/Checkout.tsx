@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, type Quote } from '../api';
 import { MonthYearPicker } from '../components/MonthYearPicker';
@@ -95,8 +95,8 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
             <h3 className="mb-4">Tickets</h3>
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Current tier</div>
-                <div style={{ fontWeight: 600 }}>{tierStageLabel(event)}</div>
+                <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Current status</div>
+                <div style={{ fontWeight: 600 }}>{statusStageLabel(event)}</div>
               </div>
               <div className="text-right">
                 <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</div>
@@ -145,7 +145,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.date} · {event.time}</div>
               </div>
 
-              <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="sm" />
+              <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={getActiveStatus(event)} size="sm" />
 
               <div className="h-px" style={{ background: 'var(--border)' }} />
 
@@ -179,7 +179,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
                 style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Funds are only captured when the event reaches its hype threshold. Refunded automatically if not.</span>
+                <span>Your payment is captured now. If the event misses its hype threshold, active tickets are refunded automatically.</span>
               </div>
             </div>
           </div>

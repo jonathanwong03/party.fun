@@ -1,6 +1,5 @@
-import { DEFAULT_MOCK_USER_ID } from '../data/mockPledges.js';
-
 const VALID_ROLES = new Set(['user', 'organiser']);
+const DEFAULT_MOCK_USER_ID = 'mock-user-jamie';
 
 export function readMockAuth(req) {
   const role = req.get('X-Mock-Role');

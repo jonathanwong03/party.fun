@@ -15,6 +15,10 @@ export function getQuote(req, res) {
     });
     return;
   }
+  if (quote.error) {
+    res.status(409).json({ status: quote.error, message: 'Not enough tickets are available.' });
+    return;
+  }
   res.json(quote);
 }
 
@@ -26,15 +30,16 @@ export function postPledge(req, res) {
     userId: auth.userId,
     eventId: req.params.eventId,
     qty: req.body.qty,
-    amount: req.body.amount,
   });
 
-  if (!result) {
-    res.status(404).json({
-      status: 'not_found',
-      route: req.originalUrl,
-      message: 'Event not found.',
-    });
+  if (result.error) {
+    const messages = {
+      not_found: 'Event not found.',
+      own_event: 'You cannot pledge for your own event.',
+      active_booking_exists: 'Give away all active tickets before pledging for this event again.',
+      not_enough_tickets: 'Not enough tickets are available.',
+    };
+    res.status(result.error === 'not_found' ? 404 : 409).json({ status: result.error, message: messages[result.error] });
     return;
   }
 

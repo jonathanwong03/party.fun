@@ -1,146 +1,97 @@
 # party.fun
 
-`party.fun` is a React + Vite frontend with a lightweight Express API skeleton. The UI still uses mocked frontend data and mocked frontend-only auth for now. Supabase, real sessions, and database storage are planned for a later stage.
+`party.fun` is a campus-event crowdfunding and ticketing prototype. Attendees pay when they pledge. An event becomes confirmed when its active ticket count reaches its hype threshold; if the deadline passes below that threshold, active tickets are refunded.
 
-## Current accounts (Only 2) 
-# This will be subjected to change once we have proper database tables & user authentication
-1. Demo user account email: jamie@u.nus.edu , password: user123
-2. Demo admin account email: organiser@smu.edu.sg, password: organiser123
-- For now, refer to backend/data/mockUsers.js for information
+The current app uses a React + Vite frontend and an Express in-memory API. Supabase and real payment processing are not connected yet.
 
-## Project Directory
+## Run locally
 
-Run commands from:
+Run the two packages in separate terminals:
 
 ```powershell
-C:\smu heap\party.fun
-```
-
-## Structure
-
-```text
-party.fun/
-  frontend/   React + Vite app
-  backend/    Express API skeleton
-```
-
-The root package provides build and helper commands. The recommended dev workflow runs the frontend and backend in separate terminals.
-
-## Install
-
-Install each package separately:
-
-```powershell
+cd "C:\smu heap\party.fun\backend"
 npm install
-npm --prefix frontend install
-npm --prefix backend install
-```
-
-## Run
-
-For the cleanest Windows shutdown behavior, run the frontend and backend in separate terminals with direct Node commands.
-
-How to run both terminals:
-
-Terminal 1:
-
-```powershell
-cd "C:\smu heap\party.fun\frontend"
 npm run dev
 ```
 
-Terminal 2:
-
-```powershell
-cd "C:\smu heap\party.fun\backend"
-npm run dev
-```
-
-Try the below as a backup (unlikely occurence):
-
-Terminal 1:
-
 ```powershell
 cd "C:\smu heap\party.fun\frontend"
-node .\node_modules\vite\bin\vite.js --host localhost --port 5173
+npm install
+npm run dev
 ```
-
-Terminal 2:
-
-```powershell
-cd "C:\smu heap\party.fun\backend"
-node .\server.js
-```
-
-Expected URLs:
 
 - Frontend: `http://localhost:5173`
 - Backend health check: `http://localhost:8000/api/health`
-- Proxied health check: `http://localhost:5173/api/health`
 
-The root helper command prints these instructions:
-
-```powershell
-npm run dev
-```
-
-Package scripts are still available if you prefer npm wrappers:
+Build the frontend with:
 
 ```powershell
-npm run dev:frontend
-npm run dev:backend
+cd "C:\smu heap\party.fun\frontend"
+npm run build
 ```
 
-For less npm output inside each package:
+## Demo accounts
 
-```powershell
-npm run dev --silent
-```
+- User: `jamie@u.nus.edu` / `user123`
+- Organiser: `organiser@smu.edu.sg` / `organiser123`
 
-## Build
+Passwords are verified against bcrypt hashes in `backend/data/mockUsers.js`. Sessions are not implemented, so refreshing signs the user out.
 
-```powershell
-npm --prefix frontend run build
-```
+## Current behavior
 
-The frontend build output is written to `frontend/dist/`.
+- Guests can browse events and event details.
+- Users can pledge for one or more tickets.
+- Payment capture is simulated immediately at pledge time.
+- A user cannot buy more tickets for the same event while they still have active tickets.
+- A user may give away some or all active tickets without a refund.
+- Partial give-away remains in Joined Events > Upcoming.
+- Full give-away moves that booking to Joined Events > Cancelled.
+- After giving away all tickets, the user may buy available tickets again. The old cancelled booking remains in their history.
+- Released tickets are made available at the current tier price. Once Main Crowd opens, pricing does not regress to Early Birds.
+- Organisers cannot pledge for their own events.
 
-## Frontend Auth
+## Event rules
 
-Authentication is currently mocked in the frontend only:
+- Pricing tiers: `early_bird`, `main_crowd`
+- Event statuses: `pending`, `greenlit`, `cancelled`, `completed`
+- `hypeThreshold`: minimum active ticket count required to confirm an event
+- `maxCapacity`: maximum active ticket count allowed
+- `activeTicketCount`, `hypePercentage`, and `spotsLeft` are derived values
+- `hypePercentage = min(100, activeTicketCount / hypeThreshold * 100)`
 
-- Any non-admin email logs in as a user.
-- Any email containing `admin` logs in as an admin.
-- Passwords are not validated yet.
-- Refreshing the app clears the role and returns the user to the Welcome back login page.
+## Mock relational data
 
-No backend auth, Supabase, Clerk, cookies, sessions, or persistent login state is implemented yet.
+The files under `backend/data` mirror the intended database tables:
 
-## API Skeleton
+- `mockUsers.js`: accounts and bcrypt password hashes
+- `mockEvents.js`: event identity, schedule, lifecycle status, and current pricing tier
+- `mockEventSettings.js`: hype threshold, maximum capacity, and deadline
+- `mockPriceTiers.js`: Early Birds and Main Crowd prices and capacities
+- `mockBookings.js`: one payment/pledge transaction
+- `mockBookingItems.js`: quantity and price breakdown for each booking
+- `mockTickets.js`: individual ticket lifecycle records
+- `mockEventDrafts.js`: organiser draft records
 
-The backend currently returns placeholder JSON with `status: "not_implemented"`.
+The Express API derives the public event summary from these relational fixtures. It does not read `schema.sql` or `seed.sql`.
 
-Examples:
+## Main API routes
 
-- `GET /api/health`
-- `GET /api/auth/login`
+- `POST /api/auth/login`
 - `POST /api/auth/register`
 - `GET /api/events`
-- `GET /api/events/e1`
-- `GET /api/checkout/e1`
+- `GET /api/events/:eventId`
+- `GET /api/checkout/:eventId/quote?qty=1`
+- `POST /api/checkout/:eventId/pledge`
 - `GET /api/profile`
-- `GET /api/confirmation/e1`
-- `GET /api/dashboard`
-- `GET /api/dashboard/events/new`
-- `GET /api/dashboard/events/e1/edit`
+- `POST /api/profile/bookings/:bookingId/give-away`
 
-## Stopping The Dev Servers On Windows
+Authenticated prototype requests use `X-Mock-Role` and `X-Mock-User-Id` headers. This is temporary and must be replaced by real server-side sessions or Supabase Auth.
 
-The recommended direct commands avoid the long-running npm `.cmd` wrapper that causes the `Terminate batch job (Y/N)?` prompt in many Windows terminals.
+## Current limitations
 
-Use `Ctrl+C` in each terminal:
-
-- Frontend terminal returns to `PS C:\smu heap\party.fun\frontend>`.
-- Backend terminal returns to `PS C:\smu heap\party.fun\backend>`.
-
-If you run the package npm scripts instead of the direct Node commands, Windows may still show npm's normal script header or batch prompt behavior.
+- No persistent database
+- No real Stripe payments or refunds
+- No real sessions or authorization enforcement
+- Organiser create, edit, delete, and drafts remain frontend-local
+- Event deadline processing and automatic refunds are not scheduled
+- Mock data resets when the backend restarts

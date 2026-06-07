@@ -1,9 +1,10 @@
 import express from 'express';
-import { cancelTicket, getProfile } from '../controllers/userController.js';
+import { giveAwayBookingTickets, getProfile, deleteBooking } from '../controllers/userController.js';
 
 const router = express.Router();
 
 router.get('/', getProfile);
-router.post('/tickets/:eventId/cancel', cancelTicket);
+router.post('/bookings/:bookingId/give-away', giveAwayBookingTickets);
+router.delete('/bookings/:bookingId', deleteBooking);
 
 export default router;

@@ -3,20 +3,22 @@ import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } 
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, TIER_COLORS, TIER_LABELS, type EventItem, type Route } from '../components/types';
+import { getActiveStatus, type EventItem, type Route } from '../components/types';
 
-// Lifecycle status shown in the dashboard's Status column, derived from the event's
-// status flag and whether it has reached its hype threshold.
-function dashboardStatus(e: EventItem): 'GREENLIT' | 'PENDING' | 'CANCELLED' {
+// The single status shown in the dashboard's Status column: early_birds (< 100% hype),
+// greenlit (reached the hype threshold), completed (event has passed) or cancelled.
+function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED' {
   if (e.status === 'cancelled') return 'CANCELLED';
-  if (e.status === 'greenlit' || e.backers >= e.threshold) return 'GREENLIT';
-  return 'PENDING';
+  if (e.status === 'completed') return 'COMPLETED';
+  if (e.status === 'greenlit' || e.activeTicketCount >= e.hypeThreshold) return 'GREENLIT';
+  return 'EARLY BIRDS';
 }
 
-const STATUS_COLORS: Record<'GREENLIT' | 'PENDING' | 'CANCELLED', string> = {
-  GREENLIT: 'var(--foreground)',
-  PENDING: 'var(--foreground)',
-  CANCELLED: '#ff6b85',
+const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED', string> = {
+  GREENLIT: '#29e07a',
+  'EARLY BIRDS': '#ffcb3c',
+  CANCELLED: '#ff3354',
+  COMPLETED: '#9a9aa5',
 };
 
 export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
@@ -28,7 +30,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
   const created = events.filter((e) => e.mine);
   const rows = isDrafts ? drafts : created;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
-  const totalPledged = created.reduce((s, e) => s + e.backers * e.price, 0);
+  const totalPledged = created.reduce((s, e) => s + e.activeTicketCount * e.price, 0);
 
   return (
     <div>
@@ -40,7 +42,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
               
               <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Manage your events</h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                Track hype, pledges and greenlit events in one place.
+                Track hype, pledges and confirmed events in one place.
               </p>
             </div>
             <button
@@ -58,7 +60,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
           <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
             <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time events" />
             <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={created.filter((e) => dashboardStatus(e) !== 'CANCELLED').length.toString()} hint="Ongoing events" />
-            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Greenlit" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Confirmed events" />
+            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Confirmed" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Reached the hype threshold" />
             <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${(totalPledged / 1000).toFixed(1)}k`} hint="Across all events" />
           </div>
 
@@ -89,14 +91,13 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
             <div>
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '21%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '17%' }} />
+                  <col style={{ width: '24%' }} />
                   <col style={{ width: '11%' }} />
-                  <col style={{ width: '9%' }} />
-                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '13%' }} />
                   <col style={{ width: '10%' }} />
-                  <col style={{ width: '10%' }} />
+                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '11%' }} />
                 </colgroup>
                 <thead>
                   <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
@@ -105,7 +106,6 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                     <th className="px-3 py-3 text-left">Hype</th>
                     <th className="px-3 py-3 text-right">Revenue</th>
                     <th className="px-3 py-3 text-right">Threshold</th>
-                    <th className="px-3 py-3 text-left">Tier</th>
                     <th className="px-3 py-3 text-left">Status</th>
                     <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
@@ -120,27 +120,13 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                       <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date || '—'}</td>
                       <td className="px-3 py-4">
                         <div className="w-full min-w-0">
-                          <HypeMeter pct={e.hypePct} status={e.status} tier={getActiveTier(e)} size="sm" showLabel={false} />
+                          <HypeMeter pct={e.hypePercentage} status={e.status} statusIndex={getActiveStatus(e)} size="sm" showLabel={false} />
                         </div>
-                        <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePct}%</div>
+                        <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}%</div>
                       </td>
-                      <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(e.backers * e.price).toLocaleString()}</td>
+                      <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(e.activeTicketCount * e.price).toLocaleString()}</td>
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
-                        {e.backers}/{e.threshold}
-                      </td>
-                      <td className="px-3 py-4">
-                        {(() => {
-                          const ti = getActiveTier(e);
-                          return (
-                            <span
-                              className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs"
-                              style={{ background: `${TIER_COLORS[ti]}1f`, color: TIER_COLORS[ti], fontWeight: 600 }}
-                            >
-                              <span className="size-1.5 rounded-full" style={{ background: TIER_COLORS[ti] }} />
-                              {TIER_LABELS[ti]}
-                            </span>
-                          );
-                        })()}
+                        {e.activeTicketCount}/{e.hypeThreshold}
                       </td>
                       <td className="px-3 py-4">
                         {isDrafts ? (
@@ -149,7 +135,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                           (() => {
                             const s = dashboardStatus(e);
                             return (
-                              <span className="text-xs uppercase tracking-wide" style={{ color: STATUS_COLORS[s], fontWeight: 600 }}>{s}</span>
+                              <span className="text-xs uppercase tracking-wide" style={{ color: DASHBOARD_STATUS_COLORS[s], fontWeight: 600 }}>{s}</span>
                             );
                           })()
                         )}

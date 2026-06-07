@@ -1,12 +1,12 @@
 import type { EventItem, Role } from './components/types';
 
 export type ProfileTicket = {
+  bookingId: string;
   eventId: string;
-  qty: number;
-  amount: number;
+  activeTicketCount: number;
+  originalTicketCount: number;
+  bookingStatus: string;
   tab: 'upcoming' | 'past' | 'cancelled';
-  ticketStatus: string;
-  total: number;
 };
 
 export type QuoteLine = { label: string; price: number; count: number };
@@ -36,14 +36,17 @@ type MutationResponse = {
   profile: ProfileResponse;
 };
 
-const MOCK_USER_ID = 'mock-user-jamie';
+const MOCK_USER_IDS: Record<Role, string> = {
+  user: 'mock-user-jamie',
+  organiser: 'mock-organiser-smu',
+};
 
 async function apiFetch<T>(path: string, role: Role | null, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
 
   if (role) {
     headers.set('X-Mock-Role', role);
-    headers.set('X-Mock-User-Id', MOCK_USER_ID);
+    headers.set('X-Mock-User-Id', MOCK_USER_IDS[role]);
   }
 
   if (options.body && !headers.has('Content-Type')) {
@@ -113,9 +116,15 @@ export function createPledge(role: Role, eventId: string, qty: number, amount: n
   });
 }
 
-export function cancelTicket(role: Role, eventId: string, qty: number, amount: number) {
-  return apiFetch<MutationResponse>(`/api/profile/tickets/${eventId}/cancel`, role, {
+export function giveAwayTickets(role: Role, bookingId: string, quantity: number) {
+  return apiFetch<MutationResponse>(`/api/profile/bookings/${bookingId}/give-away`, role, {
     method: 'POST',
-    body: JSON.stringify({ qty, amount }),
+    body: JSON.stringify({ quantity }),
+  });
+}
+
+export function deleteBooking(role: Role, bookingId: string) {
+  return apiFetch<MutationResponse>(`/api/profile/bookings/${bookingId}`, role, {
+    method: 'DELETE',
   });
 }

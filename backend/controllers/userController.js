@@ -1,36 +1,40 @@
-import { cancelPledge, getProfile as readProfile } from '../services/eventMemoryService.js';
+import { getProfile as readProfile, giveAwayTickets, deleteBooking as removeBooking } from '../services/eventMemoryService.js';
 import { requireMockRole } from '../services/mockAuth.js';
 
 export function getProfile(req, res) {
   const auth = requireMockRole(req, res);
   if (!auth) return;
-
   res.json(readProfile(auth.userId));
 }
 
-export function cancelTicket(req, res) {
+export function giveAwayBookingTickets(req, res) {
   const auth = requireMockRole(req, res);
   if (!auth) return;
 
-  const result = cancelPledge({
+  const result = giveAwayTickets({
     userId: auth.userId,
-    eventId: req.params.eventId,
-    qty: req.body.qty,
-    amount: req.body.amount,
+    bookingId: req.params.bookingId,
+    quantity: req.body.quantity,
   });
-
-  if (!result) {
-    res.status(404).json({
-      status: 'not_found',
-      route: req.originalUrl,
-      message: 'Event not found.',
-    });
+  if (result.error) {
+    const status = result.error === 'not_found' ? 404 : 400;
+    res.status(status).json({ status: result.error, message: result.error === 'not_found' ? 'Booking not found.' : 'Choose a valid number of active tickets.' });
     return;
   }
+  res.json({ status: 'ok', event: result.event, profile: result.profile });
+}
 
-  res.json({
-    status: 'ok',
-    event: result.event,
-    profile: result.profile,
+export function deleteBooking(req, res) {
+  const auth = requireMockRole(req, res);
+  if (!auth) return;
+
+  const result = removeBooking({
+    userId: auth.userId,
+    bookingId: req.params.bookingId,
   });
+  if (result.error) {
+    res.status(404).json({ status: result.error, message: 'Booking not found.' });
+    return;
+  }
+  res.json({ status: 'ok', event: result.event, profile: result.profile });
 }

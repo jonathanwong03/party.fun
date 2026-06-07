@@ -3,14 +3,14 @@ import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus,
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
-export function EventDetail({ id, go, role, events, qty, amount, total, onCancelAttendance, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; qty?: number; amount?: number; total?: number; onCancelAttendance?: (id: string, qty: number, amount: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; cancelledEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
+  const [giveAwayQty, setGiveAwayQty] = useState(1);
   const [buyQty, setBuyQty] = useState(1);
   if (!event) {
     return (
@@ -19,9 +19,11 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
       </div>
     );
   }
-  const activeTier = getActiveTier(event);
-  // Total tickets still available across all tiers (a pledge spills into the next tier).
-  const available = event.tiers.reduce((sum, t) => sum + Math.max(0, t.qty - t.sold), 0);
+  const activeStatus = getActiveStatus(event);
+  // Total tickets still available across both statuses (a pledge spills into the next status).
+  const available = event.statuses.reduce((sum, s) => sum + Math.max(0, s.qty - s.sold), 0);
+  // A cancelled event — or one the user already gave away all their tickets for — can't be (re-)pledged.
+  const unavailable = event.status === 'cancelled' || !!cancelledEventIds?.has(event.id);
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromOrganiser;
@@ -44,8 +46,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
-            <StatusBadge event={event} detail />
-            <h1 className="mt-3 text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            <h1 className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
             <p className="mt-1 text-white/70 text-sm">Hosted by {event.organiser}</p>
@@ -83,27 +84,27 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
               <h3>Hype meter</h3>
               <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Deadline: {event.deadline}</span>
             </div>
-            <HypeMeter pct={event.hypePct} status={event.status} tier={activeTier} size="lg" backers={event.backers} threshold={event.threshold} />
+            <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={activeStatus} size="lg" activeTicketCount={event.activeTicketCount} hypeThreshold={event.hypeThreshold} />
 
             {/* Countdown */}
             {event.status !== 'greenlit' && event.status !== 'cancelled' && (
               <div className="mt-5 rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.03)' }}>
                 <div className="mb-3 flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  <Timer size={12} /> Hype deadline
-                  <span className="ml-auto font-medium" style={{ color: 'var(--foreground)' }}>{event.deadline}</span>
+                  <Timer size={12} /> Event starts in
+                  <span className="ml-auto font-medium" style={{ color: 'var(--foreground)' }}>{event.date}</span>
                 </div>
-                <Countdown deadline={event.deadline} />
+                <Countdown targetIso={event.startsAt} deadline={event.deadline} />
               </div>
             )}
 
             <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
               <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Threshold</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.threshold} </div>
+                <div className="mt-1" style={{ fontWeight: 700 }}>{event.hypeThreshold} </div>
               </div>
               <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Pledged</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.backers}</div>
+                <div className="mt-1" style={{ fontWeight: 700 }}>{event.activeTicketCount}</div>
               </div>
               <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Spots left</div>
@@ -116,9 +117,9 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <h3 className="mb-3">How it works</h3>
             <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-              <li><strong>Buy early</strong> — earlier tiers are cheaper.</li>
-              <li><strong>Hit the threshold</strong> — the event is greenlit and the party is on.</li>
-              <li><strong>Missed the threshold?</strong> You're automatically refunded in full.</li>
+              <li><strong>Buy early</strong> — the early_bird status is cheaper.</li>
+              <li><strong>Reach the hype threshold</strong> — the event is confirmed.</li>
+              <li><strong>Miss the hype threshold?</strong> Active tickets are automatically refunded in full.</li>
             </ol>
           </div>
         </div>
@@ -126,7 +127,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         {showCancelledCard ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{statusStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
@@ -145,7 +146,7 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Funds are only captured when the event hits its hype threshold. If it doesn't, you're refunded automatically.</span>
+                <span>Payments were captured at checkout. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>
             </div>
           </div>
@@ -154,12 +155,12 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
-            <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Pledge confirmed</h3>
+            <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Tickets pledged</h3>
             <div className="mt-1 text-sm" style={{ color: 'var(--foreground)', fontWeight: 600 }}>
               {(qty ?? 1)}× ticket{(qty ?? 1) === 1 ? '' : 's'}
             </div>
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-              You've pledged <strong style={{ color: 'var(--foreground)' }}>${(total ?? event.price).toFixed(2)}</strong> for this event. If it hits its threshold, your ticket is locked in. If not, you're refunded automatically.
+              Your payment was captured when you pledged. If the event misses its hype threshold, active tickets are refunded automatically.
             </p>
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
@@ -169,13 +170,13 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
               className="w-full bg-[#ff0a0a] text-white hover:bg-[#ff2a2a]"
               style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
             >
-              Cancel Event
+              Give Away Tickets
             </Button>
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(255,122,147,0.08)', border: '1px solid rgba(255,122,147,0.3)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: '#ff7a93' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Cancelling is final — you will <strong>not</strong> be refunded. Refunds only happen automatically if the event misses its hype threshold by the deadline.</span>
+                <span>Giving away tickets is final. You will <strong>not</strong> be refunded, and released spots return to the public pool.</span>
               </div>
             </div>
           </div>
@@ -217,14 +218,14 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         ) : (
         <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{statusStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
             </div>
-            <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>
+            {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>}
 
-            {event.status !== 'cancelled' && (
+            {!unavailable && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
@@ -244,24 +245,30 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
-            <Button
-              onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
-              disabled={event.status === 'cancelled' || available === 0}
-              className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
-              style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
-            >
-              {event.status === 'greenlit'
-                ? `Buy Ticket · $${event.price}`
-                : event.status === 'cancelled'
-                ? 'Event cancelled'
-                : 'Pledge'}
-              {event.status !== 'cancelled' && <ArrowRight size={16} className="ml-1" />}
-            </Button>
+            {unavailable ? (
+              <Button
+                disabled
+                className="w-full disabled:opacity-100"
+                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              >
+                Event unavailable
+              </Button>
+            ) : (
+              <Button
+                onClick={() => go(role ? { name: 'checkout', id: event.id, qty: buyQty } : { name: 'login' })}
+                disabled={available === 0}
+                className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
+                style={{ borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              >
+                {event.status === 'greenlit' ? 'Buy' : 'Pledge'}
+                <ArrowRight size={16} className="ml-1" />
+              </Button>
+            )}
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Funds are only captured when the event hits its hype threshold. If it doesn't, you're refunded automatically.</span>
+                <span>Your payment is captured now. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>
             </div>
           </div>
@@ -274,14 +281,18 @@ export function EventDetail({ id, go, role, events, qty, amount, total, onCancel
         <DeleteEventModal
           eventName={event.title}
           confirmWord="CONFIRM"
-          title="Cancel Event?"
-          leadIn="You're about to cancel your spot for"
-          warning="Cancelling is final — you will NOT be refunded. Your spot is released back to the pool and you'll no longer be attending. Refunds only happen if the event misses its hype threshold by the deadline."
-          actionLabel="Cancel Event"
+          title="Give Away Tickets?"
+          leadIn="You're about to give away tickets for"
+          warning="Giving away tickets is final. You will NOT be refunded. Released spots return to the public ticket pool."
+          actionLabel="Give Away Tickets"
+          quantity={giveAwayQty}
+          maxQuantity={qty ?? 1}
+          onQuantityChange={setGiveAwayQty}
+          quantityPrompt="How many of these tickets would you like to give away?"
           onCancel={() => setCancelling(false)}
           onConfirm={() => {
             setCancelling(false);
-            Promise.resolve(onCancelAttendance?.(event.id, qty ?? 1, amount ?? event.price)).finally(() => {
+            Promise.resolve(bookingId ? onGiveAway?.(bookingId, giveAwayQty) : undefined).finally(() => {
               go({ name: 'joined-events' });
             });
           }}
@@ -327,7 +338,7 @@ function WhosGoingCard({ event }: { event: EventItem }) {
         ))}
       </div>
       <p className="text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
-        {event.backers} students have locked in. {event.spotsLeft} spots remaining
+        {event.activeTicketCount} students have locked in. {event.spotsLeft} spots remaining
       </p>
     </div>
   );

@@ -76,15 +76,24 @@ export const scheduleError = (startDate: string, startTime: string, endDate: str
   const startAt = toDateTime(startDate, startTime);
   const endAt = toDateTime(endDate, endTime);
   if (!startAt || !endAt) return null;
-  return endAt.getTime() < startAt.getTime() ? 'End must be after the start.' : null;
+  // Strictly after: an end equal to (or before) the start is invalid.
+  return endAt.getTime() <= startAt.getTime() ? 'End must be after the start.' : null;
 };
 
-// The threshold deadline must fall on or before the event's start (date + start time).
+// A date + time combination must be strictly in the future (after now).
+export const futureDateTimeError = (date: string, time: string) => {
+  const at = toDateTime(date, time);
+  if (!at) return null;
+  return at.getTime() <= Date.now() ? 'Must be a date and time in the future.' : null;
+};
+
+// The hype deadline must fall on or before the event's start (date + start time).
 export const deadlineEventError = (eventDate: string, startTime: string, deadlineDate: string, deadlineTime: string) => {
   const eventAt = toDateTime(eventDate, startTime);
   const deadlineAt = toDateTime(deadlineDate, deadlineTime);
   if (!eventAt || !deadlineAt) return null;
-  return deadlineAt.getTime() > eventAt.getTime() ? 'Deadline must be on or before the event start.' : null;
+  // Strictly before: a deadline at or after the event start is invalid.
+  return deadlineAt.getTime() >= eventAt.getTime() ? 'Deadline must be before the event start.' : null;
 };
 
 // Deadline: a DD/MM/YYYY date and a 12-hour time, e.g. "10/06/2025, 11:59 PM".
@@ -116,19 +125,19 @@ export const required = (v: string) => (isBlank(v) ? 'This field is required.' :
 export const emailError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidEmail(v) ? null : 'Enter a valid email address.';
 
+// Format/calendar validity only — "future" is enforced at datetime level via futureDateTimeError.
 export const dateError = (v: string) =>
   isBlank(v) ? 'This field is required.'
     : !isValidDate(v) ? 'Enter a valid date in the format DD/MM/YYYY.'
-    : !isFutureDate(v) ? 'Please select a date that is after today.'
     : null;
 
 export const timeError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidTime(v) ? null : 'Enter a valid time in the format HH:MM AM/PM.';
 
+// Format only — "future" is enforced at datetime level via futureDateTimeError.
 export const deadlineError = (v: string) =>
   isBlank(v) ? 'This field is required.'
     : !isValidDeadline(v) ? 'Enter a valid date and time in the format DD/MM/YYYY, HH:MM AM/PM.'
-    : !isDeadlineFuture(v) ? 'Please select a date that is after today.'
     : null;
 
 export const cardError = (v: string) =>

@@ -1,46 +1,33 @@
 import { useState } from 'react';
-import { Calendar, MapPin, Ticket as TicketIcon, ArrowRight } from 'lucide-react';
+import { Calendar, MapPin, Ticket as TicketIcon, ArrowRight, Trash2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { getActiveTier, type Route, type EventItem } from '../components/types';
+import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
+import { getActiveStatus, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import type { ProfileTicket } from '../api';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
-type Row = { event: EventItem; qty: number; amount: number; total: number; tab: Tab; ticketStatus: string };
+type Row = ProfileTicket & { event: EventItem };
 
-export function JoinedEvents({
-  go,
-  events,
-  tickets,
-}: {
-  go: (r: Route) => void;
-  events: EventItem[];
-  tickets: ProfileTicket[];
-}) {
+export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; onDelete: (bookingId: string) => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('upcoming');
-  // Resolve each row's event from the live `events` state so pledged events reflect updated backers/tiers.
-  const resolve = (id: string) => events.find((e) => e.id === id);
-  const toRow = (t: ProfileTicket) => {
-    const ev = resolve(t.eventId);
-    return ev ? { event: ev, qty: t.qty, amount: t.amount, total: t.total, tab: t.tab, ticketStatus: t.ticketStatus } : null;
-  };
-  // "My Events" lists events you pledged/bought — never your own created events (mine).
-  const merged = (tickets.map(toRow).filter(Boolean) as Row[]).filter((r) => !r.event.mine);
-  const items = merged.filter((t) => t.tab === tab);
-  const pledgedCount = merged.filter((t) => t.tab === 'upcoming').length;
-  const confirmedCount = merged.filter((t) => t.tab === 'past').length;
-  const refundedCount = merged.filter((t) => t.tab === 'cancelled').length;
+  const [deleting, setDeleting] = useState<Row | null>(null);
+  const rows = tickets
+    .map((booking) => {
+      const event = events.find((candidate) => candidate.id === booking.eventId);
+      return event ? { ...booking, event } : null;
+    })
+    .filter((row): row is Row => !!row && !row.event.mine);
+  const items = rows.filter((row) => row.tab === tab);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
-      {/* Ticket stats */}
-      <div className="mb-8 flex justify-around gap-4 rounded-2xl border p-6"
-        style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <Stat label="Pledged" value={String(pledgedCount)} />
-        <Stat label="Confirmed" value={String(confirmedCount)} />
-        <Stat label="Refunded" value={String(refundedCount)} />
+      <div className="mb-8 flex justify-around gap-4 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <Stat label="Pledged" value={String(rows.filter((row) => row.tab === 'upcoming').length)} />
+        <Stat label="Completed" value={String(rows.filter((row) => row.tab === 'past').length)} />
+        <Stat label="Cancelled" value={String(rows.filter((row) => row.tab === 'cancelled').length)} />
       </div>
 
       <div className="mb-6 flex items-baseline justify-between">
@@ -50,20 +37,15 @@ export function JoinedEvents({
         </Button>
       </div>
 
-      {/* Tabs */}
       <div className="mb-5 flex gap-2 rounded-full border p-1" style={{ borderColor: 'var(--border)', background: 'var(--surface)', width: 'fit-content' }}>
-        {(['upcoming', 'past', 'cancelled'] as Tab[]).map((t) => (
+        {(['upcoming', 'past', 'cancelled'] as Tab[]).map((value) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={value}
+            onClick={() => setTab(value)}
             className="rounded-full px-4 py-1.5 text-sm capitalize transition"
-            style={{
-              background: tab === t ? '#ff4d2e' : 'transparent',
-              color: tab === t ? '#fff' : 'var(--muted-foreground)',
-              fontWeight: 600,
-            }}
+            style={{ background: tab === value ? '#ff4d2e' : 'transparent', color: tab === value ? '#fff' : 'var(--muted-foreground)', fontWeight: 600 }}
           >
-            {t === 'cancelled' ? 'Cancelled' : t}
+            {value}
           </button>
         ))}
       </div>
@@ -74,59 +56,73 @@ export function JoinedEvents({
             <TicketIcon size={22} style={{ color: '#ff4d2e' }} />
           </div>
           <h3 className="mt-3">Nothing here yet</h3>
-          <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-            When you pledge for an event, it'll show up here.
-          </p>
+          <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>When you pledge for an event, it will show up here.</p>
           <Button onClick={() => go({ name: 'landing' })} className="mt-4 bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 9999 }}>
             Browse events <ArrowRight size={14} className="ml-1" />
           </Button>
         </div>
       ) : (
         <div className="space-y-3">
-          {items.map(({ event, qty, amount, total, ticketStatus }) => {
-            // A cancelled-tab ticket is either a buyer opt-out ('Cancelled', no refund) or an
-            // event-failure refund ('Refunded'); both are read-only here.
-            const isCancelledTicket = tab === 'cancelled';
-            const badgeLabel =
-              tab === 'past' ? 'Not available'
-              : event.status === 'cancelled' ? undefined        // -> eventBadge: "Cancelled by Organiser"
-              : isCancelledTicket ? 'Cancelled by Buyer'
-              : undefined;                                       // -> eventBadge: tier label
-            const greyMeter = !!badgeLabel || event.status === 'cancelled';
+          {items.map((booking) => {
+            const isCancelled = booking.tab === 'cancelled';
+            const badgeLabel = booking.tab === 'past' ? 'Completed' : isCancelled ? 'Cancelled by Buyer' : undefined;
             return (
-            <div key={event.id} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center"
-              style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-              <div className="relative h-24 w-full overflow-hidden rounded-xl md:w-40 md:shrink-0">
-                <ImageWithFallback src={event.image} alt={event.title} className="size-full object-cover" />
+              <div key={booking.bookingId} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+                <div className="relative h-24 w-full overflow-hidden rounded-xl md:w-40 md:shrink-0">
+                  <ImageWithFallback src={booking.event.image} alt={booking.event.title} className="size-full object-cover" />
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="line-clamp-1">{booking.event.title}</h3>
+                    <StatusBadge event={booking.event} label={badgeLabel} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                    <span className="flex items-center gap-1"><Calendar size={12} /> {booking.event.date}</span>
+                    <span className="flex items-center gap-1"><MapPin size={12} /> {booking.event.location.split(',')[0]}</span>
+                    {!isCancelled && <span>Tickets pledged: {booking.activeTicketCount}</span>}
+                  </div>
+                  <div className="mt-3 max-w-md">
+                    <HypeMeter pct={booking.event.hypePercentage} status={isCancelled ? 'cancelled' : booking.event.status} statusIndex={getActiveStatus(booking.event)} size="sm" showLabel={false} />
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    onClick={() => go(isCancelled
+                      ? { name: 'event', id: booking.event.id }
+                      : { name: 'event', id: booking.event.id, fromProfile: true, bookingId: booking.bookingId, qty: booking.activeTicketCount })}
+                    variant="outline"
+                    className="border-white/15 bg-transparent hover:bg-white/5"
+                    style={{ borderRadius: 9999 }}
+                  >
+                    View
+                  </Button>
+                  {(booking.tab === 'cancelled' || booking.tab === 'past') && (
+                    <button
+                      onClick={() => setDeleting(booking)}
+                      aria-label="Delete"
+                      title="Delete"
+                      className="grid size-9 shrink-0 place-items-center rounded-full border transition hover:bg-[rgba(255,51,84,0.12)]"
+                      style={{ borderColor: 'rgba(255,51,84,0.4)', color: '#ff3354' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="line-clamp-1">{event.title}</h3>
-                  <StatusBadge event={event} label={badgeLabel} />
-                </div>
-                <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
-                  <span className="flex items-center gap-1"><MapPin size={12} /> {event.location.split(',')[0]}</span>
-                  <span>Ticket: {ticketStatus} · {qty} × ${amount}</span>
-                </div>
-                <div className="mt-3 max-w-md">
-                  <HypeMeter pct={event.hypePct} status={greyMeter ? 'cancelled' : event.status} tier={getActiveTier(event)} size="sm" showLabel={false} />
-                </div>
-              </div>
-              <div className="flex items-center gap-3 md:flex-col md:items-end">
-                <div className="text-right">
-                  <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Total</div>
-                  <div style={{ fontWeight: 700, fontSize: 18 }}>${total.toFixed(2)}</div>
-                </div>
-                <Button onClick={() => go(tab === 'past' ? { name: 'event', id: event.id, fromPast: true } : isCancelledTicket ? { name: 'event', id: event.id } : { name: 'event', id: event.id, fromProfile: true, qty, amount, total })} variant="outline"
-                  className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 9999 }}>
-                  View
-                </Button>
-              </div>
-            </div>
             );
           })}
         </div>
+      )}
+
+      {deleting && (
+        <ConfirmDeleteModal
+          eventName={deleting.event.title}
+          onCancel={() => setDeleting(null)}
+          onConfirm={async () => {
+            await onDelete(deleting.bookingId);
+            setDeleting(null);
+          }}
+        />
       )}
     </div>
   );
