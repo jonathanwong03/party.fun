@@ -3,20 +3,22 @@ import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } 
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, type EventItem, type Route } from '../components/types';
+import { getActiveStatus, type EventItem, type Route } from '../components/types';
 
 // The single status shown in the dashboard's Status column: early_birds (< 100% hype),
-// greenlit (reached the hype threshold) or cancelled.
-function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' {
+// greenlit (reached the hype threshold), completed (event has passed) or cancelled.
+function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED' {
   if (e.status === 'cancelled') return 'CANCELLED';
+  if (e.status === 'completed') return 'COMPLETED';
   if (e.status === 'greenlit' || e.activeTicketCount >= e.hypeThreshold) return 'GREENLIT';
   return 'EARLY BIRDS';
 }
 
-const STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED', string> = {
+const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED', string> = {
   GREENLIT: '#29e07a',
   'EARLY BIRDS': '#ffcb3c',
   CANCELLED: '#ff3354',
+  COMPLETED: '#9a9aa5',
 };
 
 export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
@@ -118,7 +120,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                       <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date || '—'}</td>
                       <td className="px-3 py-4">
                         <div className="w-full min-w-0">
-                          <HypeMeter pct={e.hypePercentage} status={e.status} tier={getActiveTier(e)} size="sm" showLabel={false} />
+                          <HypeMeter pct={e.hypePercentage} status={e.status} statusIndex={getActiveStatus(e)} size="sm" showLabel={false} />
                         </div>
                         <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}%</div>
                       </td>
@@ -133,7 +135,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                           (() => {
                             const s = dashboardStatus(e);
                             return (
-                              <span className="text-xs uppercase tracking-wide" style={{ color: STATUS_COLORS[s], fontWeight: 600 }}>{s}</span>
+                              <span className="text-xs uppercase tracking-wide" style={{ color: DASHBOARD_STATUS_COLORS[s], fontWeight: 600 }}>{s}</span>
                             );
                           })()
                         )}

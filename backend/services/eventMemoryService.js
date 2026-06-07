@@ -1,7 +1,7 @@
 import { initialUsers } from '../data/mockUsers.js';
 import { initialEvents } from '../data/mockEvents.js';
 import { initialEventSettings } from '../data/mockEventSettings.js';
-import { initialPriceTiers } from '../data/mockPriceTiers.js';
+import { initialPriceStatuses } from '../data/mockPriceStatuses.js';
 import { initialBookings } from '../data/mockBookings.js';
 import { initialBookingItems } from '../data/mockBookingItems.js';
 import { initialTickets } from '../data/mockTickets.js';
@@ -10,14 +10,14 @@ const clone = (value) => structuredClone(value);
 const users = clone(initialUsers);
 const events = clone(initialEvents);
 const eventSettings = clone(initialEventSettings);
-const priceTiers = clone(initialPriceTiers);
+const priceStatuses = clone(initialPriceStatuses);
 let bookings = clone(initialBookings);
 let bookingItems = clone(initialBookingItems);
 let tickets = clone(initialTickets);
 
 const ACTIVE_TICKET_STATUSES = new Set(['active', 'used']);
-const TIER_ORDER = ['early_bird', 'greenlit'];
-const TIER_LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
+const STATUS_ORDER = ['early_bird', 'greenlit'];
+const STATUS_LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
 const money = (value) => Number(Number(value).toFixed(2));
 const id = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -35,32 +35,40 @@ function getSettings(eventId) {
   return eventSettings.find((settings) => settings.eventId === eventId);
 }
 
-function getTiers(eventId) {
-  return priceTiers
-    .filter((tier) => tier.eventId === eventId)
-    .sort((a, b) => TIER_ORDER.indexOf(a.tierName) - TIER_ORDER.indexOf(b.tierName));
+function getStatuses(eventId) {
+  return priceStatuses
+    .filter((status) => status.eventId === eventId)
+    .sort((a, b) => STATUS_ORDER.indexOf(a.statusName) - STATUS_ORDER.indexOf(b.statusName));
 }
 
-function ticketTier(ticket) {
+function ticketStatus(ticket) {
   const item = bookingItems.find((candidate) => candidate.id === ticket.bookingItemId);
-  return priceTiers.find((tier) => tier.id === item?.priceTierId);
+  return priceStatuses.find((status) => status.id === item?.priceStatusId);
 }
 
-function tierActiveCount(tierId) {
-  const itemIds = new Set(bookingItems.filter((item) => item.priceTierId === tierId).map((item) => item.id));
+function statusActiveCount(statusId) {
+  const itemIds = new Set(bookingItems.filter((item) => item.priceStatusId === statusId).map((item) => item.id));
   return tickets.filter((ticket) => itemIds.has(ticket.bookingItemId) && ACTIVE_TICKET_STATUSES.has(ticket.status) && !isDeleted(ticket.bookingId)).length;
 }
+
+// The price status currently being sold: greenlit once the early_bird capacity is gone, else early_bird.
+function currentStatusName(event) {
+  const early = getStatuses(event.id).find((status) => status.statusName === 'early_bird');
+  return early && statusActiveCount(early.id) >= early.ticketCapacity ? 'greenlit' : 'early_bird';
+}
+
+const isPastEvent = (event) => new Date(event.endDate).getTime() < Date.now();
 
 function recalculateEvent(event) {
   const settings = getSettings(event.id);
   const count = activeEventTickets(event.id).length;
-  const early = getTiers(event.id).find((tier) => tier.tierName === 'early_bird');
-  if (event.currentTierName === 'early_bird' && early && tierActiveCount(early.id) >= early.ticketCapacity) {
-    event.currentTierName = 'greenlit';
-  }
   if (event.status !== 'cancelled') {
-    event.status = count >= settings.hypeThreshold ? 'greenlit' : 'early_bird';
-    if (event.status === 'greenlit' && !event.greenlitAt) event.greenlitAt = new Date().toISOString();
+    if (isPastEvent(event)) {
+      event.status = 'completed';
+    } else {
+      event.status = count >= settings.hypeThreshold ? 'greenlit' : 'early_bird';
+      if (event.status === 'greenlit' && !event.greenlitAt) event.greenlitAt = new Date().toISOString();
+    }
   }
   event.updatedAt = new Date().toISOString();
 }
@@ -72,9 +80,10 @@ function formatDate(value, options) {
 function publicEvent(event, userId) {
   recalculateEvent(event);
   const settings = getSettings(event.id);
-  const tiers = getTiers(event.id);
+  const statuses = getStatuses(event.id);
   const activeTicketCount = activeEventTickets(event.id).length;
-  const currentTier = tiers.find((tier) => tier.tierName === event.currentTierName) ?? tiers[0];
+  const activeName = currentStatusName(event);
+  const currentStatus = statuses.find((status) => status.statusName === activeName) ?? statuses[0];
   return {
     id: event.id,
     hostId: event.hostId,
@@ -90,9 +99,8 @@ function publicEvent(event, userId) {
     location: event.location,
     description: event.description,
     image: event.imageUrl,
-    price: currentTier?.price ?? 0,
-    tierLabel: TIER_LABELS[event.currentTierName],
-    currentTierName: event.currentTierName,
+    price: currentStatus?.price ?? 0,
+    statusLabel: STATUS_LABELS[activeName],
     hypePercentage: Math.min(100, Math.round((activeTicketCount / settings.hypeThreshold) * 100)),
     hypeThreshold: settings.hypeThreshold,
     activeTicketCount,
@@ -100,12 +108,12 @@ function publicEvent(event, userId) {
     spotsLeft: Math.max(0, settings.maxCapacity - activeTicketCount),
     status: event.status,
     deadline: formatDate(settings.deadline, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }),
-    tiers: tiers.map((tier) => ({
-      tierName: tier.tierName,
-      label: TIER_LABELS[tier.tierName],
-      price: tier.price,
-      qty: tier.ticketCapacity,
-      sold: tierActiveCount(tier.id),
+    statuses: statuses.map((status) => ({
+      statusName: status.statusName,
+      label: STATUS_LABELS[status.statusName],
+      price: status.price,
+      qty: status.ticketCapacity,
+      sold: statusActiveCount(status.id),
     })),
     mine: userId ? event.hostId === userId : undefined,
   };
@@ -116,17 +124,18 @@ function allocation(event, quantity) {
   const available = settings.maxCapacity - activeEventTickets(event.id).length;
   let remaining = Math.min(Math.max(1, Number(quantity) || 1), Math.max(0, available));
   const lines = [];
-  const tiers = getTiers(event.id);
-  const start = TIER_ORDER.indexOf(event.currentTierName);
+  const statuses = getStatuses(event.id);
+  const activeName = currentStatusName(event);
+  const start = STATUS_ORDER.indexOf(activeName);
 
-  for (let index = start; index < tiers.length && remaining > 0; index += 1) {
-    const tier = tiers[index];
-    const tierAvailable = tier.tierName === 'main_crowd' && event.currentTierName === 'main_crowd'
+  for (let index = start; index < statuses.length && remaining > 0; index += 1) {
+    const status = statuses[index];
+    const statusAvailable = status.statusName === 'greenlit' && activeName === 'greenlit'
       ? available
-      : Math.max(0, tier.ticketCapacity - tierActiveCount(tier.id));
-    const count = Math.min(tierAvailable, remaining);
+      : Math.max(0, status.ticketCapacity - statusActiveCount(status.id));
+    const count = Math.min(statusAvailable, remaining);
     if (count > 0) {
-      lines.push({ tierId: tier.id, tierName: tier.tierName, label: TIER_LABELS[tier.tierName], price: tier.price, count });
+      lines.push({ statusId: status.id, statusName: status.statusName, label: STATUS_LABELS[status.statusName], price: status.price, count });
       remaining -= count;
     }
   }
@@ -180,7 +189,7 @@ export function createPledge({ userId, eventId, qty }) {
   };
   bookings.push(booking);
   for (const line of lines) {
-    const item = { id: id('item'), bookingId: booking.id, priceTierId: line.tierId, quantity: line.count, unitPrice: line.price, subtotal: money(line.price * line.count), createdAt: now };
+    const item = { id: id('item'), bookingId: booking.id, priceStatusId: line.statusId, quantity: line.count, unitPrice: line.price, subtotal: money(line.price * line.count), createdAt: now };
     bookingItems.push(item);
     for (let index = 0; index < line.count; index += 1) {
       tickets.push({ id: id('ticket'), bookingId: booking.id, bookingItemId: item.id, qrCode: id('PF'), status: 'active', givenAwayAt: null, refundedAt: null, usedAt: null, createdAt: now });
@@ -193,7 +202,7 @@ export function createPledge({ userId, eventId, qty }) {
 export function giveAwayTickets({ userId, bookingId, quantity }) {
   const booking = bookings.find((candidate) => candidate.id === bookingId && candidate.userId === userId);
   if (!booking) return { error: 'not_found' };
-  const active = activeTickets(booking.id).sort((a, b) => (ticketTier(b)?.price ?? 0) - (ticketTier(a)?.price ?? 0));
+  const active = activeTickets(booking.id).sort((a, b) => (ticketStatus(b)?.price ?? 0) - (ticketStatus(a)?.price ?? 0));
   const normalized = Number(quantity);
   if (!Number.isInteger(normalized) || normalized < 1 || normalized > active.length) return { error: 'invalid_quantity' };
 

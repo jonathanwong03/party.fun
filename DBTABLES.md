@@ -40,8 +40,7 @@ Profile of `AUTH_USERS` — **no `passwordHash`** (credentials live in `AUTH_USE
 | startDate | timestamptz | |
 | endDate | timestamptz | |
 | imageUrl | text | |
-| status | text enum | **`early_bird` \| `greenlit` \| `cancelled`** — status and pricing tier are now one concept. Derived from hype: `greenlit` when active tickets ≥ hypeThreshold (100%), else `early_bird`; `cancelled` when cancelled. ("Past" events are derived from the end date, not a stored status.) |
-| currentTierName | text enum | `early_bird` \| `greenlit` (mirrors `status`) |
+| status | text enum | **`early_bird` \| `greenlit` \| `completed` \| `cancelled`** — status and pricing status are one concept. Derived: `cancelled` if cancelled; else `completed` if the end date has passed (grey); else `greenlit` when active tickets ≥ hypeThreshold (100%); else `early_bird`. There is **no `currentTierName`** — the active price status is derived from `status`/hype. |
 | greenlitAt | timestamptz \| null | |
 | **cancelledAt** | timestamptz \| null | set when status → cancelled |
 | **cancellationReason** | text \| null | e.g. `organiser_cancelled` |
@@ -57,14 +56,15 @@ Profile of `AUTH_USERS` — **no `passwordHash`** (credentials live in `AUTH_USE
 | deadline | timestamptz | hype deadline |
 | createdAt / updatedAt | timestamptz | |
 
-### `PRICE_TIERS` (many per EVENT)
+### `PRICE_STATUSES` (many per EVENT — was `PRICE_TIERS`)
+The two price points an event sells through. One-to-many child of EVENT (can't be columns on EVENT).
 | Column | Type | Notes |
 |---|---|---|
 | id | bigint (PK) | |
 | eventId | uuid (FK → EVENT.id) | |
-| tierName | text enum | `early_bird` \| `greenlit` (was `main_crowd`) |
+| statusName | text enum | `early_bird` \| `greenlit` (was `tierName` / `main_crowd`) |
 | price | numeric | |
-| ticketCapacity | int | tickets available at this tier |
+| ticketCapacity | int | tickets available at this status |
 | createdAt | timestamptz | |
 
 ### `BOOKINGS` (a pledge/checkout)
@@ -86,7 +86,7 @@ Profile of `AUTH_USERS` — **no `passwordHash`** (credentials live in `AUTH_USE
 |---|---|---|
 | id | bigint (PK) | |
 | bookingId | bigint (FK → BOOKINGS.id) | cascade no longer required — see soft-delete note below |
-| priceTierId | bigint (FK → PRICE_TIERS.id) | |
+| priceStatusId | bigint (FK → PRICE_STATUSES.id) | was `priceTierId` |
 | quantity | int | |
 | unitPrice | numeric | |
 | subtotal | numeric | |
@@ -111,11 +111,11 @@ AUTH_USERS 1──1 USER       (USER.id = AUTH_USERS.id)
 USER 1──* EVENT            (EVENT.hostId)
 USER 1──* BOOKINGS         (BOOKINGS.userId)
 EVENT 1──1 EVENT_SETTINGS  (EVENT_SETTINGS.eventId)
-EVENT 1──* PRICE_TIERS     (PRICE_TIERS.eventId)
+EVENT 1──* PRICE_STATUSES  (PRICE_STATUSES.eventId)
 EVENT 1──* BOOKINGS        (BOOKINGS.eventId)
 BOOKINGS 1──* BOOKING_ITEMS (soft delete — booking is marked deletedAt, not removed)
 BOOKINGS 1──* TICKETS       (soft delete — booking is marked deletedAt, not removed)
-PRICE_TIERS 1──* BOOKING_ITEMS (BOOKING_ITEMS.priceTierId)
+PRICE_STATUSES 1──* BOOKING_ITEMS (BOOKING_ITEMS.priceStatusId)
 BOOKING_ITEMS 1──* TICKETS  (TICKETS.bookingItemId)
 ```
 
@@ -125,42 +125,65 @@ BOOKING_ITEMS 1──* TICKETS  (TICKETS.bookingItemId)
 
 - **`EVENT.status = 'cancelled'`** (+ `cancelledAt`, `cancellationReason`) — event-level cancellation. Such an event is **unavailable for everyone**: hidden from All Events, no pledge button (replaced with red "Event unavailable"), no re-pledge.
 - **Buyer give-away** — when all of a user's tickets for an event have `TICKETS.status = 'given_away'` (booking `activeTicketCount = 0`), that event is treated as cancelled **for that user** (same unavailable behaviour).
-- A booking is classified into a Joined Events tab as: `cancelled` if `EVENT.status='cancelled'` OR the booking has no active tickets; else `past` if the event's **end date is in the past**; else `upcoming`. Bookings with `deletedAt` set are excluded from all tabs. (There is no `completed` status anymore — "Past" is derived from the end date.)
+- A booking is classified into a Joined Events tab as: `cancelled` if `EVENT.status='cancelled'` OR the booking has no active tickets; else `past` if the event's **end date is in the past** (i.e. `status='completed'`); else `upcoming`. Bookings with `deletedAt` set are excluded from all tabs. `completed` is the derived status for events whose end date has passed (shown grey).
 - **Delete from Cancelled/Past tab** = **soft delete**. `ON DELETE CASCADE` is a *hard*-delete mechanism (deleting a parent row auto-deletes its child `TICKETS`/`BOOKING_ITEMS` in the same statement); we no longer use it. Instead the delete is an `UPDATE "BOOKINGS" SET "deletedAt" = now() WHERE id = $1 AND "userId" = $2;` and every read filters `deletedAt IS NULL`. The row (and its tickets/items) stays for audit/recovery; the soft-deleted booking is also excluded from hype/spot counts.
 
 ---
 
 ## 3. Exact Supabase change-list
 
-Current Supabase tables (all empty): `USER, EVENT, EVENT_SETTINGS, PRICE_TIERS, BOOKINGS, TICKETS`.
+**Verified against the live project** (all tables empty / 0 rows, RLS enabled, **no policies**). Current columns:
+- `USER(id uuid pk [default gen_random_uuid()], created_at, name, email unique, passwordHash, walletBalance)`
+- `EVENT(id uuid pk, created_at, hostId uuid [default gen_random_uuid()], title, description, date, location, status)`
+- `EVENT_SETTINGS(id uuid pk, created_at, hypeThreshold, deadline, hardCapacity, eventId)`
+- `PRICE_TIERS(id bigint, created_at, eventId, tierNumber, price, minBookingsRequired)` — composite PK `(id, tierNumber)`
+- `BOOKINGS(id bigint pk, created_at, userId, eventId, amountPaid, status)`
+- `TICKETS(id bigint pk, created_at, bookingId, userId, qrCode)`
+- **No `BOOKING_ITEMS` table.**
+
+### Rename a table
+- **`PRICE_TIERS` → `PRICE_STATUSES`**. It has **no `tierName` column today**; instead drop `tierNumber` + `minBookingsRequired` and add `statusName` + `ticketCapacity` (below). Change the **PK from composite `(id, tierNumber)` → `(id)`** first (so `tierNumber` can be dropped).
 
 ### Add a new table
-- **`BOOKING_ITEMS`** — `id bigint identity PK`, `bookingId bigint FK→BOOKINGS.id`, `priceTierId bigint FK→PRICE_TIERS.id`, `quantity int`, `unitPrice numeric`, `subtotal numeric`, `created_at timestamptz default now()`.
+- **`BOOKING_ITEMS`** — `id bigint identity PK`, `bookingId bigint`, `priceStatusId bigint`, `quantity int`, `unitPrice numeric`, `subtotal numeric`, `created_at timestamptz default now()` (foreign keys listed below).
 
 ### Add columns
-- **`USER`**: add `username text unique`, `role text` (`user`/`organiser`), `contact text null`, `socialLink text null`.
-- **`EVENT`**: add `startDate timestamptz`, `endDate timestamptz`, `imageUrl text`, `currentTierName text`, `greenlitAt timestamptz null`, **`cancelledAt timestamptz null`**, **`cancellationReason text null`**, `updatedAt timestamptz`.
+- **`USER`**: add `username text unique`, `role text` (`user`/`organiser`, default `user`), `contact text null`, `socialLink text null`. **Drop the `gen_random_uuid()` default on `id`** — it must equal `auth.users.id` (set by the signup trigger, §4.1).
+- **`EVENT`**: add `startDate timestamptz`, `endDate timestamptz`, `imageUrl text`, `greenlitAt timestamptz null`, **`cancelledAt timestamptz null`**, **`cancellationReason text null`**, `updatedAt timestamptz`. **Do not add `currentTierName`** — status is derived. `status` is `early_bird|greenlit|completed|cancelled`. Also **drop the stray `gen_random_uuid()` default on `hostId`** (it's the organiser's id).
 - **`EVENT_SETTINGS`**: add `maxCapacity int` (replaces `hardCapacity`), `updatedAt timestamptz`.
-- **`PRICE_TIERS`**: add `tierName text`, `ticketCapacity int`.
+- **`PRICE_STATUSES`**: add `statusName text`, `ticketCapacity int`.
 - **`BOOKINGS`**: add `refundedAmount numeric default 0`, `capturedAt timestamptz`, `refundedAt timestamptz null`, **`deletedAt timestamptz null`** (soft-delete marker), `updatedAt timestamptz`.
-- **`TICKETS`**: add `bookingItemId bigint FK→BOOKING_ITEMS.id`, **`status text`** (`active`/`used`/`given_away`/`refunded`, default `active`), `givenAwayAt timestamptz null`, `refundedAt timestamptz null`, `usedAt timestamptz null`.
+- **`TICKETS`**: add `bookingItemId bigint`, **`status text`** (`active`/`used`/`given_away`/`refunded`, default `active`), `givenAwayAt timestamptz null`, `refundedAt timestamptz null`, `usedAt timestamptz null`.
+
+### Foreign keys (the complete target set)
+Already present (keep): `EVENT.hostId→USER.id`, `EVENT_SETTINGS.eventId→EVENT.id`, `BOOKINGS.userId→USER.id`, `BOOKINGS.eventId→EVENT.id`, `TICKETS.bookingId→BOOKINGS.id`, and `PRICE_TIERS.eventId→EVENT.id` (becomes `PRICE_STATUSES.eventId→EVENT.id` after the rename).
+**Add:**
+- `USER.id → auth.users(id)` **ON DELETE CASCADE** (profile ↔ auth identity, 1:1).
+- `BOOKING_ITEMS.bookingId → BOOKINGS.id`
+- `BOOKING_ITEMS.priceStatusId → PRICE_STATUSES.id`
+- `TICKETS.bookingItemId → BOOKING_ITEMS.id`
+**Remove:** `TICKETS.userId → USER.id` (drop the column — owner is reachable via `bookingId → BOOKINGS.userId`).
 
 ### Delete behaviour (soft delete — no cascade needed)
 - Deleting a booking is an **`UPDATE "BOOKINGS" SET "deletedAt" = now() WHERE id = $1 AND "userId" = $2;`** — not a `DELETE`. Every read filters `WHERE "deletedAt" IS NULL`.
-- The `TICKETS.bookingId` / `BOOKING_ITEMS.bookingId` FKs can stay plain (`NO ACTION`/`RESTRICT`); **`ON DELETE CASCADE` is not required** because rows are never physically removed. (Add cascade only if you later introduce a true purge job.)
+- The booking-child FKs (`TICKETS.bookingId`, `BOOKING_ITEMS.bookingId`) can stay plain (`NO ACTION`/`RESTRICT`); **`ON DELETE CASCADE` is not required** because rows are never physically removed. (The one cascade that IS recommended is `USER.id → auth.users(id)`, so deleting an auth user removes its profile.)
 
-### Columns to remove (only if fully aligning to the mock model — optional)
+### Columns to remove
+- **`USER.passwordHash`** — credentials live in `auth.users` once Supabase Auth is in charge.
 - **`USER.walletBalance`** — unused by the app.
-- **`PRICE_TIERS.tierNumber`, `PRICE_TIERS.minBookingsRequired`** — superseded by `tierName` / `ticketCapacity`. (Note: `tierNumber` is currently part of the composite PK — adjust the PK to `id` only before dropping.)
+- **`PRICE_STATUSES.tierNumber`, `PRICE_STATUSES.minBookingsRequired`** (old `PRICE_TIERS` columns) — superseded by `statusName` / `ticketCapacity` (fix the PK to `id` first).
 - **`EVENT_SETTINGS.hardCapacity`** — superseded by `maxCapacity`.
 - **`EVENT.date`** — superseded by `startDate` / `endDate`.
-- **`TICKETS.userId`** — redundant; the owner is reachable via `bookingId → BOOKINGS.userId` (keep if you prefer a denormalised shortcut).
+- **`TICKETS.userId`** — see FK section.
 
-> No column needs to be removed *for the feature itself* — it only requires the cancellation fields (already partly present via `EVENT.status`) and the new **`BOOKINGS.deletedAt`** column for soft delete.
+### Optional hardening
+- `status`-type columns are plain `text` today. Optionally add CHECK constraints: `EVENT.status ∈ (early_bird,greenlit,completed,cancelled)`, `PRICE_STATUSES.statusName ∈ (early_bird,greenlit)`, `BOOKINGS.status ∈ (captured,given_away,partially_given_away)`, `TICKETS.status ∈ (active,used,given_away,refunded)`.
 
 ---
 
 ## 4. Full migration plan — Supabase in charge of authentication (+ data)
+
+> **This is the recommended implementation plan.** Apply §3 (schema), then follow 4.1→4.7 in order, on a branch, verifying each stage. Two steps are **dashboard-only** (the read-only MCP can't do them): creating the demo `auth.users` accounts (§4.4) and turning **off email confirmation** in Authentication settings.
 
 Goal: move **both** auth and data off the Express mock and onto Supabase. After this, login/register/session run through Supabase Auth, all tables live in Supabase with RLS, and the Express backend is retired. The mock already mirrors the target shape (`AUTH_USERS` ↔ `USER` profile), so this is mostly wiring + policies + seed.
 
@@ -195,7 +218,7 @@ create policy user_update on public."USER"  for update using (auth.uid() = id);
 create policy event_read  on public."EVENT" for select using (true);
 create policy event_write on public."EVENT" for all
   using (auth.uid() = "hostId") with check (auth.uid() = "hostId");
--- EVENT_SETTINGS / PRICE_TIERS: read true; write where parent EVENT.hostId = auth.uid()
+-- EVENT_SETTINGS / PRICE_STATUSES: read true; write where parent EVENT.hostId = auth.uid()
 create policy booking_owner on public."BOOKINGS" for all
   using (auth.uid() = "userId") with check (auth.uid() = "userId");
 -- BOOKING_ITEMS / TICKETS: scoped via their booking's userId
@@ -205,7 +228,7 @@ Transactional flows (pledge tier-allocation, hype recalculation, give-away, soft
 ### 4.4 Seed + demo accounts
 - Apply §3 change-list + the trigger (4.1) + policies (4.3).
 - Create the two demo accounts in **Supabase Auth** (dashboard → Authentication → Add user, or the admin API — the read-only MCP **cannot** create `auth.users`): Jamie (`role: user`) and the organiser (`role: organiser`), each with a password. Note their UUIDs.
-- Seed `EVENT/EVENT_SETTINGS/PRICE_TIERS` from `backend/data/*.js`; seed demo `BOOKINGS/BOOKING_ITEMS/TICKETS` against the demo UUIDs.
+- Seed `EVENT/EVENT_SETTINGS/PRICE_STATUSES` from `backend/data/*.js`; seed demo `BOOKINGS/BOOKING_ITEMS/TICKETS` against the demo UUIDs.
 - Turn **off email confirmation** in Auth settings (otherwise login is blocked until confirmed).
 
 ### 4.5 Frontend rewire (`frontend/src/app/`)
@@ -225,3 +248,22 @@ Once reads/writes go to Supabase, `backend/` is no longer the source of truth: `
 
 ### 4.8 Risks
 - Multi-step rewrite — auth and data must move together (auth-only leaves UUIDs disconnected from mock data). Transactional pledge/hype logic must live in Postgres functions. Rotate the leaked dev token before relying on this.
+
+---
+
+## 5. Resolving the bugs you'll hit when switching to Supabase
+
+Setting `VITE_SUPABASE_URL` + `VITE_SUPABASE_ANON_KEY` **alone changes nothing** (the app talks to the Express mock; the Supabase client file was even removed). Bugs only appear once you actually point the app at Supabase. Each likely bug and its fix:
+
+| Bug / symptom | Cause | Fix |
+|---|---|---|
+| App shows **no events/bookings** (empty lists) | RLS is enabled with **no policies**, so the anon key reads nothing | Add the RLS policies in §4.3 (public read for events/settings/statuses; owner-scoped bookings/tickets) |
+| Event cards render with `undefined` price / hype / "Unknown organiser" | The frontend expects **computed fields** (`organiserName`, `activeTicketCount`, `hypePercentage`, `spotsLeft`, `currentPrice`, nested `statuses[]`) that aren't real columns | Create an `event_summary` **view or RPC** that returns those computed fields, and select from it |
+| `role` is undefined → wrong routing / blank pages | No session wiring; role isn't read from a profile | Wire `supabase.auth` + `onAuthStateChange` in `App.tsx`; read `role` from the `USER` profile (created by the §4.1 trigger) |
+| Logged-in user sees **someone else's** or **no** data | Identity mismatch: mock string ids vs Supabase UUIDs | Migrate auth + data together; seed bookings/events against the demo accounts' real UUIDs |
+| `column ... does not exist` / `undefined` for `tierName`, `priceTierId`, `currentTierName` | DB still uses old names, or code still uses them | Use the **renamed** names everywhere: `PRICE_STATUSES`, `statusName`, `priceStatusId`, and **no** `currentTierName` (status is derived) |
+| Signup succeeds but **login fails** | Supabase email-confirmation is on by default | Turn **off** email confirmation in Auth settings (or confirm via email) |
+| Pledge/give-away/delete corrupt counts or race | Multi-row logic done client-side | Move pledge tier-allocation, hype recalculation, give-away and soft-delete into Postgres **RPC functions** (`security definer`) |
+| Demo accounts can't be created from code | The read-only MCP can't write `auth.users` | Create Jamie + organiser via the Supabase **dashboard** (Authentication → Add user) with `role` in user metadata |
+
+**Order to avoid them:** apply schema rename + trigger + RLS → create demo users → add the `event_summary` view/RPC → wire auth/session → repoint reads → repoint writes (RPCs) → retire Express. Verify after each step (`list_tables`, `get_advisors`).

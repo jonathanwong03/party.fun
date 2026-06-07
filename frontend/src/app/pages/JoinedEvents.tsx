@@ -4,7 +4,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
-import { getActiveTier, type Route, type EventItem } from '../components/types';
+import { getActiveStatus, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import type { ProfileTicket } from '../api';
 
@@ -82,7 +82,7 @@ export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Ro
                     {!isCancelled && <span>Tickets pledged: {booking.activeTicketCount}</span>}
                   </div>
                   <div className="mt-3 max-w-md">
-                    <HypeMeter pct={booking.event.hypePercentage} status={isCancelled ? 'cancelled' : booking.event.status} tier={getActiveTier(booking.event)} size="sm" showLabel={false} />
+                    <HypeMeter pct={booking.event.hypePercentage} status={isCancelled ? 'cancelled' : booking.event.status} statusIndex={getActiveStatus(booking.event)} size="sm" showLabel={false} />
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

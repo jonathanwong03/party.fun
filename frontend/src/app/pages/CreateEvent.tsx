@@ -7,7 +7,7 @@ import { Textarea } from '../components/ui/textarea';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, type EventItem, type Route, type EventStatus } from '../components/types';
+import { getActiveStatus, type EventItem, type Route, type EventStatus } from '../components/types';
 import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
@@ -40,17 +40,21 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [deadlineTime, setDeadlineTime] = useState(dl0.t);
   const deadline = deadlineDate || deadlineTime ? `${deadlineDate}, ${deadlineTime}` : (source?.deadline ?? '');
   const money = (n?: number) => (n != null ? n.toFixed(2) : '');
-  // The Early Birds quantity doubles as the hype threshold; Main Crowd adds the rest of capacity.
-  const [ebPrice, setEbPrice] = useState<string>(money(source?.tiers[0]?.price) || '10.00');
-  const [ebQty, setEbQty] = useState<number>(source?.tiers[0]?.qty ?? source?.hypeThreshold ?? 150);
-  const [mcPrice, setMcPrice] = useState<string>(money(source?.tiers[1]?.price) || '20.00');
-  const [mcQty, setMcQty] = useState<number>(source?.tiers[1]?.qty ?? 150);
-  const maxCapacity = ebQty + mcQty;
+  // The Early Birds quantity doubles as the hype threshold; Greenlit adds the rest of capacity.
+  const [ebPrice, setEbPrice] = useState<string>(money(source?.statuses[0]?.price) || '10.00');
+  const [ebQty, setEbQty] = useState<number>(source?.statuses[0]?.qty ?? source?.hypeThreshold ?? 150);
+  const [greenlitPrice, setGreenlitPrice] = useState<string>(money(source?.statuses[1]?.price) || '20.00');
+  const [greenlitQty, setGreenlitQty] = useState<number>(source?.statuses[1]?.qty ?? 150);
+  const maxCapacity = ebQty + greenlitQty;
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
 
   const status: EventStatus = existing?.status ?? 'early_bird';
   const locked = isEdit && status === 'greenlit';
+
+  // Price-format errors computed up front so the order check only runs once both are valid.
+  const ebPErr = priceError(ebPrice);
+  const greenlitPErr = priceError(greenlitPrice);
 
   const errs = {
     title: required(title),
@@ -66,8 +70,12 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     deadline: locked ? null : deadlineError(deadline),
     deadlineVsEvent: locked ? null : deadlineEventError(date, start, deadlineDate, deadlineTime),
     deadlineFuture: locked ? null : futureDateTimeError(deadlineDate, deadlineTime),
-    ebP: priceError(ebPrice),
-    mcP: priceError(mcPrice),
+    ebP: ebPErr,
+    greenlitP: greenlitPErr,
+    // Greenlit price must be strictly higher than the Early Birds price (checked once both are valid).
+    priceOrder: !ebPErr && !greenlitPErr && num(greenlitPrice) <= num(ebPrice)
+      ? 'Greenlit price must be higher than the Early Birds price.'
+      : null,
     // Start/end must be strictly in the future and end strictly after start (greenlit & non-greenlit).
     startFuture: futureDateTimeError(date, start),
     endFuture: futureDateTimeError(endDate, end),
@@ -92,8 +100,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       description,
       image: '',
       price: num(ebPrice),
-      tierLabel: 'Early Birds',
-      currentTierName: 'early_bird',
+      statusLabel: 'Early Birds',
       hypePercentage: 0,
       hypeThreshold: ebQty,
       activeTicketCount: 0,
@@ -101,9 +108,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       spotsLeft: maxCapacity,
       status: 'early_bird',
       deadline,
-      tiers: [
-        { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { tierName: 'greenlit', label: 'Greenlit', price: num(mcPrice), qty: mcQty, sold: 0 },
+      statuses: [
+        { statusName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
+        { statusName: 'greenlit', label: 'Greenlit', price: num(greenlitPrice), qty: greenlitQty, sold: 0 },
       ],
     };
     onPublish?.(newEvent);
@@ -126,8 +133,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       description,
       image: '',
       price: num(ebPrice),
-      tierLabel: 'Early Birds',
-      currentTierName: 'early_bird',
+      statusLabel: 'Early Birds',
       hypePercentage: 0,
       hypeThreshold: ebQty,
       activeTicketCount: 0,
@@ -135,9 +141,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       spotsLeft: maxCapacity,
       status: 'early_bird',
       deadline,
-      tiers: [
-        { tierName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
-        { tierName: 'greenlit', label: 'Greenlit', price: num(mcPrice), qty: mcQty, sold: 0 },
+      statuses: [
+        { statusName: 'early_bird', label: 'Early Birds', price: num(ebPrice), qty: ebQty, sold: 0 },
+        { statusName: 'greenlit', label: 'Greenlit', price: num(greenlitPrice), qty: greenlitQty, sold: 0 },
       ],
     };
     onSaveDraft?.(draft);
@@ -151,9 +157,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     // directly here — errOf() depends on the not-yet-applied showErrors state.
     setShowErrors(true);
     if (Object.values(errs).some(Boolean)) return;
-    const tiers = [
-      { tierName: 'early_bird' as const, label: 'Early Birds', sold: existing.tiers[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
-      { tierName: 'greenlit' as const, label: 'Greenlit', sold: existing.tiers[1]?.sold ?? 0, price: num(mcPrice), qty: mcQty },
+    const statuses = [
+      { statusName: 'early_bird' as const, label: 'Early Birds', sold: existing.statuses[0]?.sold ?? 0, price: num(ebPrice), qty: ebQty },
+      { statusName: 'greenlit' as const, label: 'Greenlit', sold: existing.statuses[1]?.sold ?? 0, price: num(greenlitPrice), qty: greenlitQty },
     ];
     const updated: EventItem = {
       ...existing,
@@ -169,9 +175,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       hypeThreshold: ebQty,
       deadline,
       spotsLeft: Math.max(0, maxCapacity - existing.activeTicketCount),
-      tiers,
+      statuses,
     };
-    updated.price = updated.tiers[getActiveTier(updated)].price;
+    updated.price = updated.statuses[getActiveStatus(updated)].price;
     onUpdate?.(updated);
     go({ name: 'hosted-events' });
   };
@@ -194,7 +200,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                 {isEdit ? 'Edit event' : 'Create new event'}
               </h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                {isEdit ? 'Update the details below. Changes are visible to attendees immediately.' : 'Set up your event details, hype threshold and pricing tiers.'}
+                {isEdit ? 'Update the details below. Changes are visible to attendees immediately.' : 'Set up your event details, hype threshold and pricing statuses.'}
               </p>
             </div>
             {isEdit && existing && <div className="flex items-center gap-3"><span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Status</span><StatusBadge event={existing} /></div>}
@@ -255,10 +261,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                   </div>
                 )}
                 <div className="mb-8 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Tier quantities set the maximum capacity of {maxCapacity}.
+                  The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Status quantities set the maximum capacity of {maxCapacity}.
                 </div>
-                <TierRow label="Early Birds - Hype Threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
-                <TierRow label="Greenlit" price={mcPrice} qty={mcQty} onPrice={setMcPrice} onQty={setMcQty} disabled={locked} error={errOf('mcP')} />
+                <StatusRow label="Early Birds - Hype Threshold" price={ebPrice} qty={ebQty} onPrice={setEbPrice} onQty={setEbQty} disabled={locked} error={errOf('ebP')} />
+                <StatusRow label="Greenlit" price={greenlitPrice} qty={greenlitQty} onPrice={setGreenlitPrice} onQty={setGreenlitQty} disabled={locked} error={errOf('greenlitP') || errOf('priceOrder')} />
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field label="Deadline date" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><DatePicker value={deadlineDate} onChange={setDeadlineDate} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} disabled={locked} /></Field>
                   <Field label="Deadline time" error={errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture')}><TimePicker value={deadlineTime} onChange={setDeadlineTime} error={!!(errOf('deadline') || errOf('deadlineVsEvent') || errOf('deadlineFuture'))} placeholder="Deadline time" disabled={locked} /></Field>
@@ -304,7 +310,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
                       {date || 'Date'} · {venue || 'Venue'}
                     </div>
-                    <HypeMeter pct={isEdit ? (existing?.hypePercentage ?? 0) : 0} status={status} tier={0} size="sm" />
+                    <HypeMeter pct={isEdit ? (existing?.hypePercentage ?? 0) : 0} status={status} statusIndex={0} size="sm" />
                     <div className="flex items-baseline justify-between">
                       <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>From</span>
                       <span style={{ fontWeight: 700 }}>${ebPrice}</span>
@@ -353,7 +359,7 @@ function Field({ label, children, error }: { label: string; children: React.Reac
   );
 }
 
-function TierRow({ label, price, qty, onPrice, onQty, disabled, error }: { label: string; price: string; qty: number; onPrice: (v: string) => void; onQty: (n: number) => void; disabled?: boolean; error?: string | null }) {
+function StatusRow({ label, price, qty, onPrice, onQty, disabled, error }: { label: string; price: string; qty: number; onPrice: (v: string) => void; onQty: (n: number) => void; disabled?: boolean; error?: string | null }) {
   return (
     <div className="grid grid-cols-[1fr_120px_120px] items-end gap-3">
       <div className="text-sm" style={{ color: 'var(--foreground)', fontWeight: 500 }}>{label}</div>

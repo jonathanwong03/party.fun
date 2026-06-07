@@ -4,7 +4,7 @@ import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
-import { getActiveTier, tierStageLabel, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 
 export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; cancelledEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
@@ -19,9 +19,9 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
       </div>
     );
   }
-  const activeTier = getActiveTier(event);
-  // Total tickets still available across all tiers (a pledge spills into the next tier).
-  const available = event.tiers.reduce((sum, t) => sum + Math.max(0, t.qty - t.sold), 0);
+  const activeStatus = getActiveStatus(event);
+  // Total tickets still available across both statuses (a pledge spills into the next status).
+  const available = event.statuses.reduce((sum, s) => sum + Math.max(0, s.qty - s.sold), 0);
   // A cancelled event — or one the user already gave away all their tickets for — can't be (re-)pledged.
   const unavailable = event.status === 'cancelled' || !!cancelledEventIds?.has(event.id);
   const showCancelledCard = !!fromPast;
@@ -84,7 +84,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
               <h3>Hype meter</h3>
               <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Deadline: {event.deadline}</span>
             </div>
-            <HypeMeter pct={event.hypePercentage} status={event.status} tier={activeTier} size="lg" activeTicketCount={event.activeTicketCount} hypeThreshold={event.hypeThreshold} />
+            <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={activeStatus} size="lg" activeTicketCount={event.activeTicketCount} hypeThreshold={event.hypeThreshold} />
 
             {/* Countdown */}
             {event.status !== 'greenlit' && event.status !== 'cancelled' && (
@@ -117,7 +117,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <h3 className="mb-3">How it works</h3>
             <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-              <li><strong>Buy early</strong> — earlier tiers are cheaper.</li>
+              <li><strong>Buy early</strong> — the early_bird status is cheaper.</li>
               <li><strong>Reach the hype threshold</strong> — the event is confirmed.</li>
               <li><strong>Miss the hype threshold?</strong> Active tickets are automatically refunded in full.</li>
             </ol>
@@ -127,7 +127,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
         {showCancelledCard ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{statusStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
@@ -218,12 +218,12 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
         ) : (
         <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
-            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{tierStageLabel(event)}</div>
+            <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{statusStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
               <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
             </div>
-            {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next tier</div>}
+            {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>}
 
             {!unavailable && (
               <div className="mt-4">

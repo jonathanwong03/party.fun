@@ -1,7 +1,7 @@
 import { CheckCircle2, Calendar, MapPin, Ticket, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
 export function Confirmation({ id, qty, go, events }: { id: string; qty: number; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
@@ -47,7 +47,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
             <span style={{ color: 'var(--muted-foreground)' }}>Current hype</span>
             <span style={{ fontWeight: 600 }}>{event.activeTicketCount} / {event.hypeThreshold} tickets</span>
           </div>
-          <HypeMeter pct={event.hypePercentage} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
+          <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={getActiveStatus(event)} size="md" showLabel={false} />
         </div>
       </div>
 

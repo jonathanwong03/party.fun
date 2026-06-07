@@ -9,6 +9,6 @@ export const initialBookingItems = [
   item('bi-seed-e6', 'b-seed-e6', 'pt6e', 11, 8),
 ];
 
-function item(id, bookingId, priceTierId, quantity, unitPrice) {
-  return { id, bookingId, priceTierId, quantity, unitPrice, subtotal: quantity * unitPrice, createdAt: '2026-06-02T00:00:00.000Z' };
+function item(id, bookingId, priceStatusId, quantity, unitPrice) {
+  return { id, bookingId, priceStatusId, quantity, unitPrice, subtotal: quantity * unitPrice, createdAt: '2026-06-02T00:00:00.000Z' };
 }

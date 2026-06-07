@@ -2,7 +2,7 @@ import { Calendar, MapPin } from 'lucide-react';
 import { Button } from './ui/button';
 import { HypeMeter } from './HypeMeter';
 import { StatusBadge } from './StatusBadge';
-import { getActiveTier, TIER_COLORS, type EventItem } from './types';
+import { getActiveStatus, type EventItem } from './types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 
 export function EventCard({
@@ -14,8 +14,7 @@ export function EventCard({
   onView: () => void;
   featured?: boolean;
 }) {
-  const tier = getActiveTier(event);
-  const tierColor = event.status === 'cancelled' ? '#5a5a66' : TIER_COLORS[tier];
+  const statusIndex = getActiveStatus(event);
 
   return (
     <div
@@ -58,7 +57,7 @@ export function EventCard({
         </div>
 
         <div className="space-y-1">
-          <HypeMeter pct={event.hypePercentage} status={event.status} tier={tier} size="sm" showLabel={false} />
+          <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={statusIndex} size="sm" showLabel={false} />
           <div className="flex items-center justify-between text-xs">
             <span style={{ color: '#ffffff', fontWeight: 600 }}>
               {event.activeTicketCount} of {event.hypeThreshold} tickets pledged
@@ -72,12 +71,14 @@ export function EventCard({
           onClick={onView}
           className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
           style={{ borderRadius: 9999 }}
-          disabled={event.status === 'cancelled'}
+          disabled={event.status === 'cancelled' || event.status === 'completed'}
         >
           {event.status === 'greenlit'
             ? `Buy Ticket · $${event.price}`
             : event.status === 'cancelled'
             ? 'Cancelled'
+            : event.status === 'completed'
+            ? 'Completed'
             : `Pledge · $${event.price}`}
         </Button>
       </div>
