@@ -211,19 +211,61 @@ create trigger on_auth_user_created after insert on auth.users
 ### 4.2 Will roles still be recognised? (Yes)
 - Jamie is recreated in Supabase Auth with `role: 'user'`, the organiser with `role: 'organiser'`. The trigger writes matching `USER` profile rows. On login the app reads the profile (or JWT metadata) → `role` resolves exactly as today (user view vs Hosted Events), and seeded events/bookings reference the same UUIDs so My/Joined/Hosted Events populate correctly.
 
-### 4.3 RLS policies (enable on every table; use `auth.uid()`)
+### 4.3 RLS policies (the complete set)
+
+RLS must be **enabled** on every table (already true in the project) **and** each table needs explicit policies — RLS on with no policy blocks all anon/authenticated access. Policies use `auth.uid()` and apply to the `anon` (logged-out) and `authenticated` (logged-in) roles.
+
 ```sql
-create policy user_read   on public."USER"  for select using (true);
-create policy user_update on public."USER"  for update using (auth.uid() = id);
+-- 0. Enable RLS (already enabled in this project)
+alter table public."USER"           enable row level security;
+alter table public."EVENT"          enable row level security;
+alter table public."EVENT_SETTINGS" enable row level security;
+alter table public."PRICE_STATUSES" enable row level security;
+alter table public."BOOKINGS"       enable row level security;
+alter table public."BOOKING_ITEMS"  enable row level security;
+alter table public."TICKETS"        enable row level security;
+
+-- USER (profile): anyone may read (organiser names show publicly); you edit only your own.
+create policy user_read   on public."USER" for select using (true);
+create policy user_update on public."USER" for update using (auth.uid() = id);
+-- No INSERT policy needed: the handle_new_user() trigger is SECURITY DEFINER and bypasses RLS.
+
+-- EVENT: public read; an organiser writes only events they host.
 create policy event_read  on public."EVENT" for select using (true);
 create policy event_write on public."EVENT" for all
   using (auth.uid() = "hostId") with check (auth.uid() = "hostId");
--- EVENT_SETTINGS / PRICE_STATUSES: read true; write where parent EVENT.hostId = auth.uid()
+
+-- EVENT_SETTINGS: public read; write only if you own the parent EVENT.
+create policy settings_read  on public."EVENT_SETTINGS" for select using (true);
+create policy settings_write on public."EVENT_SETTINGS" for all
+  using (exists (select 1 from public."EVENT" e where e.id = "eventId" and e."hostId" = auth.uid()))
+  with check (exists (select 1 from public."EVENT" e where e.id = "eventId" and e."hostId" = auth.uid()));
+
+-- PRICE_STATUSES: public read; write only if you own the parent EVENT.
+create policy status_read  on public."PRICE_STATUSES" for select using (true);
+create policy status_write on public."PRICE_STATUSES" for all
+  using (exists (select 1 from public."EVENT" e where e.id = "eventId" and e."hostId" = auth.uid()))
+  with check (exists (select 1 from public."EVENT" e where e.id = "eventId" and e."hostId" = auth.uid()));
+
+-- BOOKINGS: a user sees & manages only their own.
 create policy booking_owner on public."BOOKINGS" for all
   using (auth.uid() = "userId") with check (auth.uid() = "userId");
--- BOOKING_ITEMS / TICKETS: scoped via their booking's userId
+
+-- BOOKING_ITEMS: scoped via the parent booking's owner.
+create policy item_owner on public."BOOKING_ITEMS" for all
+  using (exists (select 1 from public."BOOKINGS" b where b.id = "bookingId" and b."userId" = auth.uid()))
+  with check (exists (select 1 from public."BOOKINGS" b where b.id = "bookingId" and b."userId" = auth.uid()));
+
+-- TICKETS: scoped via the parent booking's owner.
+create policy ticket_owner on public."TICKETS" for all
+  using (exists (select 1 from public."BOOKINGS" b where b.id = "bookingId" and b."userId" = auth.uid()))
+  with check (exists (select 1 from public."BOOKINGS" b where b.id = "bookingId" and b."userId" = auth.uid()));
 ```
-Transactional flows (pledge tier-allocation, hype recalculation, give-away, soft-delete) become **Postgres RPC functions** (`security definer`) so invariants match `eventMemoryService.js` while RLS guards direct access.
+
+Notes:
+- **There is no built-in organiser/user Postgres role** — RLS enforces *ownership* (host owns events; buyer owns bookings). For a hard "only organisers may create events" rule, add to `event_write`'s check: `and exists (select 1 from public."USER" u where u.id = auth.uid() and u.role = 'organiser')`.
+- **Transactional writes** (pledge allocation, hype recalculation, give-away, soft-delete) go through **`SECURITY DEFINER` RPC functions** so invariants match `eventMemoryService.js`; these policies remain the guardrail for any direct table access.
+- **The service role bypasses RLS**, so seeding from the dashboard/admin works regardless of policies; policies only constrain the client (anon/authenticated) keys.
 
 ### 4.4 Seed + demo accounts
 - Apply §3 change-list + the trigger (4.1) + policies (4.3).
