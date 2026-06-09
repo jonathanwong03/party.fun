@@ -12,7 +12,8 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, resetUsers, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, type AuthUser, type ProfileTicket } from './api';
+import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -180,10 +181,32 @@ function AppShell() {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
   };
 
-  // On every full page load, drop any registered accounts back to the two seed
-  // users (there are no sessions, so created accounts shouldn't survive a refresh).
+  // Restore session on page load and keep role/user in sync with Supabase Auth.
   useEffect(() => {
-    resetUsers();
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session) {
+        const { data: profile } = await supabase
+          .from('USER')
+          .select('id, username, email, role')
+          .eq('id', session.user.id)
+          .single();
+        if (profile) {
+          setRole(profile.role as Role);
+          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role });
+        }
+      }
+    });
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session) {
+        setRole(null);
+        setUser(null);
+        setEvents([]);
+        setProfileTickets([]);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -272,7 +295,8 @@ function AppShell() {
     navigate('/events', { replace: true });
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logoutRequest();
     setRole(null);
     setUser(null);
     setEvents([]);

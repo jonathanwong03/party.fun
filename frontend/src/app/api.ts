@@ -1,4 +1,5 @@
 import type { EventItem, Role } from './components/types';
+import { supabase } from './supabase';
 
 export type ProfileTicket = {
   bookingId: string;
@@ -36,17 +37,16 @@ type MutationResponse = {
   profile: ProfileResponse;
 };
 
-const MOCK_USER_IDS: Record<Role, string> = {
-  user: 'mock-user-jamie',
-  organiser: 'mock-organiser-smu',
-};
-
 async function apiFetch<T>(path: string, role: Role | null, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
 
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    headers.set('Authorization', `Bearer ${session.access_token}`);
+  }
+
   if (role) {
     headers.set('X-Mock-Role', role);
-    headers.set('X-Mock-User-Id', MOCK_USER_IDS[role]);
   }
 
   if (options.body && !headers.has('Content-Type')) {
@@ -63,22 +63,24 @@ async function apiFetch<T>(path: string, role: Role | null, options: RequestInit
 
 export type AuthUser = { id: string; username: string; email: string; role: Role };
 
-async function authFetch(path: string, body: unknown): Promise<{ user: AuthUser }> {
-  const response = await fetch(path, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(data?.message || 'Request failed.');
-  }
-  return data as { user: AuthUser };
-}
+export async function loginRequest(email: string, password: string): Promise<AuthUser> {
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw new Error(error.message);
 
-export async function loginRequest(identifier: string, password: string): Promise<AuthUser> {
-  const { user } = await authFetch('/api/auth/login', { identifier, password });
-  return user;
+  const { data: profile, error: profileError } = await supabase
+    .from('USER')
+    .select('id, username, email, role')
+    .eq('id', data.user.id)
+    .single();
+
+  if (profileError || !profile) throw new Error('Could not load user profile.');
+
+  return {
+    id: profile.id,
+    username: profile.username,
+    email: profile.email,
+    role: profile.role as Role,
+  };
 }
 
 export async function registerRequest(input: {
@@ -87,14 +89,31 @@ export async function registerRequest(input: {
   password: string;
   role: Role;
 }): Promise<AuthUser> {
-  const { user } = await authFetch('/api/auth/register', input);
-  return user;
+  const { data, error } = await supabase.auth.signUp({
+    email: input.email,
+    password: input.password,
+    options: {
+      data: {
+        username: input.username,
+        name: input.username,
+        role: input.role,
+      },
+    },
+  });
+
+  if (error) throw new Error(error.message);
+  if (!data.user) throw new Error('Sign up failed — please try again.');
+
+  return {
+    id: data.user.id,
+    username: input.username,
+    email: input.email,
+    role: input.role,
+  };
 }
 
-// Wipe any registered accounts back to the two seed users. Called on every full
-// page load so created accounts don't survive a refresh. Fire-and-forget.
-export function resetUsers(): void {
-  fetch('/api/auth/reset', { method: 'POST' }).catch(() => {});
+export async function logoutRequest(): Promise<void> {
+  await supabase.auth.signOut();
 }
 
 export function fetchEvents(role: Role | null) {
