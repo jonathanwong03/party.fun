@@ -2,7 +2,7 @@
 
 `party.fun` is a campus-event crowdfunding and ticketing prototype. Attendees pay when they pledge. An event becomes confirmed when its active ticket count reaches its hype threshold; if the deadline passes below that threshold, active tickets are refunded.
 
-The current app uses a React + Vite frontend and an Express in-memory API. Supabase and real payment processing are not connected yet.
+The current app uses a React + Vite frontend and an Express in-memory API. Supabase Auth is wired up for login, registration, and session handling. Events, profiles, and checkout are still served by the Express in-memory API, and real payment processing is not connected yet.
 
 ## Run locally
 
@@ -13,6 +13,15 @@ cd "C:\smu heap\party.fun\backend"
 npm install
 npm run dev
 ```
+
+The frontend talks to Supabase directly, so it needs a `frontend/.env` file. Create it before starting the dev server:
+
+```
+VITE_SUPABASE_URL=<your Supabase project URL>
+VITE_SUPABASE_ANON_KEY=<your Supabase anon / publishable key>
+```
+
+Vite only reads `.env` at startup, so (re)start the dev server after creating or changing it — otherwise login fails with `supabaseUrl is required`.
 
 ```powershell
 cd "C:\smu heap\party.fun\frontend"
@@ -32,10 +41,10 @@ npm run build
 
 ## Demo accounts
 
-- User: `jamie@u.nus.edu` / `user123`
+- User: `user@smu.edu.sg` / `user123`
 - Organiser: `organiser@smu.edu.sg` / `organiser123`
 
-Passwords are verified against bcrypt hashes in `backend/data/mockUsers.js`. Sessions are not implemented, so refreshing signs the user out.
+These are real Supabase Auth accounts (credentials live in Supabase, not in `backend/data/mockUsers.js`). Sessions persist, so refreshing keeps the user signed in.
 
 ## Current behavior
 
@@ -85,13 +94,13 @@ The Express API derives the public event summary from these relational fixtures.
 - `GET /api/profile`
 - `POST /api/profile/bookings/:bookingId/give-away`
 
-Authenticated prototype requests use `X-Mock-Role` and `X-Mock-User-Id` headers. This is temporary and must be replaced by real server-side sessions or Supabase Auth.
+Login and registration now go through Supabase Auth directly from the frontend, not `/api/auth/*`. The remaining data routes (events, profile, checkout) still authenticate with the `X-Mock-Role` and `X-Mock-User-Id` headers and ignore the Supabase token — auth is only partially migrated. The backend still needs to verify the Supabase JWT and enforce per-user authorization.
 
 ## Current limitations
 
 - No persistent database
 - No real Stripe payments or refunds
-- No real sessions or authorization enforcement
+- Sessions work via Supabase Auth, but the backend does not yet verify the token or enforce per-user authorization (data requests default to `mock-user-jamie`)
 - Organiser create, edit, delete, and drafts remain frontend-local
 - Event deadline processing and automatic refunds are not scheduled
 - Mock data resets when the backend restarts
