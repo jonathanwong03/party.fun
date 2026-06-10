@@ -96,6 +96,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       time: start,
       endTime: end,
       endDate,
+      startsAt: inputToIso(date, start),
+      endsAt: inputToIso(endDate, end),
+      deadlineAt: inputToIso(deadlineDate, deadlineTime),
       location: `${venue}, ${address}`,
       description,
       image: '',
@@ -171,6 +174,9 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       time: start,
       endTime: end,
       endDate,
+      startsAt: inputToIso(date, start),
+      endsAt: inputToIso(endDate, end),
+      deadlineAt: inputToIso(deadlineDate, deadlineTime),
       maxCapacity,
       hypeThreshold: ebQty,
       deadline,
@@ -422,4 +428,19 @@ function isoToTimeInput(iso?: string): string {
 function parseDeadline(s?: string): { d: string; t: string } {
   const m = /^(\d{1,2}\/\d{1,2}\/\d{4}),?\s*(\d{1,2}:\d{2}\s*(?:AM|PM))$/i.exec((s ?? '').trim());
   return m ? { d: m[1], t: m[2].toUpperCase() } : { d: '', t: '' };
+}
+
+// Convert picker values "DD/MM/YYYY" + "H:MM AM/PM" to an ISO 8601 string in Asia/Singapore (+08:00).
+function inputToIso(dateStr: string, timeStr: string): string {
+  const dp = dateStr.split('/').map(Number);
+  if (dp.length !== 3) return '';
+  const [d, mo, y] = dp;
+  const tm = /(\d+):(\d+)\s*(AM|PM)/i.exec(timeStr);
+  if (!tm) return '';
+  let h = parseInt(tm[1]);
+  const min = parseInt(tm[2]);
+  const ampm = tm[3].toUpperCase();
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  return `${y}-${String(mo).padStart(2,'0')}-${String(d).padStart(2,'0')}T${String(h).padStart(2,'0')}:${String(min).padStart(2,'0')}:00+08:00`;
 }

@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, type AuthUser, type ProfileTicket } from './api';
 import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
@@ -153,6 +153,7 @@ function AppShell() {
   const location = useLocation();
   const [role, setRole] = useState<Role | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
+  const [sessionLoaded, setSessionLoaded] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>(() => (localStorage.getItem('theme') as 'dark' | 'light') || 'dark');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -166,10 +167,25 @@ function AppShell() {
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
-  const addEvent = (e: EventItem) => setEvents((prev) => [e, ...prev]);
-  const deleteEvent = (id: string) => setEvents((prev) => prev.filter((e) => e.id !== id));
-  const updateEvent = (updated: EventItem) =>
+  const addEvent = async (e: EventItem) => {
+    setEvents((prev) => [e, ...prev]);
+    try {
+      const realId = await createEventRequest(e);
+      setEvents((prev) => prev.map((ev) => (ev.id === e.id ? { ...ev, id: realId } : ev)));
+    } catch {
+      setEvents((prev) => prev.filter((ev) => ev.id !== e.id));
+    }
+  };
+
+  const deleteEvent = async (id: string) => {
+    setEvents((prev) => prev.filter((e) => e.id !== id));
+    try { await deleteEventRequest(id); } catch { /* already removed from state */ }
+  };
+
+  const updateEvent = async (updated: EventItem) => {
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+    try { await updateEventRequest(updated); } catch { /* state already updated */ }
+  };
 
   const [drafts, setDrafts] = useState<EventItem[]>([]);
   // Upsert: re-saving a resumed draft replaces the existing one rather than duplicating it.
@@ -195,6 +211,7 @@ function AppShell() {
           setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role });
         }
       }
+      setSessionLoaded(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -244,14 +261,14 @@ function AppShell() {
   const pledge = async (eventId: string, qty: number, amount: number) => {
     if (!role) return;
     const result = await createPledge(role, eventId, qty, amount);
-    replaceEvent(result.event);
+    if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
   };
 
   const giveAway = async (bookingId: string, quantity: number) => {
     if (!role) return;
     const result = await giveAwayTickets(role, bookingId, quantity);
-    replaceEvent(result.event);
+    if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
   };
 
@@ -304,6 +321,7 @@ function AppShell() {
     navigate('/login', { replace: true });
   };
 
+  if (!sessionLoaded) return null;
   if (!role && !isAuthPage && !isPublicPath(location.pathname)) {
     return <Navigate to="/login" replace />;
   }
