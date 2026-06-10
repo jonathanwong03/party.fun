@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Shield, CreditCard } from 'lucide-react';
+import { ChevronLeft, Shield, CreditCard, MapPin } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -8,8 +8,10 @@ import { StatusBadge } from '../components/StatusBadge';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, type Quote } from '../api';
-import { MonthYearPicker } from '../components/MonthYearPicker';
-import { required, emailError, cardError, expiryError, cvcError, matricError } from '../components/validation';
+import { required, cardError, cvcError } from '../components/validation';
+
+const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
+const COUNTRIES = ['Singapore', 'Malaysia', 'Indonesia', 'Thailand', 'Philippines', 'Vietnam', 'Other'];
 
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
   const event = events.find((e) => e.id === id);
@@ -17,15 +19,19 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    fullName: 'Jamie Tan',
-    email: 'jamie@u.nus.edu',
-    phone: '@jamiet',
-    matric: '',
+    nameOnCard: '',
     card: '',
-    expiry: '',
+    expMonth: '',
+    expYear: '',
     cvc: '',
+    country: '',
+    address: '',
+    city: '',
+    state: '',
+    zip: '',
   });
   const [attempted, setAttempted] = useState(false);
+  const years = Array.from({ length: 11 }, (_, i) => String(new Date().getFullYear() + i));
 
   // The backend computes subtotal/fee/total; the frontend only displays them.
   useEffect(() => {
@@ -45,18 +51,31 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   }
   const money = (n: number) => `$${n.toFixed(2)}`;
 
-  // Phone / Telegram is the only optional field; everything else is required.
+  // Card expiry from the Month/Year selects: both chosen and not already past.
+  const expiryError = (() => {
+    if (!form.expMonth || !form.expYear) return 'Select an expiry date.';
+    const now = new Date();
+    const y = Number(form.expYear);
+    const m = Number(form.expMonth);
+    if (y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth() + 1)) return 'Card has expired.';
+    return null;
+  })();
+
+  // All fields are required (payment is simulated; nothing is stored).
   const errs = {
-    fullName: required(form.fullName),
-    email: emailError(form.email),
-    matric: matricError(form.matric),
+    nameOnCard: required(form.nameOnCard),
     card: cardError(form.card),
-    expiry: expiryError(form.expiry),
+    expiry: expiryError,
     cvc: cvcError(form.cvc),
+    country: required(form.country),
+    address: required(form.address),
+    city: required(form.city),
+    state: required(form.state),
+    zip: required(form.zip),
   };
   const hasErr = Object.values(errs).some(Boolean);
 
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   const handleConfirm = async () => {
@@ -66,7 +85,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     try {
       setSubmitting(true);
       await onPledge(event.id, qty, event.price);
-      go({ name: 'confirmation', id, qty });
+      go({ name: 'confirmation', id, qty, lines: quote?.lines });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
     } finally {
@@ -106,27 +125,28 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4">Buyer details</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" placeholder="Jamie Tan" value={form.fullName} onChange={set('fullName')} error={attempted ? errs.fullName : null} />
-              <Field label="Email" placeholder="you@u.nus.edu" type="email" value={form.email} onChange={set('email')} error={attempted ? errs.email : null} />
-              <Field label="Phone / Telegram (optional)" placeholder="@yourhandle" value={form.phone} onChange={set('phone')} />
-              <Field label="Matric / Student ID" placeholder="A0234567X" value={form.matric} onChange={set('matric')} error={attempted ? errs.matric : null} />
+            <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Credit Card Details</h3>
+            <div className="space-y-4">
+              <Field label="Name on card" placeholder="Meet Patel" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
+              <Field label="Card number" placeholder="0000 0000 0000 0000" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
+              <div className="grid grid-cols-[1fr_1fr_1fr] gap-4">
+                <SelectField label="Month" value={form.expMonth} onChange={set('expMonth')} placeholder="Month" options={MONTHS} error={attempted ? (form.expMonth ? null : errs.expiry) : null} />
+                <SelectField label="Year" value={form.expYear} onChange={set('expYear')} placeholder="Year" options={years} error={attempted ? errs.expiry : null} />
+                <Field label="Security code" placeholder="Code" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
+              </div>
             </div>
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Payment</h3>
+            <h3 className="mb-4 flex items-center gap-2"><MapPin size={16} /> Billing address</h3>
             <div className="space-y-4">
-              <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
+              <SelectField label="Country" value={form.country} onChange={set('country')} placeholder="Country" options={COUNTRIES} error={attempted ? errs.country : null} />
+              <Field label="Address" placeholder="123 Orchard Road" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Expiry</Label>
-                  <MonthYearPicker value={form.expiry} onChange={(v) => setForm((p) => ({ ...p, expiry: v }))} error={!!(attempted && errs.expiry)} />
-                  {attempted && errs.expiry && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.expiry}</p>}
-                </div>
-                <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
+                <Field label="City" placeholder="Singapore" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
+                <Field label="State" placeholder="State" value={form.state} onChange={set('state')} error={attempted ? errs.state : null} />
               </div>
+              <Field label="ZIP code" placeholder="238801" value={form.zip} onChange={set('zip')} error={attempted ? errs.zip : null} />
             </div>
           </section>
         </div>
@@ -194,6 +214,26 @@ function Field({ label, error, ...props }: { label: string; error?: string | nul
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
+      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+    </div>
+  );
+}
+
+function SelectField({ label, error, options, placeholder, value, onChange }: { label: string; error?: string | null; options: string[]; placeholder: string; value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void }) {
+  return (
+    <div>
+      <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
+      <select
+        value={value}
+        onChange={onChange}
+        className="w-full rounded-md border px-3 text-sm outline-none"
+        style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42, color: value ? 'var(--foreground)' : 'var(--muted-foreground)' }}
+      >
+        <option value="" disabled>{placeholder}</option>
+        {options.map((o) => (
+          <option key={o} value={o} style={{ color: 'var(--foreground)', background: 'var(--surface)' }}>{o}</option>
+        ))}
+      </select>
       {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
     </div>
   );

@@ -83,6 +83,24 @@ export async function getProfile(sb) {
   return data;
 }
 
+// Public attendee list: name, username, avatarUrl of users with active tickets.
+export async function getEventAttendees(sb, eventId) {
+  const { data, error } = await sb.rpc('get_event_attendees', { p_event_id: eventId });
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+// Host-only attendee list with contact details. The RPC raises (errcode 42501)
+// if the caller is not the event's host; surface that as a forbidden result.
+export async function getEventAttendeesPrivate(sb, eventId) {
+  const { data, error } = await sb.rpc('get_event_attendees_private', { p_event_id: eventId });
+  if (error) {
+    if (error.code === '42501' || /not_host/.test(error.message)) return { error: 'forbidden' };
+    throw new Error(error.message);
+  }
+  return { attendees: data ?? [] };
+}
+
 // Re-reads events + profile after a mutation so the frontend can refresh in one round-trip.
 async function mutationResult(sb, userId, eventId) {
   const [events, profile] = await Promise.all([listEvents(sb, userId), getProfile(sb)]);

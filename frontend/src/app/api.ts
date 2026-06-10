@@ -32,7 +32,10 @@ export type MutationResponse = {
   profile: ProfileResponse;
 };
 
-export type AuthUser = { id: string; username: string; email: string; role: Role };
+export type AuthUser = { id: string; username: string; email: string; role: Role; avatarUrl?: string | null };
+
+export type Attendee = { name: string; username: string; avatarUrl: string | null };
+export type AttendeeDetail = { username: string; email: string; contact: string | null; socialLink: string | null; avatarUrl: string | null };
 
 // ── HTTP helper ───────────────────────────────────────────────────────────────
 // Data operations go through the Express backend, which forwards this Supabase
@@ -65,18 +68,32 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
 
 // ── Auth (Supabase, unchanged) ────────────────────────────────────────────────
 
-export async function loginRequest(email: string, password: string): Promise<AuthUser> {
+export async function loginRequest(identifier: string, password: string): Promise<AuthUser> {
+  // Allow signing in with a username as well as an email. Supabase Auth only
+  // accepts an email, so resolve the email from the (publicly readable) USER
+  // table when the identifier isn't an email address.
+  let email = identifier.trim();
+  if (!email.includes('@')) {
+    const { data: match } = await supabase
+      .from('USER')
+      .select('email')
+      .ilike('username', email)
+      .single();
+    if (!match?.email) throw new Error('No account found for that username.');
+    email = match.email;
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
 
   const { data: profile, error: profileError } = await supabase
     .from('USER')
-    .select('id, username, email, role')
+    .select('id, username, email, role, avatarUrl')
     .eq('id', data.user.id)
     .single();
 
   if (profileError || !profile) throw new Error('Could not load user profile.');
-  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role };
+  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl };
 }
 
 export async function registerRequest(input: {
@@ -99,6 +116,51 @@ export async function logoutRequest(): Promise<void> {
   await supabase.auth.signOut();
 }
 
+// ── Storage uploads (direct to Supabase, scoped to the user's folder) ─────────
+
+function fileExt(file: File): string {
+  const fromName = file.name.split('.').pop();
+  if (fromName && fromName.length <= 5) return fromName.toLowerCase();
+  return (file.type.split('/')[1] || 'png').toLowerCase();
+}
+
+async function currentUserId(): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) throw new Error('You must be signed in.');
+  return session.user.id;
+}
+
+// Uploads/replaces the signed-in user's avatar and saves the URL on their USER row.
+export async function uploadAvatar(file: File): Promise<string> {
+  const userId = await currentUserId();
+  const path = `${userId}/avatar.${fileExt(file)}`;
+  const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+  // Cache-bust so a replaced image refreshes immediately.
+  const url = `${publicUrl}?t=${Date.now()}`;
+  const { error: updateError } = await supabase.from('USER').update({ avatarUrl: url }).eq('id', userId);
+  if (updateError) throw new Error(updateError.message);
+  return url;
+}
+
+export async function removeAvatar(): Promise<void> {
+  const userId = await currentUserId();
+  await supabase.storage.from('avatars').remove([`${userId}/avatar.png`, `${userId}/avatar.jpg`, `${userId}/avatar.jpeg`, `${userId}/avatar.webp`, `${userId}/avatar.gif`]);
+  const { error } = await supabase.from('USER').update({ avatarUrl: null }).eq('id', userId);
+  if (error) throw new Error(error.message);
+}
+
+// Uploads an event banner and returns its public URL (saved on the event when published).
+export async function uploadEventImage(file: File): Promise<string> {
+  const userId = await currentUserId();
+  const path = `${userId}/${Date.now()}.${fileExt(file)}`;
+  const { error } = await supabase.storage.from('event-images').upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from('event-images').getPublicUrl(path);
+  return publicUrl;
+}
+
 // ── Reads ─────────────────────────────────────────────────────────────────────
 
 export function fetchEvents(_role: Role | null): Promise<EventItem[]> {
@@ -107,6 +169,14 @@ export function fetchEvents(_role: Role | null): Promise<EventItem[]> {
 
 export function fetchProfile(_role: Role): Promise<ProfileResponse> {
   return apiFetch<ProfileResponse>('/api/profile');
+}
+
+export function fetchAttendees(eventId: string): Promise<Attendee[]> {
+  return apiFetch<Attendee[]>(`/api/events/${eventId}/attendees`);
+}
+
+export function fetchAttendeeDetails(eventId: string): Promise<AttendeeDetail[]> {
+  return apiFetch<AttendeeDetail[]>(`/api/events/${eventId}/attendees/details`);
 }
 
 export function fetchQuote(_role: Role | null, eventId: string, qty: number): Promise<Quote> {

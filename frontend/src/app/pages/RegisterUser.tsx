@@ -1,10 +1,12 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import { Camera } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest } from '../api';
+import { registerRequest, uploadAvatar } from '../api';
+import { supabase } from '../supabase';
 import type { Route } from '../components/types';
 
 export function RegisterUser({ go }: { go: (r: Route) => void }) {
@@ -16,6 +18,17 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
   const [attempted, setAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null);
+  const avatarRef = useRef<HTMLInputElement>(null);
+
+  const pickAvatar = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setAvatarFile(file);
+    setAvatarPreview(URL.createObjectURL(file));
+  };
 
   const errs = {
     username: required(username),
@@ -49,6 +62,14 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           setSubmitting(true);
           try {
             await registerRequest({ username, email, password, role: 'user' });
+            // Upload the optional avatar only if signup produced a session (no email
+            // confirmation). Otherwise it can be set later in Settings.
+            if (avatarFile) {
+              const { data: { session } } = await supabase.auth.getSession();
+              if (session) {
+                try { await uploadAvatar(avatarFile); } catch { /* non-blocking */ }
+              }
+            }
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
@@ -57,6 +78,28 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           }
         }}
       >
+        <div className="flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => avatarRef.current?.click()}
+            className="relative grid size-16 shrink-0 place-items-center overflow-hidden rounded-full"
+            style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
+          >
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="Avatar preview" className="size-full object-cover" />
+            ) : (
+              <Camera size={20} style={{ color: 'var(--muted-foreground)' }} />
+            )}
+          </button>
+          <div>
+            <div className="text-sm" style={{ fontWeight: 600 }}>Profile picture <span style={{ color: 'var(--muted-foreground)', fontWeight: 400 }}>(optional)</span></div>
+            <button type="button" onClick={() => avatarRef.current?.click()} className="text-xs text-[#ff4d2e]" style={{ fontWeight: 600 }}>
+              {avatarPreview ? 'Change photo' : 'Add a photo'}
+            </button>
+          </div>
+          <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={pickAvatar} />
+        </div>
+
         <Field label="Username" autoComplete="off" placeholder="jamiet" value={username} onChange={(e) => setUsername(e.target.value)} error={attempted ? errs.username : null} />
         <Field label="Email" type="email" autoComplete="off" placeholder="you@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
