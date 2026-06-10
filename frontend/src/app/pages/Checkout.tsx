@@ -126,7 +126,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Credit Card Details</h3>
             <div className="space-y-4">
-              <Field label="Name on card" placeholder="Meet Patel" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
+              <Field label="Name on card" placeholder="Name on card" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
               <Field label="Card number" placeholder="0000 0000 0000 0000" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -143,12 +143,12 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
             <h3 className="mb-4 flex items-center gap-2"><MapPin size={16} /> Billing address</h3>
             <div className="space-y-4">
               <Field label="Country" placeholder="Country" value={form.country} onChange={set('country')} error={attempted ? errs.country : null} />
-              <Field label="Address" placeholder="123 Orchard Road" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
+              <Field label="Address" placeholder="Street address" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
               <div className="grid grid-cols-2 gap-4">
-                <Field label="City" placeholder="Singapore" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
+                <Field label="City" placeholder="City" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
                 <Field label="State" placeholder="State" value={form.state} onChange={set('state')} error={attempted ? errs.state : null} />
               </div>
-              <Field label="ZIP code" placeholder="238801" value={form.zip} onChange={set('zip')} error={attempted ? errs.zip : null} />
+              <Field label="ZIP code" placeholder="ZIP code" value={form.zip} onChange={set('zip')} error={attempted ? errs.zip : null} />
             </div>
           </section>
         </div>

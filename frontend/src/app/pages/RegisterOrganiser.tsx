@@ -59,14 +59,14 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
           }
         }}
       >
-        <Field label="Organiser name" autoComplete="off" placeholder="Jamie Tan" value={organiserName} onChange={(e) => setOrganiserName(e.target.value)} error={attempted ? errs.organiserName : null} />
-        <Field label="Email" type="email" autoComplete="off" placeholder="organiser@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
+        <Field label="Organiser name" autoComplete="off" placeholder="Your organisation name" value={organiserName} onChange={(e) => setOrganiserName(e.target.value)} error={attempted ? errs.organiserName : null} />
+        <Field label="Email" type="email" autoComplete="off" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Password" type="password" autoComplete="new-password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
           <Field label="Confirm" type="password" autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Contact / Telegram (optional)" autoComplete="off" placeholder="@nus_emc" value={contact} onChange={(e) => setContact(e.target.value)} />
-        <Field label="Social link (optional)" autoComplete="off" placeholder="instagram.com/nus.emc" value={social} onChange={(e) => setSocial(e.target.value)} />
+        <Field label="Contact / Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={contact} onChange={(e) => setContact(e.target.value)} />
+        <Field label="Social link (optional)" autoComplete="off" placeholder="instagram.com/yourpage" value={social} onChange={(e) => setSocial(e.target.value)} />
 
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>

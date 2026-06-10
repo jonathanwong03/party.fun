@@ -128,13 +128,13 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           </div>
         </div>
 
-        <Field label="Username" autoComplete="off" placeholder="jamiet" value={username} onChange={(e) => setUsername(e.target.value)} error={attempted ? errs.username : null} />
-        <Field label="Email" type="email" autoComplete="off" placeholder="you@u.nus.edu" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
+        <Field label="Username" autoComplete="off" placeholder="Choose a username" value={username} onChange={(e) => setUsername(e.target.value)} error={attempted ? errs.username : null} />
+        <Field label="Email" type="email" autoComplete="off" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Password" type="password" autoComplete="new-password" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
           <Field label="Confirm" type="password" autoComplete="new-password" placeholder="********" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Phone / Telegram (optional)" autoComplete="off" placeholder="@jamiet" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <Field label="Phone / Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={phone} onChange={(e) => setPhone(e.target.value)} />
 
         {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
 

@@ -248,10 +248,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
             <div className="space-y-6">
               <Section title="Basic details">
                 <Field label="Event title" error={errOf('title')}>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Neon Jungle: Freshers Rave" style={errStyle(errOf('title'))} />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event title" style={errStyle(errOf('title'))} />
                 </Field>
                 <Field label="Organiser" error={errOf('organiser')}>
-                  <Input value={organiser} onChange={(e) => setOrganiser(e.target.value)} placeholder="NUS Electronic Music Club" style={errStyle(errOf('organiser'))} />
+                  <Input value={organiser} onChange={(e) => setOrganiser(e.target.value)} placeholder="Organisation name" style={errStyle(errOf('organiser'))} />
                 </Field>
                 <Field label="Description" error={errOf('description')}>
                   <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's the vibe?" rows={4} style={errStyle(errOf('description'))} />
@@ -294,8 +294,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
 
               <Section title="Location">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Venue name" error={errOf('venue')}><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="The Projector" style={errStyle(errOf('venue'))} /></Field>
-                  <Field label="Address" error={errOf('address')}><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Golden Mile Tower" style={errStyle(errOf('address'))} /></Field>
+                  <Field label="Venue name" error={errOf('venue')}><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Venue name" style={errStyle(errOf('venue'))} /></Field>
+                  <Field label="Address" error={errOf('address')}><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" style={errStyle(errOf('address'))} /></Field>
                 </div>
               </Section>
 
