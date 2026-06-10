@@ -8,9 +8,10 @@ import { StatusBadge } from '../components/StatusBadge';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, type Quote } from '../api';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { required, cardError, cvcError } from '../components/validation';
+import { MonthYearPicker } from '../components/MonthYearPicker';
 
-const MONTHS = ['01', '02', '03', '04', '05', '06', '07', '08', '09', '10', '11', '12'];
 const COUNTRIES = ['Singapore', 'Malaysia', 'Indonesia', 'Thailand', 'Philippines', 'Vietnam', 'Other'];
 
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
@@ -21,8 +22,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   const [form, setForm] = useState({
     nameOnCard: '',
     card: '',
-    expMonth: '',
-    expYear: '',
+    expiry: '',
     cvc: '',
     country: '',
     address: '',
@@ -31,7 +31,6 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     zip: '',
   });
   const [attempted, setAttempted] = useState(false);
-  const years = Array.from({ length: 11 }, (_, i) => String(new Date().getFullYear() + i));
 
   // The backend computes subtotal/fee/total; the frontend only displays them.
   useEffect(() => {
@@ -51,13 +50,15 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   }
   const money = (n: number) => `$${n.toFixed(2)}`;
 
-  // Card expiry from the Month/Year selects: both chosen and not already past.
+  // Card expiry from the MM/YY picker: present and not already past.
   const expiryError = (() => {
-    if (!form.expMonth || !form.expYear) return 'Select an expiry date.';
+    const m = /^(\d{2})\/(\d{2})$/.exec(form.expiry.trim());
+    if (!m) return 'Select an expiry date.';
     const now = new Date();
-    const y = Number(form.expYear);
-    const m = Number(form.expMonth);
-    if (y < now.getFullYear() || (y === now.getFullYear() && m < now.getMonth() + 1)) return 'Card has expired.';
+    const month = Number(m[1]);
+    const year = 2000 + Number(m[2]);
+    if (month < 1 || month > 12) return 'Select an expiry date.';
+    if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1)) return 'Card has expired.';
     return null;
   })();
 
@@ -129,9 +130,12 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
             <div className="space-y-4">
               <Field label="Name on card" placeholder="Meet Patel" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
               <Field label="Card number" placeholder="0000 0000 0000 0000" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
-              <div className="grid grid-cols-[1fr_1fr_1fr] gap-4">
-                <SelectField label="Month" value={form.expMonth} onChange={set('expMonth')} placeholder="Month" options={MONTHS} error={attempted ? (form.expMonth ? null : errs.expiry) : null} />
-                <SelectField label="Year" value={form.expYear} onChange={set('expYear')} placeholder="Year" options={years} error={attempted ? errs.expiry : null} />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Card expiration</Label>
+                  <MonthYearPicker value={form.expiry} onChange={(v) => setForm((p) => ({ ...p, expiry: v }))} error={!!(attempted && errs.expiry)} />
+                  {attempted && errs.expiry && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.expiry}</p>}
+                </div>
                 <Field label="Security code" placeholder="Code" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
               </div>
             </div>
@@ -155,7 +159,8 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="relative h-32">
-              <ImageWithFallback src={event.image} alt={event.title} className="size-full object-cover" />
+              <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="size-full object-cover" />
+              {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
               <div className="absolute inset-0 bg-gradient-to-t from-[#14141b] to-transparent" />
               <div className="absolute left-3 top-3"><StatusBadge event={event} /></div>
             </div>

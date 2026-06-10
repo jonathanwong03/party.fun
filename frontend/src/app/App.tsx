@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, type AuthUser, type ProfileTicket } from './api';
 import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
@@ -329,6 +329,16 @@ function AppShell() {
     navigate('/login', { replace: true });
   };
 
+  // Deletes the account (throws if the user still hosts events) then signs out.
+  const handleDeleteAccount = async () => {
+    await deleteAccountRequest();
+    setRole(null);
+    setUser(null);
+    setEvents([]);
+    setProfileTickets([]);
+    navigate('/login', { replace: true });
+  };
+
   if (!sessionLoaded) return null;
   if (!role && !isAuthPage && !isPublicPath(location.pathname)) {
     return <Navigate to="/login" replace />;
@@ -368,7 +378,7 @@ function AppShell() {
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} onDelete={removeBooking} />} />
-        <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} theme={theme} onToggleTheme={toggleTheme} />} />
+        <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />

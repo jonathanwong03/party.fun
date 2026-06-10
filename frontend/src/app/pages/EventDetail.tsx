@@ -6,17 +6,22 @@ import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, type Attendee } from '../api';
 
-// Combine start + end into one human string: same day shows one date with a time range,
-// spanning days shows both dates (e.g. "Thu, 25 Jun, 11:00 PM – Fri, 26 Jun, 2:00 AM").
-function dateTimeRange(event: EventItem): string {
-  const start = `${event.date}, ${event.time}`;
-  if (!event.endTime) return start;
-  if (event.endDate && event.endDate !== event.date) {
-    return `${start} – ${event.endDate}, ${event.endTime}`;
-  }
-  return `${start} – ${event.endTime}`;
+// Long date ("Thursday, 18 June") and compact time ("12:02pm") in Asia/Singapore,
+// falling back to the pre-formatted display strings when no ISO is available.
+function fmtDateLong(iso?: string, fallback?: string): string {
+  if (!iso) return fallback ?? '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback ?? '';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+}
+function fmtTime(iso?: string, fallback?: string): string {
+  if (!iso) return fallback ?? '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback ?? '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', hour12: true }).format(d).replace(/\s/g, '').toLowerCase();
 }
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
@@ -61,7 +66,8 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
 
       {/* banner */}
       <div className="relative mb-8 overflow-hidden rounded-3xl">
-        <ImageWithFallback src={event.image} alt={event.title} className="h-72 w-full object-cover md:h-96" />
+        <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="h-72 w-full object-cover md:h-96" />
+        {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -76,18 +82,27 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <div className="space-y-8">
           {/* meta */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {[
-              { icon: CalendarClock, label: 'Date & time', value: dateTimeRange(event) },
-              { icon: MapPin, label: 'Location', value: event.location.split(',')[0] },
-            ].map((m) => (
-              <div key={m.label} className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
-                <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  <m.icon size={13} /> {m.label}
-                </div>
-                <div className="mt-1 font-bold text-white">{m.value}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <CalendarClock size={13} /> Starts
               </div>
-            ))}
+              <div className="mt-1 font-bold text-white">{fmtDateLong(event.startsAt, event.date)}</div>
+              <div className="font-bold text-white">{fmtTime(event.startsAt, event.time)}</div>
+            </div>
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <CalendarClock size={13} /> Ends
+              </div>
+              <div className="mt-1 font-bold text-white">{fmtDateLong(event.endsAt, event.endDate)}</div>
+              <div className="font-bold text-white">{fmtTime(event.endsAt, event.endTime)}</div>
+            </div>
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <MapPin size={13} /> Location
+              </div>
+              <div className="mt-1 font-bold text-white">{event.location.split(',')[0]}</div>
+            </div>
           </div>
 
           {/* description */}

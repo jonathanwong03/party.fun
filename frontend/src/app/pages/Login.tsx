@@ -29,6 +29,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
   return (
     <AuthShell
       maxWidthClass="max-w-xl"
+      backTo={{ label: 'View All Events', onClick: () => go({ name: 'landing' }) }}
       title="Welcome back"
       subtitle="Sign in to track your tickets and manage your events."
       footer={

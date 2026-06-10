@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { ChevronLeft } from 'lucide-react';
 import { Logo } from './Logo';
 
 export function AuthShell({
@@ -7,15 +8,27 @@ export function AuthShell({
   children,
   footer,
   maxWidthClass = 'max-w-md',
+  backTo,
 }: {
   title: string;
   subtitle?: string;
   children: ReactNode;
   footer?: ReactNode;
   maxWidthClass?: string;
+  backTo?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="relative grid min-h-screen place-items-center overflow-hidden px-4 py-12">
+      {backTo && (
+        <button
+          type="button"
+          onClick={backTo.onClick}
+          className="absolute left-6 top-6 z-10 inline-flex items-center gap-1 text-sm transition hover:text-foreground"
+          style={{ color: 'var(--muted-foreground)' }}
+        >
+          <ChevronLeft size={16} /> {backTo.label}
+        </button>
+      )}
       {/* glow */}
       <div className="pointer-events-none absolute -top-32 left-1/2 size-[680px] -translate-x-1/2 rounded-full"
         style={{ background: 'radial-gradient(closest-side, rgba(255,77,46,0.18), transparent 70%)' }} />

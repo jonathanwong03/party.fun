@@ -61,7 +61,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
             <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time events" />
             <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={created.filter((e) => dashboardStatus(e) !== 'CANCELLED').length.toString()} hint="Ongoing events" />
             <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Confirmed" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Reached the hype threshold" />
-            <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${(totalPledged / 1000).toFixed(1)}k`} hint="Across all events" />
+            <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${totalPledged.toLocaleString()}`} hint="Across all events" />
           </div>
 
           {/* Tabs */}

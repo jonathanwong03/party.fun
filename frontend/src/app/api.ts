@@ -99,15 +99,38 @@ export async function registerRequest(input: {
   email: string;
   password: string;
   role: Role;
+  avatarUrl?: string;
 }): Promise<AuthUser> {
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
-    options: { data: { username: input.username, name: input.username, role: input.role } },
+    options: { data: { username: input.username, name: input.username, role: input.role, avatarUrl: input.avatarUrl ?? null } },
   });
   if (error) throw new Error(error.message);
   if (!data.user) throw new Error('Sign up failed — please try again.');
-  return { id: data.user.id, username: input.username, email: input.email, role: input.role };
+  return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl };
+}
+
+// Persist a username change (own row); reject duplicates (USER.username is unique).
+export async function updateUsernameRequest(username: string): Promise<void> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from('USER').update({ username }).eq('id', userId);
+  if (error) {
+    if (error.code === '23505') throw new Error('That username is taken.');
+    throw new Error(error.message);
+  }
+}
+
+// Permanently delete the signed-in user's account (blocked server-side if they host events).
+export async function deleteAccountRequest(): Promise<void> {
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) {
+    if (error.code === 'P0001' || /has_events/.test(error.message)) {
+      throw new Error('Delete your hosted events before deleting your account.');
+    }
+    throw new Error(error.message);
+  }
+  await supabase.auth.signOut();
 }
 
 export async function logoutRequest(): Promise<void> {
@@ -139,6 +162,14 @@ export async function uploadAvatar(file: File): Promise<string> {
   const url = `${publicUrl}?t=${Date.now()}`;
   const { error: updateError } = await supabase.from('USER').update({ avatarUrl: url }).eq('id', userId);
   if (updateError) throw new Error(updateError.message);
+  return url;
+}
+
+// Selects a preset avatar (a /avatars/*.svg path) as the user's profile picture.
+export async function setAvatar(url: string): Promise<string> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from('USER').update({ avatarUrl: url }).eq('id', userId);
+  if (error) throw new Error(error.message);
   return url;
 }
 
