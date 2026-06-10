@@ -74,13 +74,11 @@ export async function loginRequest(identifier: string, password: string): Promis
   // table when the identifier isn't an email address.
   let email = identifier.trim();
   if (!email.includes('@')) {
-    const { data: match } = await supabase
-      .from('USER')
-      .select('email')
-      .ilike('username', email)
-      .single();
-    if (!match?.email) throw new Error('No account found for that username.');
-    email = match.email;
+    // USER rows are self-only readable, so resolve username → email through a
+    // SECURITY DEFINER RPC (returns just the one email for an exact username).
+    const { data: resolved, error } = await supabase.rpc('email_for_username', { p_username: email });
+    if (error || !resolved) throw new Error('No account found for that username.');
+    email = resolved as string;
   }
 
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
