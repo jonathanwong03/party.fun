@@ -32,8 +32,11 @@ export function Landing({
     () => events.filter((e) => !myEventIds.has(e.id) && !e.mine && e.status !== 'cancelled' && !cancelledEventIds.has(e.id)),
     [events, myEventIds, cancelledEventIds],
   );
-  const featured = available[0];
-  const rest = available.slice(1);
+  // "Most hyped" = highest raw fill ratio (uncapped, so 106% beats 105% even though
+  // both display as 100%); ties keep the first encountered.
+  const rawHype = (e: EventItem) => (e.hypeThreshold > 0 ? e.activeTicketCount / e.hypeThreshold : 0);
+  const featured = available.length ? available.reduce((best, e) => (rawHype(e) > rawHype(best) ? e : best)) : undefined;
+  const rest = available.filter((e) => e.id !== featured?.id);
 
   const filtered = useMemo(() => {
     return rest.filter((e) => {
@@ -85,8 +88,7 @@ export function Landing({
       {featured && (
         <>
           <div className="mb-4 flex items-baseline justify-between">
-            <h2>Featured tonight</h2>
-            <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>The most hyped event on campus</span>
+            <h2>Most Hyped</h2>
           </div>
           <div className="mb-12">
             <EventCard event={featured} featured onView={() => go({ name: 'event', id: featured.id })} />

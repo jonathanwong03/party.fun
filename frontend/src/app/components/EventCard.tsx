@@ -4,6 +4,7 @@ import { HypeMeter } from './HypeMeter';
 import { StatusBadge } from './StatusBadge';
 import { getActiveStatus, type EventItem } from './types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { DEFAULT_EVENT_IMAGE } from './media';
 
 export function EventCard({
   event,
@@ -23,10 +24,11 @@ export function EventCard({
     >
       <div className={`relative ${featured ? 'h-64' : 'h-44'} overflow-hidden`}>
         <ImageWithFallback
-          src={event.image}
+          src={event.image || DEFAULT_EVENT_IMAGE}
           alt={event.title}
           className="size-full object-cover transition group-hover:scale-105"
         />
+        {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
         <div className="absolute left-3 top-3">
           <StatusBadge event={event} />

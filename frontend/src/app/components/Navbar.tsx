@@ -72,10 +72,14 @@ export function Navbar({
                 type="button"
                 aria-label="Profile"
                 onClick={() => go({ name: 'profile' })}
-                className="grid size-8 place-items-center rounded-full text-sm text-white transition hover:opacity-90"
+                className="grid size-8 place-items-center overflow-hidden rounded-full text-sm text-white transition hover:opacity-90"
                 style={{ background: '#ff4d2e', fontWeight: 600 }}
               >
-                {initial}
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="Profile" className="size-full object-cover" />
+                ) : (
+                  initial
+                )}
               </button>
             </>
           ) : (

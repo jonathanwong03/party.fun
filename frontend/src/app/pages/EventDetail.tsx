@@ -1,11 +1,35 @@
-import { useState } from 'react';
-import { Calendar, Clock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
+import { fetchAttendees, type Attendee } from '../api';
+
+// Long date ("Thursday, 18 June") and compact time ("12:02pm") in Asia/Singapore,
+// falling back to the pre-formatted display strings when no ISO is available.
+function fmtDateLong(iso?: string, fallback?: string): string {
+  if (!iso) return fallback ?? '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback ?? '';
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', weekday: 'long', day: 'numeric', month: 'long' }).format(d);
+}
+function fmtTime(iso?: string, fallback?: string): string {
+  if (!iso) return fallback ?? '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return fallback ?? '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', hour12: true }).format(d).replace(/\s/g, '').toLowerCase();
+}
+
+const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
+function avatarColor(seed: string) {
+  let h = 0;
+  for (let i = 0; i < seed.length; i += 1) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
 
 export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; cancelledEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
@@ -42,7 +66,8 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
 
       {/* banner */}
       <div className="relative mb-8 overflow-hidden rounded-3xl">
-        <ImageWithFallback src={event.image} alt={event.title} className="h-72 w-full object-cover md:h-96" />
+        <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="h-72 w-full object-cover md:h-96" />
+        {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
         <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -57,19 +82,27 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <div className="space-y-8">
           {/* meta */}
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-            {[
-              { icon: Calendar, label: 'Date', value: event.date },
-              { icon: Clock, label: 'Time', value: `${event.time}${event.endTime ? ` – ${event.endTime}` : ''}` },
-              { icon: MapPin, label: 'Location', value: event.location.split(',')[0] },
-            ].map((m) => (
-              <div key={m.label} className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
-                <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                  <m.icon size={13} /> {m.label}
-                </div>
-                <div className="mt-1 font-bold text-white">{m.value}</div>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <CalendarClock size={13} /> Starts
               </div>
-            ))}
+              <div className="mt-1 font-bold text-white">{fmtDateLong(event.startsAt, event.date)}</div>
+              <div className="font-bold text-white">{fmtTime(event.startsAt, event.time)}</div>
+            </div>
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <CalendarClock size={13} /> Ends
+              </div>
+              <div className="mt-1 font-bold text-white">{fmtDateLong(event.endsAt, event.endDate)}</div>
+              <div className="font-bold text-white">{fmtTime(event.endsAt, event.endTime)}</div>
+            </div>
+            <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
+              <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                <MapPin size={13} /> Location
+              </div>
+              <div className="mt-1 font-bold text-white">{event.location.split(',')[0]}</div>
+            </div>
           </div>
 
           {/* description */}
@@ -180,11 +213,11 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
               </div>
             </div>
           </div>
-          <WhosGoingCard event={event} />
+          <WhosGoingCard event={event} go={go} role={role} />
         </aside>
         ) : showWhosGoing ? (
         <aside className="lg:sticky lg:top-24 lg:self-start" key="whos-going">
-          <WhosGoingCard event={event} />
+          <WhosGoingCard event={event} go={go} role={role} />
         </aside>
         ) : showOwnEvent ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
@@ -272,7 +305,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
               </div>
             </div>
           </div>
-          <WhosGoingCard event={event} />
+          <WhosGoingCard event={event} go={go} role={role} />
         </aside>
         )}
       </div>
@@ -302,7 +335,20 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
   );
 }
 
-function WhosGoingCard({ event }: { event: EventItem }) {
+function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) => void; role: Role | null }) {
+  const [attendees, setAttendees] = useState<Attendee[]>([]);
+
+  useEffect(() => {
+    let ignore = false;
+    fetchAttendees(event.id)
+      .then((a) => { if (!ignore) setAttendees(a); })
+      .catch(() => { if (!ignore) setAttendees([]); });
+    return () => { ignore = true; };
+  }, [event.id, event.activeTicketCount]);
+
+  const shown = attendees.slice(0, 5);
+  const overflow = Math.max(0, attendees.length - shown.length);
+
   return (
     <div
       className="rounded-2xl p-6"
@@ -314,32 +360,62 @@ function WhosGoingCard({ event }: { event: EventItem }) {
       }}
     >
       <h3 className="mb-5" style={{ color: '#f5f5f7', fontSize: 18, fontWeight: 500 }}>Who's going?</h3>
+
       <div className="mb-5 flex items-center">
-        {[
-          { c: '#ec2727', l: 'A' },
-          { c: '#91e357', l: 'B' },
-          { c: '#a1b3e0', l: 'C' },
-          { c: '#dbe12b', l: 'D' },
-          { c: '#30b2ea', l: 'E' },
-        ].map((a, i) => (
+        {shown.length === 0 ? (
+          <span className="text-sm" style={{ color: '#8a8a99' }}>No one has locked in yet.</span>
+        ) : (
+          shown.map((a, i) => (
+            <div key={a.username} className="group relative" style={{ marginLeft: i === 0 ? 0 : -12 }}>
+              {a.avatarUrl ? (
+                <img
+                  src={a.avatarUrl}
+                  alt={a.username}
+                  className="size-14 rounded-full object-cover"
+                  style={{ border: '2px solid #14141b' }}
+                />
+              ) : (
+                <div
+                  className="grid size-14 place-items-center rounded-full text-white"
+                  style={{ background: avatarColor(a.username), border: '2px solid #14141b', fontSize: 28, fontWeight: 500 }}
+                >
+                  {(a.name || a.username).charAt(0).toUpperCase()}
+                </div>
+              )}
+              {/* Hover tooltip with the username — shown only when signed in. */}
+              {role && (
+                <div
+                  className="pointer-events-none absolute left-1/2 top-full z-10 mt-2 hidden -translate-x-1/2 whitespace-nowrap rounded-lg px-2.5 py-1 text-xs shadow-lg group-hover:block"
+                  style={{ background: '#ffffff', color: '#1a1a1a', fontWeight: 600 }}
+                >
+                  {a.username}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+        {overflow > 0 && (
           <div
-            key={a.l}
-            className="grid size-14 place-items-center rounded-full text-white"
-            style={{
-              background: a.c,
-              marginLeft: i === 0 ? 0 : -12,
-              border: '2px solid #14141b',
-              fontSize: 28,
-              fontWeight: 500,
-            }}
+            className="grid size-14 place-items-center rounded-full"
+            style={{ marginLeft: -12, background: '#23232c', border: '2px solid #14141b', color: '#c9c9d4', fontSize: 16, fontWeight: 600 }}
           >
-            {a.l}
+            +{overflow}
           </div>
-        ))}
+        )}
       </div>
-      <p className="text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
+
+      <p className="mb-4 text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
         {event.activeTicketCount} students have locked in. {event.spotsLeft} spots remaining
       </p>
+
+      <Button
+        onClick={() => go(role ? { name: 'attendees', id: event.id } : { name: 'login' })}
+        variant="outline"
+        className="w-full border-white/15 bg-transparent hover:bg-white/5"
+        style={{ borderRadius: 12, height: 42, fontWeight: 600 }}
+      >
+        View Details
+      </Button>
     </div>
   );
 }

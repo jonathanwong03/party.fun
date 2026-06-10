@@ -6,6 +6,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { getActiveStatus, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import type { ProfileTicket } from '../api';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
@@ -69,7 +70,8 @@ export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Ro
             return (
               <div key={booking.bookingId} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <div className="relative h-24 w-full overflow-hidden rounded-xl md:w-40 md:shrink-0">
-                  <ImageWithFallback src={booking.event.image} alt={booking.event.title} className="size-full object-cover" />
+                  <ImageWithFallback src={booking.event.image || DEFAULT_EVENT_IMAGE} alt={booking.event.title} className="size-full object-cover" />
+                  {!booking.event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
                 </div>
                 <div className="flex-1">
                   <div className="flex flex-wrap items-center gap-2">

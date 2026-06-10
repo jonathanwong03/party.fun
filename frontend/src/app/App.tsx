@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket } from './api';
 import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
@@ -27,6 +27,7 @@ import { JoinedEvents } from './pages/JoinedEvents';
 import { Settings } from './pages/Settings';
 import { OrganiserHostedEvents } from './pages/OrganiserHostedEvents';
 import { CreateEvent } from './pages/CreateEvent';
+import { Attendees } from './pages/Attendees';
 
 type RouteState = {
   fromProfile?: boolean;
@@ -34,6 +35,7 @@ type RouteState = {
   fromPast?: boolean;
   bookingId?: string;
   qty?: number;
+  lines?: { label: string; count: number; price: number }[];
 };
 
 function pathForRoute(route: Route) {
@@ -46,6 +48,8 @@ function pathForRoute(route: Route) {
       return `/checkout/${route.id}`;
     case 'confirmation':
       return `/confirmation/${route.id}`;
+    case 'attendees':
+      return `/events/${route.id}/attendees`;
     case 'login':
       return '/login';
     case 'choose-account':
@@ -81,7 +85,7 @@ function stateForRoute(route: Route): RouteState | undefined {
   }
 
   if (route.name === 'confirmation') {
-    return { qty: route.qty };
+    return { qty: route.qty, lines: route.lines };
   }
 
   if (route.name === 'checkout') {
@@ -119,7 +123,10 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (checkoutMatch) return { name: 'checkout', id: checkoutMatch[1], qty: state?.qty };
 
   const confirmationMatch = pathname.match(/^\/confirmation\/([^/]+)$/);
-  if (confirmationMatch) return { name: 'confirmation', id: confirmationMatch[1], qty: state?.qty ?? 1 };
+  if (confirmationMatch) return { name: 'confirmation', id: confirmationMatch[1], qty: state?.qty ?? 1, lines: state?.lines };
+
+  const attendeesMatch = pathname.match(/^\/events\/([^/]+)\/attendees$/);
+  if (attendeesMatch) return { name: 'attendees', id: attendeesMatch[1] };
 
   const editMatch = pathname.match(/^\/hosted-events\/events\/([^/]+)\/edit$/);
   if (editMatch) return { name: 'edit-event', id: editMatch[1] };
@@ -163,6 +170,7 @@ function AppShell() {
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));
   const updateUsername = (name: string) => setUser((u) => (u ? { ...u, username: name } : u));
+  const updateAvatar = (url: string | null) => setUser((u) => (u ? { ...u, avatarUrl: url } : u));
   const [events, setEvents] = useState<EventItem[]>([]);
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
   const [loadingData, setLoadingData] = useState(false);
@@ -188,10 +196,19 @@ function AppShell() {
   };
 
   const [drafts, setDrafts] = useState<EventItem[]>([]);
-  // Upsert: re-saving a resumed draft replaces the existing one rather than duplicating it.
-  const addDraft = (d: EventItem) =>
+  // Optimistic local upsert for instant UI, then persist to Supabase and reconcile
+  // the server-assigned id (new drafts arrive with a temporary client id).
+  const addDraft = async (d: EventItem) => {
     setDrafts((prev) => (prev.some((p) => p.id === d.id) ? prev.map((p) => (p.id === d.id ? d : p)) : [d, ...prev]));
-  const deleteDraft = (id: string) => setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try {
+      await saveDraftRequest(d);
+      setDrafts(await fetchDrafts());
+    } catch { /* keep optimistic copy on failure */ }
+  };
+  const deleteDraft = async (id: string) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try { await deleteDraftRequest(id); } catch { /* already removed from state */ }
+  };
 
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
@@ -203,12 +220,12 @@ function AppShell() {
       if (session) {
         const { data: profile } = await supabase
           .from('USER')
-          .select('id, username, email, role')
+          .select('id, username, email, role, avatarUrl')
           .eq('id', session.user.id)
           .single();
         if (profile) {
           setRole(profile.role as Role);
-          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role });
+          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl });
         }
       }
       setSessionLoaded(true);
@@ -243,6 +260,13 @@ function AppShell() {
           setProfileTickets(profile.tickets);
         } else {
           setProfileTickets([]);
+        }
+        if (role === 'organiser') {
+          const loadedDrafts = await fetchDrafts();
+          if (ignore) return;
+          setDrafts(loadedDrafts);
+        } else {
+          setDrafts([]);
         }
       } catch (error) {
         if (ignore) return;
@@ -321,6 +345,16 @@ function AppShell() {
     navigate('/login', { replace: true });
   };
 
+  // Deletes the account (throws if the user still hosts events) then signs out.
+  const handleDeleteAccount = async () => {
+    await deleteAccountRequest();
+    setRole(null);
+    setUser(null);
+    setEvents([]);
+    setProfileTickets([]);
+    navigate('/login', { replace: true });
+  };
+
   if (!sessionLoaded) return null;
   if (!role && !isAuthPage && !isPublicPath(location.pathname)) {
     return <Navigate to="/login" replace />;
@@ -355,11 +389,12 @@ function AppShell() {
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} cancelledEventIds={cancelledEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} cancelledEventIds={cancelledEventIds} onGiveAway={giveAway} />} />
+        <BrowserRoute path="/events/:eventId/attendees" element={<AttendeesRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} onDelete={removeBooking} />} />
-        <BrowserRoute path="/settings" element={<Settings user={user} onChangeUsername={updateUsername} theme={theme} onToggleTheme={toggleTheme} />} />
+        <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
@@ -443,7 +478,21 @@ function ConfirmationRoute({
 
   if (!role) return <Navigate to="/login" replace />;
 
-  return <Confirmation id={eventId} qty={state.qty ?? 1} role={role} go={go} events={events} />;
+  return <Confirmation id={eventId} qty={state.qty ?? 1} lines={state.lines} role={role} go={go} events={events} />;
+}
+
+function AttendeesRoute({
+  role,
+  go,
+  events,
+}: {
+  role: Role | null;
+  go: (r: Route) => void;
+  events: EventItem[];
+}) {
+  const { eventId = '' } = useParams();
+  if (!role) return <Navigate to="/login" replace />;
+  return <Attendees id={eventId} go={go} events={events} />;
 }
 
 function EditEventRoute({

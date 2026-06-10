@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { ChevronLeft, Image as ImageIcon, AlertTriangle } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { ChevronLeft, Image as ImageIcon, AlertTriangle, X } from 'lucide-react';
+import { uploadEventImage } from '../api';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -48,6 +49,25 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const maxCapacity = ebQty + greenlitQty;
   const [deleting, setDeleting] = useState(false);
   const [showErrors, setShowErrors] = useState(false);
+  const [image, setImage] = useState<string>(source?.image ?? '');
+  const [imageBusy, setImageBusy] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
+  const imageRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setImageBusy(true);
+    setImageError(null);
+    try {
+      setImage(await uploadEventImage(file));
+    } catch (err) {
+      setImageError(err instanceof Error ? err.message : 'Unable to upload image.');
+    } finally {
+      setImageBusy(false);
+    }
+  };
 
   const status: EventStatus = existing?.status ?? 'early_bird';
   const locked = isEdit && status === 'greenlit';
@@ -101,7 +121,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       deadlineAt: inputToIso(deadlineDate, deadlineTime),
       location: `${venue}, ${address}`,
       description,
-      image: '',
+      image,
       price: num(ebPrice),
       statusLabel: 'Early Birds',
       hypePercentage: 0,
@@ -134,7 +154,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       endDate,
       location: `${venue}, ${address}`,
       description,
-      image: '',
+      image,
       price: num(ebPrice),
       statusLabel: 'Early Birds',
       hypePercentage: 0,
@@ -166,6 +186,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
     ];
     const updated: EventItem = {
       ...existing,
+      image,
       title,
       organiser,
       description,
@@ -227,20 +248,38 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
             <div className="space-y-6">
               <Section title="Basic details">
                 <Field label="Event title" error={errOf('title')}>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Neon Jungle: Freshers Rave" style={errStyle(errOf('title'))} />
+                  <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Event title" style={errStyle(errOf('title'))} />
                 </Field>
                 <Field label="Organiser" error={errOf('organiser')}>
-                  <Input value={organiser} onChange={(e) => setOrganiser(e.target.value)} placeholder="NUS Electronic Music Club" style={errStyle(errOf('organiser'))} />
+                  <Input value={organiser} onChange={(e) => setOrganiser(e.target.value)} placeholder="Organisation name" style={errStyle(errOf('organiser'))} />
                 </Field>
                 <Field label="Description" error={errOf('description')}>
                   <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="What's the vibe?" rows={4} style={errStyle(errOf('description'))} />
                 </Field>
-                <Field label="Event image / banner">
-                  <button type="button" className="flex w-full items-center gap-3 rounded-xl border border-dashed p-4 text-left text-sm hover:bg-white/5"
-                    style={{ borderColor: 'var(--border-strong)', color: 'var(--muted-foreground)' }}>
-                    <ImageIcon size={18} />
-                    <span>Drag & drop or click to upload (16:9 recommended)</span>
-                  </button>
+                <Field label="Event image / banner" error={imageError}>
+                  <input ref={imageRef} type="file" accept="image/*" className="hidden" onChange={handleImageFile} />
+                  {image ? (
+                    <div className="relative overflow-hidden rounded-xl" style={{ border: '1px solid var(--border)' }}>
+                      <img src={image} alt="Event banner" className="h-40 w-full object-cover" />
+                      <div className="absolute right-2 top-2 flex gap-2">
+                        <button type="button" onClick={() => imageRef.current?.click()} disabled={imageBusy}
+                          className="rounded-lg px-2.5 py-1 text-xs text-white" style={{ background: 'rgba(0,0,0,0.6)' }}>
+                          {imageBusy ? 'Uploading…' : 'Replace'}
+                        </button>
+                        <button type="button" onClick={() => setImage('')}
+                          className="grid size-7 place-items-center rounded-lg text-white" style={{ background: 'rgba(0,0,0,0.6)' }}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => imageRef.current?.click()} disabled={imageBusy}
+                      className="flex w-full items-center gap-3 rounded-xl border border-dashed p-4 text-left text-sm hover:bg-white/5"
+                      style={{ borderColor: 'var(--border-strong)', color: 'var(--muted-foreground)' }}>
+                      <ImageIcon size={18} />
+                      <span>{imageBusy ? 'Uploading…' : 'Click to upload (16:9 recommended)'}</span>
+                    </button>
+                  )}
                 </Field>
               </Section>
 
@@ -255,8 +294,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
 
               <Section title="Location">
                 <div className="grid gap-4 sm:grid-cols-2">
-                  <Field label="Venue name" error={errOf('venue')}><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="The Projector" style={errStyle(errOf('venue'))} /></Field>
-                  <Field label="Address" error={errOf('address')}><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Golden Mile Tower" style={errStyle(errOf('address'))} /></Field>
+                  <Field label="Venue name" error={errOf('venue')}><Input value={venue} onChange={(e) => setVenue(e.target.value)} placeholder="Venue name" style={errStyle(errOf('venue'))} /></Field>
+                  <Field label="Address" error={errOf('address')}><Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Street address" style={errStyle(errOf('address'))} /></Field>
                 </div>
               </Section>
 
@@ -308,9 +347,13 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
               <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <div className="mb-3 text-xs uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>Preview</div>
                 <div className="overflow-hidden rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                  <div className="grid h-32 place-items-center" style={{ background: 'linear-gradient(135deg, rgba(255,77,46,0.4), rgba(255,203,60,0.3))' }}>
-                    <ImageIcon size={28} style={{ color: 'rgba(255,255,255,0.6)' }} />
-                  </div>
+                  {image ? (
+                    <img src={image} alt="Event banner" className="h-32 w-full object-cover" />
+                  ) : (
+                    <div className="grid h-32 place-items-center" style={{ background: 'linear-gradient(135deg, rgba(255,77,46,0.4), rgba(255,203,60,0.3))' }}>
+                      <ImageIcon size={28} style={{ color: 'rgba(255,255,255,0.6)' }} />
+                    </div>
+                  )}
                   <div className="space-y-3 p-4">
                     <h3 className="line-clamp-2">{title || 'Your event title'}</h3>
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>

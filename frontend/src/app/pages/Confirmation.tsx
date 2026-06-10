@@ -3,7 +3,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, go, events }: { id: string; qty: number; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; price: number }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
   if (!event) {
     return (
@@ -39,7 +39,23 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Meta icon={Calendar} label="Date" value={`${event.date} · ${event.time}`} />
           <Meta icon={MapPin} label="Location" value={event.location.split(',')[0]} />
-          <Meta icon={Ticket} label="Tickets" value={`${qty} × $${event.price}`} />
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              <Ticket size={12} /> Tickets
+            </div>
+            <div className="mt-1 space-y-0.5" style={{ fontWeight: 600 }}>
+              {lines && lines.length > 0 ? (
+                lines.map((l) => (
+                  <div key={l.label} className="flex items-baseline justify-between gap-2">
+                    <span>{l.count} × {l.label}</span>
+                    <span>${(l.price * l.count).toFixed(2)}</span>
+                  </div>
+                ))
+              ) : (
+                <div>{qty} × ${event.price}</div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mt-5">

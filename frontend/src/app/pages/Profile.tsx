@@ -1,4 +1,4 @@
-import { Settings as SettingsIcon, LogOut } from 'lucide-react';
+import { Settings as SettingsIcon, LogOut, ChevronLeft } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import type { Route } from '../components/types';
 import type { AuthUser } from '../api';
@@ -19,6 +19,13 @@ export function Profile({
 
   return (
     <div className="mx-auto max-w-xl px-6 py-10">
+      <button
+        onClick={() => go({ name: 'landing' })}
+        className="mb-4 inline-flex items-center gap-1 text-sm transition hover:text-foreground"
+        style={{ color: 'var(--muted-foreground)' }}
+      >
+        <ChevronLeft size={14} /> Back to Events
+      </button>
       <div className="rounded-2xl border p-8 text-center" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>{email}</div>
 

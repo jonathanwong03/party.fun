@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Shield, CreditCard } from 'lucide-react';
+import { ChevronLeft, Shield, CreditCard, MapPin } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -8,8 +8,9 @@ import { StatusBadge } from '../components/StatusBadge';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, type Quote } from '../api';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
+import { required, cardError, cvcError } from '../components/validation';
 import { MonthYearPicker } from '../components/MonthYearPicker';
-import { required, emailError, cardError, expiryError, cvcError, matricError } from '../components/validation';
 
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
   const event = events.find((e) => e.id === id);
@@ -17,13 +18,15 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [form, setForm] = useState({
-    fullName: 'Jamie Tan',
-    email: 'jamie@u.nus.edu',
-    phone: '@jamiet',
-    matric: '',
+    nameOnCard: '',
     card: '',
     expiry: '',
     cvc: '',
+    country: '',
+    address: '',
+    city: '',
+    state: '',
+    zip: '',
   });
   const [attempted, setAttempted] = useState(false);
 
@@ -45,18 +48,33 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   }
   const money = (n: number) => `$${n.toFixed(2)}`;
 
-  // Phone / Telegram is the only optional field; everything else is required.
+  // Card expiry from the MM/YY picker: present and not already past.
+  const expiryError = (() => {
+    const m = /^(\d{2})\/(\d{2})$/.exec(form.expiry.trim());
+    if (!m) return 'Select an expiry date.';
+    const now = new Date();
+    const month = Number(m[1]);
+    const year = 2000 + Number(m[2]);
+    if (month < 1 || month > 12) return 'Select an expiry date.';
+    if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1)) return 'Card has expired.';
+    return null;
+  })();
+
+  // All fields are required (payment is simulated; nothing is stored).
   const errs = {
-    fullName: required(form.fullName),
-    email: emailError(form.email),
-    matric: matricError(form.matric),
+    nameOnCard: required(form.nameOnCard),
     card: cardError(form.card),
-    expiry: expiryError(form.expiry),
+    expiry: expiryError,
     cvc: cvcError(form.cvc),
+    country: required(form.country),
+    address: required(form.address),
+    city: required(form.city),
+    state: required(form.state),
+    zip: required(form.zip),
   };
   const hasErr = Object.values(errs).some(Boolean);
 
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
 
   const handleConfirm = async () => {
@@ -66,7 +84,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     try {
       setSubmitting(true);
       await onPledge(event.id, qty, event.price);
-      go({ name: 'confirmation', id, qty });
+      go({ name: 'confirmation', id, qty, lines: quote?.lines });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
     } finally {
@@ -106,27 +124,31 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4">Buyer details</h3>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Full name" placeholder="Jamie Tan" value={form.fullName} onChange={set('fullName')} error={attempted ? errs.fullName : null} />
-              <Field label="Email" placeholder="you@u.nus.edu" type="email" value={form.email} onChange={set('email')} error={attempted ? errs.email : null} />
-              <Field label="Phone / Telegram (optional)" placeholder="@yourhandle" value={form.phone} onChange={set('phone')} />
-              <Field label="Matric / Student ID" placeholder="A0234567X" value={form.matric} onChange={set('matric')} error={attempted ? errs.matric : null} />
+            <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Credit Card Details</h3>
+            <div className="space-y-4">
+              <Field label="Name on card" placeholder="Name on card" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
+              <Field label="Card number" placeholder="0000 0000 0000 0000" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Card expiration</Label>
+                  <MonthYearPicker value={form.expiry} onChange={(v) => setForm((p) => ({ ...p, expiry: v }))} error={!!(attempted && errs.expiry)} />
+                  {attempted && errs.expiry && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.expiry}</p>}
+                </div>
+                <Field label="Security code" placeholder="Code" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
+              </div>
             </div>
           </section>
 
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Payment</h3>
+            <h3 className="mb-4 flex items-center gap-2"><MapPin size={16} /> Billing address</h3>
             <div className="space-y-4">
-              <Field label="Card number" placeholder="4242 4242 4242 4242" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
+              <Field label="Country" placeholder="Country" value={form.country} onChange={set('country')} error={attempted ? errs.country : null} />
+              <Field label="Address" placeholder="Street address" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
               <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Expiry</Label>
-                  <MonthYearPicker value={form.expiry} onChange={(v) => setForm((p) => ({ ...p, expiry: v }))} error={!!(attempted && errs.expiry)} />
-                  {attempted && errs.expiry && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.expiry}</p>}
-                </div>
-                <Field label="CVC" placeholder="123" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
+                <Field label="City" placeholder="City" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
+                <Field label="State" placeholder="State" value={form.state} onChange={set('state')} error={attempted ? errs.state : null} />
               </div>
+              <Field label="ZIP code" placeholder="ZIP code" value={form.zip} onChange={set('zip')} error={attempted ? errs.zip : null} />
             </div>
           </section>
         </div>
@@ -135,7 +157,8 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <div className="relative h-32">
-              <ImageWithFallback src={event.image} alt={event.title} className="size-full object-cover" />
+              <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="size-full object-cover" />
+              {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
               <div className="absolute inset-0 bg-gradient-to-t from-[#14141b] to-transparent" />
               <div className="absolute left-3 top-3"><StatusBadge event={event} /></div>
             </div>

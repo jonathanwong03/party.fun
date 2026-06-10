@@ -1,4 +1,4 @@
-import type { EventItem, EventStatus, Role, StatusName } from './components/types';
+import type { EventItem, Role } from './components/types';
 import { supabase } from './supabase';
 
 export type ProfileTicket = {
@@ -32,22 +32,66 @@ export type MutationResponse = {
   profile: ProfileResponse;
 };
 
-export type AuthUser = { id: string; username: string; email: string; role: Role };
+export type AuthUser = { id: string; username: string; email: string; role: Role; avatarUrl?: string | null };
 
-// ── Auth ────────────────────────────────────────────────────────────────────
+export type Attendee = { name: string; username: string; avatarUrl: string | null };
+export type AttendeeDetail = { username: string; email: string; contact: string | null; socialLink: string | null; avatarUrl: string | null };
 
-export async function loginRequest(email: string, password: string): Promise<AuthUser> {
+// ── HTTP helper ───────────────────────────────────────────────────────────────
+// Data operations go through the Express backend, which forwards this Supabase
+// access token to Supabase so RLS + the RPC functions enforce access.
+
+async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const headers = new Headers(options.headers);
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (session) {
+    headers.set('Authorization', `Bearer ${session.access_token}`);
+  }
+  if (options.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await fetch(path, { ...options, headers });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try {
+      const body = await response.json();
+      message = body.message || message;
+    } catch {
+      // non-JSON error body; keep the default message
+    }
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+// ── Auth (Supabase, unchanged) ────────────────────────────────────────────────
+
+export async function loginRequest(identifier: string, password: string): Promise<AuthUser> {
+  // Allow signing in with a username as well as an email. Supabase Auth only
+  // accepts an email, so resolve the email from the (publicly readable) USER
+  // table when the identifier isn't an email address.
+  let email = identifier.trim();
+  if (!email.includes('@')) {
+    // USER rows are self-only readable, so resolve username → email through a
+    // SECURITY DEFINER RPC (returns just the one email for an exact username).
+    const { data: resolved, error } = await supabase.rpc('email_for_username', { p_username: email });
+    if (error || !resolved) throw new Error('No account found for that username.');
+    email = resolved as string;
+  }
+
   const { data, error } = await supabase.auth.signInWithPassword({ email, password });
   if (error) throw new Error(error.message);
 
   const { data: profile, error: profileError } = await supabase
     .from('USER')
-    .select('id, username, email, role')
+    .select('id, username, email, role, avatarUrl')
     .eq('id', data.user.id)
     .single();
 
   if (profileError || !profile) throw new Error('Could not load user profile.');
-  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role };
+  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl };
 }
 
 export async function registerRequest(input: {
@@ -55,202 +99,177 @@ export async function registerRequest(input: {
   email: string;
   password: string;
   role: Role;
+  avatarUrl?: string;
 }): Promise<AuthUser> {
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
-    options: { data: { username: input.username, name: input.username, role: input.role } },
+    options: { data: { username: input.username, name: input.username, role: input.role, avatarUrl: input.avatarUrl ?? null } },
   });
   if (error) throw new Error(error.message);
   if (!data.user) throw new Error('Sign up failed — please try again.');
-  return { id: data.user.id, username: input.username, email: input.email, role: input.role };
+  return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl };
+}
+
+// Persist a username change (own row); reject duplicates (USER.username is unique).
+export async function updateUsernameRequest(username: string): Promise<void> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from('USER').update({ username }).eq('id', userId);
+  if (error) {
+    if (error.code === '23505') throw new Error('That username is taken.');
+    throw new Error(error.message);
+  }
+}
+
+// Permanently delete the signed-in user's account (blocked server-side if they host events).
+export async function deleteAccountRequest(): Promise<void> {
+  const { error } = await supabase.rpc('delete_my_account');
+  if (error) {
+    if (error.code === 'P0001' || /has_events/.test(error.message)) {
+      throw new Error('Delete your hosted events before deleting your account.');
+    }
+    throw new Error(error.message);
+  }
+  await supabase.auth.signOut();
 }
 
 export async function logoutRequest(): Promise<void> {
   await supabase.auth.signOut();
 }
 
-// ── Event mapping ────────────────────────────────────────────────────────────
+// ── Storage uploads (direct to Supabase, scoped to the user's folder) ─────────
 
-function sgDate(iso: string, opts: Intl.DateTimeFormatOptions): string {
-  return new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', ...opts }).format(new Date(iso));
+function fileExt(file: File): string {
+  const fromName = file.name.split('.').pop();
+  if (fromName && fromName.length <= 5) return fromName.toLowerCase();
+  return (file.type.split('/')[1] || 'png').toLowerCase();
 }
 
-function mapRow(row: any, userId: string | null): EventItem {
-  const statuses: { statusName: string; price: number; ticketCapacity: number; sold: number }[] =
-    Array.isArray(row.statuses) ? row.statuses : [];
-  const LABELS: Record<string, string> = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
-
-  const eb = statuses.find((s) => s.statusName === 'early_bird');
-  const activeName = eb && eb.sold >= eb.ticketCapacity ? 'greenlit' : 'early_bird';
-  const current = statuses.find((s) => s.statusName === activeName) ?? statuses[0];
-
-  const activeTicketCount: number = row.active_ticket_count ?? 0;
-  const hypeThreshold: number = row.hypeThreshold ?? 1;
-  const maxCapacity: number = row.maxCapacity ?? 0;
-
-  return {
-    id: row.id,
-    hostId: row.hostId,
-    title: row.title ?? '',
-    organiser: row.organiser_name ?? 'Unknown',
-    date: row.startDate ? sgDate(row.startDate, { weekday: 'short', month: 'short', day: 'numeric' }) : '',
-    time: row.startDate ? sgDate(row.startDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
-    endTime: row.endDate ? sgDate(row.endDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
-    endDate: row.endDate ? sgDate(row.endDate, { weekday: 'short', month: 'short', day: 'numeric' }) : '',
-    startsAt: row.startDate ?? '',
-    endsAt: row.endDate ?? '',
-    deadlineAt: row.deadlineAt ?? '',
-    location: row.location ?? '',
-    description: row.description ?? '',
-    image: row.imageUrl ?? '',
-    price: current?.price ?? 0,
-    statusLabel: LABELS[activeName] ?? 'Early Birds',
-    hypePercentage: Math.min(100, Math.round((activeTicketCount / hypeThreshold) * 100)),
-    hypeThreshold,
-    activeTicketCount,
-    maxCapacity,
-    spotsLeft: Math.max(0, maxCapacity - activeTicketCount),
-    status: (row.derived_status ?? 'early_bird') as EventStatus,
-    deadline: row.deadlineAt
-      ? sgDate(row.deadlineAt, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
-      : '',
-    statuses: statuses.map((s) => ({
-      statusName: s.statusName as StatusName,
-      label: LABELS[s.statusName] ?? s.statusName,
-      price: s.price,
-      qty: s.ticketCapacity,
-      sold: s.sold,
-    })),
-    mine: userId != null ? row.hostId === userId : undefined,
-  };
-}
-
-// ── Reads ────────────────────────────────────────────────────────────────────
-
-export async function fetchEvents(_role: Role | null): Promise<EventItem[]> {
+async function currentUserId(): Promise<string> {
   const { data: { session } } = await supabase.auth.getSession();
-  const userId = session?.user.id ?? null;
-  const { data, error } = await supabase.rpc('get_events');
-  if (error) throw new Error(error.message);
-  return (data ?? []).map((row: any) => mapRow(row, userId));
+  if (!session) throw new Error('You must be signed in.');
+  return session.user.id;
 }
 
-export async function fetchProfile(_role: Role): Promise<ProfileResponse> {
-  const { data, error } = await supabase.rpc('get_profile');
+// Uploads/replaces the signed-in user's avatar and saves the URL on their USER row.
+export async function uploadAvatar(file: File): Promise<string> {
+  const userId = await currentUserId();
+  const path = `${userId}/avatar.${fileExt(file)}`;
+  const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type });
   if (error) throw new Error(error.message);
-  return data as ProfileResponse;
+  const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(path);
+  // Cache-bust so a replaced image refreshes immediately.
+  const url = `${publicUrl}?t=${Date.now()}`;
+  const { error: updateError } = await supabase.from('USER').update({ avatarUrl: url }).eq('id', userId);
+  if (updateError) throw new Error(updateError.message);
+  return url;
 }
 
-export async function fetchQuote(_role: Role | null, eventId: string, qty: number): Promise<Quote> {
-  const { data, error } = await supabase.rpc('get_quote', { p_event_id: eventId, p_qty: qty });
+// Selects a preset avatar (a /avatars/*.svg path) as the user's profile picture.
+export async function setAvatar(url: string): Promise<string> {
+  const userId = await currentUserId();
+  const { error } = await supabase.from('USER').update({ avatarUrl: url }).eq('id', userId);
   if (error) throw new Error(error.message);
-  if (data?.error) {
-    throw new Error(data.error === 'not_enough_tickets' ? 'Not enough tickets available.' : data.error);
-  }
-  return data as Quote;
+  return url;
 }
 
-// ── User writes ──────────────────────────────────────────────────────────────
-
-export async function createPledge(role: Role, eventId: string, qty: number, _amount: number): Promise<MutationResponse> {
-  const { data, error } = await supabase.rpc('create_pledge', { p_event_id: eventId, p_qty: qty });
+export async function removeAvatar(): Promise<void> {
+  const userId = await currentUserId();
+  await supabase.storage.from('avatars').remove([`${userId}/avatar.png`, `${userId}/avatar.jpg`, `${userId}/avatar.jpeg`, `${userId}/avatar.webp`, `${userId}/avatar.gif`]);
+  const { error } = await supabase.from('USER').update({ avatarUrl: null }).eq('id', userId);
   if (error) throw new Error(error.message);
-  if (data?.error) {
-    const msgs: Record<string, string> = {
-      own_event: 'You cannot pledge for your own event.',
-      active_booking_exists: 'You already have active tickets for this event.',
-      not_enough_tickets: 'Not enough tickets available.',
-    };
-    throw new Error(msgs[data.error] ?? data.error);
-  }
-  const [events, profile] = await Promise.all([fetchEvents(role), fetchProfile(role)]);
-  return { status: 'ok', event: events.find((e) => e.id === eventId) ?? null, profile };
 }
 
-export async function giveAwayTickets(role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {
-  const { data: bk } = await supabase.from('BOOKINGS').select('eventId').eq('id', Number(bookingId)).single();
-  const eventId: string | undefined = bk?.eventId;
+// Uploads an event banner and returns its public URL (saved on the event when published).
+export async function uploadEventImage(file: File): Promise<string> {
+  const userId = await currentUserId();
+  const path = `${userId}/${Date.now()}.${fileExt(file)}`;
+  const { error } = await supabase.storage.from('event-images').upload(path, file, { upsert: true, contentType: file.type });
+  if (error) throw new Error(error.message);
+  const { data: { publicUrl } } = supabase.storage.from('event-images').getPublicUrl(path);
+  return publicUrl;
+}
 
-  const { data, error } = await supabase.rpc('give_away_tickets', {
-    p_booking_id: Number(bookingId),
-    p_quantity: quantity,
+// ── Reads ─────────────────────────────────────────────────────────────────────
+
+export function fetchEvents(_role: Role | null): Promise<EventItem[]> {
+  return apiFetch<EventItem[]>('/api/events');
+}
+
+export function fetchProfile(_role: Role): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>('/api/profile');
+}
+
+export function fetchAttendees(eventId: string): Promise<Attendee[]> {
+  return apiFetch<Attendee[]>(`/api/events/${eventId}/attendees`);
+}
+
+export function fetchAttendeeDetails(eventId: string): Promise<AttendeeDetail[]> {
+  return apiFetch<AttendeeDetail[]>(`/api/events/${eventId}/attendees/details`);
+}
+
+export function fetchQuote(_role: Role | null, eventId: string, qty: number): Promise<Quote> {
+  return apiFetch<Quote>(`/api/checkout/${eventId}/quote?qty=${qty}`);
+}
+
+// ── User writes ───────────────────────────────────────────────────────────────
+
+export function createPledge(_role: Role, eventId: string, qty: number, _amount: number): Promise<MutationResponse> {
+  return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
+    method: 'POST',
+    body: JSON.stringify({ qty }),
   });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
-
-  const [events, profile] = await Promise.all([fetchEvents(role), fetchProfile(role)]);
-  return { status: 'ok', event: eventId ? (events.find((e) => e.id === eventId) ?? null) : null, profile };
 }
 
-export async function deleteBooking(role: Role, bookingId: string): Promise<MutationResponse> {
-  const { data: bk } = await supabase.from('BOOKINGS').select('eventId').eq('id', Number(bookingId)).single();
-  const eventId: string | undefined = bk?.eventId;
-
-  const { data, error } = await supabase.rpc('soft_delete_booking', { p_booking_id: Number(bookingId) });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
-
-  const [events, profile] = await Promise.all([fetchEvents(role), fetchProfile(role)]);
-  return { status: 'ok', event: eventId ? (events.find((e) => e.id === eventId) ?? null) : null, profile };
+export function giveAwayTickets(_role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {
+  return apiFetch<MutationResponse>(`/api/profile/bookings/${bookingId}/give-away`, {
+    method: 'POST',
+    body: JSON.stringify({ quantity }),
+  });
 }
 
-// ── Organiser writes ─────────────────────────────────────────────────────────
+export function deleteBooking(_role: Role, bookingId: string): Promise<MutationResponse> {
+  return apiFetch<MutationResponse>(`/api/profile/bookings/${bookingId}`, { method: 'DELETE' });
+}
+
+// ── Organiser writes ──────────────────────────────────────────────────────────
 
 export async function createEventRequest(event: EventItem): Promise<string> {
   if (!event.startsAt || !event.endsAt || !event.deadlineAt) {
     throw new Error('Event is missing date information.');
   }
-  const eb = event.statuses.find((s) => s.statusName === 'early_bird');
-  const gl = event.statuses.find((s) => s.statusName === 'greenlit');
-
-  const { data, error } = await supabase.rpc('create_event', {
-    p_title:             event.title,
-    p_description:       event.description,
-    p_location:          event.location,
-    p_start_date:        event.startsAt,
-    p_end_date:          event.endsAt,
-    p_image_url:         event.image ?? '',
-    p_hype_threshold:    event.hypeThreshold,
-    p_max_capacity:      event.maxCapacity,
-    p_deadline:          event.deadlineAt,
-    p_early_price:       eb?.price ?? 0,
-    p_early_capacity:    eb?.qty ?? 0,
-    p_greenlit_price:    gl?.price ?? 0,
-    p_greenlit_capacity: gl?.qty ?? 0,
+  const data = await apiFetch<{ eventId: string }>('/api/hosted-events/events', {
+    method: 'POST',
+    body: JSON.stringify(event),
   });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
-  return data.eventId as string;
+  return data.eventId;
 }
 
 export async function updateEventRequest(event: EventItem): Promise<void> {
   if (!event.startsAt || !event.endsAt || !event.deadlineAt) return;
-  const eb = event.statuses.find((s) => s.statusName === 'early_bird');
-  const gl = event.statuses.find((s) => s.statusName === 'greenlit');
-
-  const { data, error } = await supabase.rpc('update_event', {
-    p_event_id:          event.id,
-    p_title:             event.title,
-    p_description:       event.description,
-    p_location:          event.location,
-    p_start_date:        event.startsAt,
-    p_end_date:          event.endsAt,
-    p_image_url:         event.image ?? '',
-    p_hype_threshold:    event.hypeThreshold,
-    p_max_capacity:      event.maxCapacity,
-    p_deadline:          event.deadlineAt,
-    p_early_price:       eb?.price ?? 0,
-    p_early_capacity:    eb?.qty ?? 0,
-    p_greenlit_price:    gl?.price ?? 0,
-    p_greenlit_capacity: gl?.qty ?? 0,
+  await apiFetch(`/api/hosted-events/events/${event.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify(event),
   });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
 }
 
 export async function deleteEventRequest(eventId: string): Promise<void> {
-  const { data, error } = await supabase.rpc('delete_event', { p_event_id: eventId });
-  if (error) throw new Error(error.message);
-  if (data?.error) throw new Error(data.error);
+  await apiFetch(`/api/hosted-events/events/${eventId}`, { method: 'DELETE' });
+}
+
+// ── Organiser drafts (persisted per-user via the backend) ─────────────────────
+
+export function fetchDrafts(): Promise<EventItem[]> {
+  return apiFetch<EventItem[]>('/api/hosted-events/drafts');
+}
+
+export function saveDraftRequest(draft: EventItem): Promise<EventItem> {
+  return apiFetch<EventItem>('/api/hosted-events/drafts', {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  });
+}
+
+export function deleteDraftRequest(id: string): Promise<void> {
+  return apiFetch<void>(`/api/hosted-events/drafts/${id}`, { method: 'DELETE' });
 }
