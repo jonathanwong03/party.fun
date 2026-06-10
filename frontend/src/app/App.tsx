@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket } from './api';
 import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
@@ -196,10 +196,19 @@ function AppShell() {
   };
 
   const [drafts, setDrafts] = useState<EventItem[]>([]);
-  // Upsert: re-saving a resumed draft replaces the existing one rather than duplicating it.
-  const addDraft = (d: EventItem) =>
+  // Optimistic local upsert for instant UI, then persist to Supabase and reconcile
+  // the server-assigned id (new drafts arrive with a temporary client id).
+  const addDraft = async (d: EventItem) => {
     setDrafts((prev) => (prev.some((p) => p.id === d.id) ? prev.map((p) => (p.id === d.id ? d : p)) : [d, ...prev]));
-  const deleteDraft = (id: string) => setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try {
+      await saveDraftRequest(d);
+      setDrafts(await fetchDrafts());
+    } catch { /* keep optimistic copy on failure */ }
+  };
+  const deleteDraft = async (id: string) => {
+    setDrafts((prev) => prev.filter((d) => d.id !== id));
+    try { await deleteDraftRequest(id); } catch { /* already removed from state */ }
+  };
 
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
@@ -251,6 +260,13 @@ function AppShell() {
           setProfileTickets(profile.tickets);
         } else {
           setProfileTickets([]);
+        }
+        if (role === 'organiser') {
+          const loadedDrafts = await fetchDrafts();
+          if (ignore) return;
+          setDrafts(loadedDrafts);
+        } else {
+          setDrafts([]);
         }
       } catch (error) {
         if (ignore) return;

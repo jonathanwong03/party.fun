@@ -143,6 +143,42 @@ export async function deleteBooking(sb, userId, bookingId) {
   return mutationResult(sb, userId, eventId);
 }
 
+// ── Drafts (per-organiser, RLS owner-only; payload is the EventItem JSON) ────
+
+const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
+const asDraft = (row) => ({ ...row.payload, id: row.id });
+
+export async function listDrafts(sb) {
+  const { data, error } = await sb.from('EVENT_DRAFTS').select('id, payload').order('updatedAt', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data ?? []).map(asDraft);
+}
+
+export async function saveDraft(sb, userId, draft) {
+  if (isUuid(draft.id)) {
+    const { data, error } = await sb
+      .from('EVENT_DRAFTS')
+      .update({ payload: draft, updatedAt: new Date().toISOString() })
+      .eq('id', draft.id)
+      .select('id, payload')
+      .single();
+    if (error) throw new Error(error.message);
+    return asDraft(data);
+  }
+  const { data, error } = await sb
+    .from('EVENT_DRAFTS')
+    .insert({ userId, payload: draft })
+    .select('id, payload')
+    .single();
+  if (error) throw new Error(error.message);
+  return asDraft(data);
+}
+
+export async function deleteDraft(sb, id) {
+  const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
 // ── Organiser writes ───────────────────────────────────────────────────────
 
 export async function createEvent(sb, e) {

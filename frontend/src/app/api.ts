@@ -256,3 +256,20 @@ export async function updateEventRequest(event: EventItem): Promise<void> {
 export async function deleteEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}`, { method: 'DELETE' });
 }
+
+// ── Organiser drafts (persisted per-user via the backend) ─────────────────────
+
+export function fetchDrafts(): Promise<EventItem[]> {
+  return apiFetch<EventItem[]>('/api/hosted-events/drafts');
+}
+
+export function saveDraftRequest(draft: EventItem): Promise<EventItem> {
+  return apiFetch<EventItem>('/api/hosted-events/drafts', {
+    method: 'POST',
+    body: JSON.stringify(draft),
+  });
+}
+
+export function deleteDraftRequest(id: string): Promise<void> {
+  return apiFetch<void>(`/api/hosted-events/drafts/${id}`, { method: 'DELETE' });
+}
