@@ -12,8 +12,6 @@ import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { required, cardError, cvcError } from '../components/validation';
 import { MonthYearPicker } from '../components/MonthYearPicker';
 
-const COUNTRIES = ['Singapore', 'Malaysia', 'Indonesia', 'Thailand', 'Philippines', 'Vietnam', 'Other'];
-
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
   const event = events.find((e) => e.id === id);
   const [quote, setQuote] = useState<Quote | null>(null);
@@ -144,7 +142,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
             <h3 className="mb-4 flex items-center gap-2"><MapPin size={16} /> Billing address</h3>
             <div className="space-y-4">
-              <SelectField label="Country" value={form.country} onChange={set('country')} placeholder="Country" options={COUNTRIES} error={attempted ? errs.country : null} />
+              <Field label="Country" placeholder="Country" value={form.country} onChange={set('country')} error={attempted ? errs.country : null} />
               <Field label="Address" placeholder="123 Orchard Road" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
               <div className="grid grid-cols-2 gap-4">
                 <Field label="City" placeholder="Singapore" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
@@ -219,26 +217,6 @@ function Field({ label, error, ...props }: { label: string; error?: string | nul
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
-      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
-    </div>
-  );
-}
-
-function SelectField({ label, error, options, placeholder, value, onChange }: { label: string; error?: string | null; options: string[]; placeholder: string; value: string; onChange: (e: React.ChangeEvent<HTMLSelectElement>) => void }) {
-  return (
-    <div>
-      <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
-      <select
-        value={value}
-        onChange={onChange}
-        className="w-full rounded-md border px-3 text-sm outline-none"
-        style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42, color: value ? 'var(--foreground)' : 'var(--muted-foreground)' }}
-      >
-        <option value="" disabled>{placeholder}</option>
-        {options.map((o) => (
-          <option key={o} value={o} style={{ color: 'var(--foreground)', background: 'var(--surface)' }}>{o}</option>
-        ))}
-      </select>
       {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
     </div>
   );
