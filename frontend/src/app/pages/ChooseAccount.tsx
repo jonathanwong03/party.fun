@@ -27,9 +27,9 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
         <Card
           icon={<Megaphone size={20} />}
           accent="#29e07a"
-          title="Admin / Organiser"
+          title="Organiser"
           desc="Create, manage, and launch events for your CCA or society."
-          onClick={() => go({ name: 'register-admin' })}
+          onClick={() => go({ name: 'register-organiser' })}
         />
       </div>
     </AuthShell>

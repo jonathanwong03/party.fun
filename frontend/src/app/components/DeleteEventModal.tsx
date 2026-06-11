@@ -3,6 +3,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { NumberStepper } from './NumberStepper';
 
 export function DeleteEventModal({
   eventName,
@@ -13,6 +14,10 @@ export function DeleteEventModal({
   leadIn = "You're about to delete",
   warning = 'All pledges will be voided and any captured funds refunded. Backers will be notified by email.',
   actionLabel = 'Delete Event',
+  quantity,
+  maxQuantity,
+  onQuantityChange,
+  quantityPrompt,
 }: {
   eventName: string;
   onCancel: () => void;
@@ -22,6 +27,10 @@ export function DeleteEventModal({
   leadIn?: string;
   warning?: string;
   actionLabel?: string;
+  quantity?: number;
+  maxQuantity?: number;
+  onQuantityChange?: (quantity: number) => void;
+  quantityPrompt?: string;
 }) {
   const [confirmText, setConfirmText] = useState('');
   const canDelete = confirmText.trim().toLowerCase() === confirmWord.toLowerCase();
@@ -54,6 +63,17 @@ export function DeleteEventModal({
           <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.25)', color: '#ff7a93' }}>
             {warning}
           </div>
+
+          {quantity !== undefined && maxQuantity !== undefined && onQuantityChange && (
+            <div className="flex items-center justify-between gap-4">
+              <Label className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                {quantityPrompt ?? 'Quantity'}
+              </Label>
+              <div className="w-40">
+                <NumberStepper value={quantity} onChange={onQuantityChange} min={1} max={maxQuantity} />
+              </div>
+            </div>
+          )}
 
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>

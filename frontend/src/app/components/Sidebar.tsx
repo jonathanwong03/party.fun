@@ -16,19 +16,19 @@ export function Sidebar({
   route: Route;
   go: (r: Route) => void;
 }) {
-  const isAdmin = role === 'admin';
+  const isOrganiser = role === 'organiser';
 
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
     { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
   ];
 
-  const adminOnly: Item[] = [
-    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'admin' }, active: route.name === 'admin' },
+  const organiserOnly: Item[] = [
+    { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'hosted-events' }, active: route.name === 'hosted-events' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
-    { label: 'Analytics', icon: BarChart3, target: { name: 'admin' }, active: false },
-    { label: 'Attendees', icon: Users, target: { name: 'admin' }, active: false },
-    { label: 'Tickets', icon: Ticket, target: { name: 'admin' }, active: false },
+    { label: 'Analytics', icon: BarChart3, target: { name: 'hosted-events' }, active: false },
+    { label: 'Attendees', icon: Users, target: { name: 'hosted-events' }, active: false },
+    { label: 'Tickets', icon: Ticket, target: { name: 'hosted-events' }, active: false },
   ];
 
   const tail: Item[] = [
@@ -36,7 +36,7 @@ export function Sidebar({
     { label: 'Settings', icon: Settings, target: { name: 'settings' }, active: route.name === 'settings' },
   ];
 
-  const items = [...baseItems, ...(isAdmin ? adminOnly : []), ...tail];
+  const items = [...baseItems, ...(isOrganiser ? organiserOnly : []), ...tail];
 
   const handleClick = (target: Route) => {
     go(target);
@@ -109,7 +109,7 @@ export function Sidebar({
             Need help?
           </div>
           <div className="text-sm underline" style={{ color: '#f5f5f7', fontWeight: 500 }}>
-            {isAdmin ? 'Read the organiser guide' : 'Read the attendee guide'}
+            {isOrganiser ? 'Read the organiser guide' : 'Read the attendee guide'}
           </div>
         </div>
       </aside>

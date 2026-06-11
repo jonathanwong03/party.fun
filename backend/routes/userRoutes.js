@@ -1,9 +1,11 @@
 import express from 'express';
-import { cancelTicket, getProfile } from '../controllers/userController.js';
+import { giveAwayBookingTickets, getProfile, deleteBooking } from '../controllers/userController.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 
 const router = express.Router();
 
-router.get('/', getProfile);
-router.post('/tickets/:eventId/cancel', cancelTicket);
+router.get('/', requireAuth, getProfile);
+router.post('/bookings/:bookingId/give-away', requireAuth, giveAwayBookingTickets);
+router.delete('/bookings/:bookingId', requireAuth, deleteBooking);
 
 export default router;

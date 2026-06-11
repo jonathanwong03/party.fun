@@ -8,40 +8,42 @@ import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 
 export function Landing({
   go,
-  myEventIds = new Set<string>(),
+  purchasedEventIds = new Set<string>(),
   events,
   loading = false,
   error = null,
 }: {
   go: (r: Route) => void;
-  myEventIds?: Set<string>;
+  purchasedEventIds?: Set<string>;
   events: EventItem[];
   loading?: boolean;
   error?: string | null;
 }) {
   // Filter and search query states
   const [q, setQ] = useState('');
-  const [loc, setLoc] = useState('all');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
-  // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
-  //    and events the admin created themselves (those belong only in the Admin Dashboard).
-  const available = useMemo(() => events.filter((e) => !myEventIds.has(e.id) && !e.mine), [events, myEventIds]);
-  const featured = available[0];
-  const rest = available.slice(1);
+  // Organiser-owned, globally cancelled, and completed events do not belong in discovery.
+  const available = useMemo(
+    () => events.filter((e) => !e.mine && e.status !== 'cancelled' && e.status !== 'completed'),
+    [events],
+  );
+  // "Most hyped" = highest backend-computed fill ratio (uncapped, so 106% beats 105%
+  // though both display as 100%); ties keep the first encountered.
+  const featured = available.length ? available.reduce((best, e) => ((e.hypeRatio ?? 0) > (best.hypeRatio ?? 0) ? e : best)) : undefined;
+  const rest = available.filter((e) => e.id !== featured?.id);
 
   const filtered = useMemo(() => {
     return rest.filter((e) => {
       if (q && !`${e.title} ${e.organiser}`.toLowerCase().includes(q.toLowerCase())) return false;
-      if (loc !== 'all' && !e.location.toLowerCase().includes(loc)) return false;
       if (price === 'lt15' && e.price >= 15) return false;
       if (price === '15-25' && (e.price < 15 || e.price > 25)) return false;
       if (price === 'gt25' && e.price <= 25) return false;
       if (hype !== 'all' && eventBadgeKey(e) !== hype) return false;
       return true;
     });
-  }, [q, loc, hype, price, rest]);
+  }, [q, hype, price, rest]);
 
   if (loading) {
     return (
@@ -64,12 +66,11 @@ export function Landing({
       {/* Hero */}
       <section className="relative mb-10 overflow-hidden rounded-3xl border p-8 md:p-12"
         style={{ borderColor: 'var(--border)', background: 'linear-gradient(135deg, rgba(255,77,46,0.18), rgba(124,92,255,0.10) 50%, rgba(41,224,122,0.10))' }}>
-        <div className="pointer-events-none absolute -right-20 -top-20 size-[420px] rounded-full" style={{ background: 'radial-gradient(closest-side, rgba(255,77,46,0.35), transparent 70%)' }} />
         <div className="relative max-w-2xl">
           
           <h1 className="mt-4" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.03em' }}>Greenlit the parties <span style={{ color: '#ff4d2e' }}>your campus</span> actually wants.</h1>
           <p className="mt-4 max-w-xl text-base" style={{ color: 'var(--muted-foreground)' }}>
-            Pledge early, pay less. If the event hits its hype threshold, it's on — if not, you're automatically refunded. No risk, just hype.
+            Pledge early, pay less. If the event reaches its hype threshold, it is confirmed. If not, active tickets are automatically refunded.
           </p>
           <div className="mt-6 flex flex-wrap gap-2 text-xs">
             <span className="rounded-full border px-3 py-1.5" style={{ borderColor: 'var(--border)' }}>✓ Refund-guaranteed</span>
@@ -82,11 +83,10 @@ export function Landing({
       {featured && (
         <>
           <div className="mb-4 flex items-baseline justify-between">
-            <h2>Featured tonight</h2>
-            <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>The most hyped event on campus</span>
+            <h2>Most Hyped</h2>
           </div>
           <div className="mb-12">
-            <EventCard event={featured} featured onView={() => go({ name: 'event', id: featured.id })} />
+            <EventCard event={featured} featured alreadyPurchased={purchasedEventIds.has(featured.id)} onView={() => go({ name: 'event', id: featured.id })} />
           </div>
         </>
       )}
@@ -103,18 +103,6 @@ export function Landing({
             style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
           />
         </div>
-        <Select value={loc} onValueChange={setLoc}>
-          <SelectTrigger className="w-full md:w-40" style={{ background: 'var(--surface)' }}>
-            <SelectValue placeholder="Location" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All locations</SelectItem>
-            <SelectItem value="nus">NUS</SelectItem>
-            <SelectItem value="ntu">NTU</SelectItem>
-            <SelectItem value="smu">SMU</SelectItem>
-            <SelectItem value="sentosa">Sentosa</SelectItem>
-          </SelectContent>
-        </Select>
         <Select value={price} onValueChange={setPrice}>
           <SelectTrigger className="w-full md:w-36" style={{ background: 'var(--surface)' }}>
             <SelectValue placeholder="Price" />
@@ -132,10 +120,8 @@ export function Landing({
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All hype</SelectItem>
-            <SelectItem value="tier0">Early Birds</SelectItem>
-            <SelectItem value="tier1">Hype Builders</SelectItem>
-            <SelectItem value="tier2">Main Crowd</SelectItem>
-            <SelectItem value="greenlit">Confirmed</SelectItem>
+            <SelectItem value="early_bird">Early Birds</SelectItem>
+            <SelectItem value="greenlit">Greenlit</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -143,7 +129,7 @@ export function Landing({
       {/* Grid */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((e) => (
-          <EventCard key={e.id} event={e} onView={() => go({ name: 'event', id: e.id })} />
+          <EventCard key={e.id} event={e} alreadyPurchased={purchasedEventIds.has(e.id)} onView={() => go({ name: 'event', id: e.id })} />
         ))}
       </div>
 

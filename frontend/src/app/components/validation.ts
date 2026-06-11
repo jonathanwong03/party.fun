@@ -1,5 +1,5 @@
 // Shared form validators + message helpers, reused across Checkout, Create Event,
-// Register User and Register Admin so every form behaves identically.
+// Register User and Register Organiser so every form behaves identically.
 
 export const isBlank = (v: string) => v.trim() === '';
 
@@ -46,6 +46,56 @@ export const isValidCVC = (v: string) => /^\d{3}$/.test(v.trim());
 // Time: strictly 12-hour HH:MM AM/PM (e.g. "10:00 PM").
 export const isValidTime = (v: string) => /^(0?[1-9]|1[0-2]):[0-5]\d\s?(AM|PM)$/i.test(v.trim());
 
+// Minutes since midnight for a 12-hour time string (e.g. "12:30 AM" -> 30).
+const timeToMinutes = (v: string) => {
+  const m = /^(\d{1,2}):([0-5]\d)\s?(AM|PM)$/i.exec(v.trim());
+  if (!m) return null;
+  let h = +m[1] % 12;
+  if (m[3].toUpperCase() === 'PM') h += 12;
+  return h * 60 + +m[2];
+};
+
+// End time may run past midnight (an earlier clock time = next day), so the only
+// invalid case is an end equal to the start (a zero-length event).
+export const endTimeError = (start: string, end: string) => {
+  if (!isValidTime(start) || !isValidTime(end)) return null;
+  return timeToMinutes(start) === timeToMinutes(end) ? 'End time cannot be the same as the start time.' : null;
+};
+
+// Combine a DD/MM/YYYY date and a H:MM AM/PM time into a Date (null if either is invalid).
+const toDateTime = (date: string, time: string) => {
+  const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(date.trim());
+  const t = timeToMinutes(time);
+  if (!dm || t == null) return null;
+  return new Date(+dm[3], +dm[2] - 1, +dm[1], Math.floor(t / 60), t % 60);
+};
+
+// End (date + time) must not be earlier than start (date + time). With separate
+// dates, an overnight event simply uses the next day as the end date.
+export const scheduleError = (startDate: string, startTime: string, endDate: string, endTime: string) => {
+  const startAt = toDateTime(startDate, startTime);
+  const endAt = toDateTime(endDate, endTime);
+  if (!startAt || !endAt) return null;
+  // Strictly after: an end equal to (or before) the start is invalid.
+  return endAt.getTime() <= startAt.getTime() ? 'End must be after the start.' : null;
+};
+
+// A date + time combination must be strictly in the future (after now).
+export const futureDateTimeError = (date: string, time: string) => {
+  const at = toDateTime(date, time);
+  if (!at) return null;
+  return at.getTime() <= Date.now() ? 'Must be a date and time in the future.' : null;
+};
+
+// The hype deadline must fall on or before the event's start (date + start time).
+export const deadlineEventError = (eventDate: string, startTime: string, deadlineDate: string, deadlineTime: string) => {
+  const eventAt = toDateTime(eventDate, startTime);
+  const deadlineAt = toDateTime(deadlineDate, deadlineTime);
+  if (!eventAt || !deadlineAt) return null;
+  // Strictly before: a deadline at or after the event start is invalid.
+  return deadlineAt.getTime() >= eventAt.getTime() ? 'Deadline must be before the event start.' : null;
+};
+
 // Deadline: a DD/MM/YYYY date and a 12-hour time, e.g. "10/06/2025, 11:59 PM".
 export const isValidDeadline = (v: string) => {
   const m = /^(.+?),?\s+(\d{1,2}:[0-5]\d\s?(?:AM|PM))$/i.exec(v.trim());
@@ -75,19 +125,19 @@ export const required = (v: string) => (isBlank(v) ? 'This field is required.' :
 export const emailError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidEmail(v) ? null : 'Enter a valid email address.';
 
+// Format/calendar validity only — "future" is enforced at datetime level via futureDateTimeError.
 export const dateError = (v: string) =>
   isBlank(v) ? 'This field is required.'
     : !isValidDate(v) ? 'Enter a valid date in the format DD/MM/YYYY.'
-    : !isFutureDate(v) ? 'Please select a date that is after today.'
     : null;
 
 export const timeError = (v: string) =>
   isBlank(v) ? 'This field is required.' : isValidTime(v) ? null : 'Enter a valid time in the format HH:MM AM/PM.';
 
+// Format only — "future" is enforced at datetime level via futureDateTimeError.
 export const deadlineError = (v: string) =>
   isBlank(v) ? 'This field is required.'
     : !isValidDeadline(v) ? 'Enter a valid date and time in the format DD/MM/YYYY, HH:MM AM/PM.'
-    : !isDeadlineFuture(v) ? 'Please select a date that is after today.'
     : null;
 
 export const cardError = (v: string) =>
@@ -104,3 +154,19 @@ export const cvcError = (v: string) =>
 
 export const confirmError = (pw: string, c: string) =>
   isBlank(c) ? 'This field is required.' : c !== pw ? 'Passwords do not match.' : null;
+
+// Matric / Student ID: one letter, one-or-more digits, one trailing letter (e.g. A0234567X).
+export const isValidMatric = (v: string) => /^[A-Za-z]\d+[A-Za-z]$/.test(v.trim());
+
+export const matricError = (v: string) =>
+  isBlank(v) ? 'This field is required.'
+    : isValidMatric(v) ? null
+    : 'Format: a letter, digits, then a letter (e.g. A0234567X).';
+
+// Price: a number with strictly two decimal places (e.g. 8.95, 1.00, 25.67).
+export const isValidPrice = (v: string) => /^\d+\.\d{2}$/.test(v.trim());
+
+export const priceError = (v: string) =>
+  isBlank(v) ? 'This field is required.'
+    : isValidPrice(v) ? null
+    : 'Enter a price with 2 decimals (e.g. 8.95).';

@@ -2,32 +2,44 @@ import { Calendar, MapPin } from 'lucide-react';
 import { Button } from './ui/button';
 import { HypeMeter } from './HypeMeter';
 import { StatusBadge } from './StatusBadge';
-import { getActiveTier, TIER_COLORS, type EventItem } from './types';
+import { getActiveStatus, type EventItem } from './types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
+import { DEFAULT_EVENT_IMAGE } from './media';
 
 export function EventCard({
   event,
   onView,
   featured = false,
+  alreadyPurchased = false,
 }: {
   event: EventItem;
   onView: () => void;
   featured?: boolean;
+  alreadyPurchased?: boolean;
 }) {
-  const tier = getActiveTier(event);
-  const tierColor = event.status === 'cancelled' ? '#5a5a66' : TIER_COLORS[tier];
+  const statusIndex = getActiveStatus(event);
 
   return (
     <div
-      className="group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)]"
+      className={`group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)] ${alreadyPurchased ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d2e]' : ''}`}
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+      role={alreadyPurchased ? 'button' : undefined}
+      tabIndex={alreadyPurchased ? 0 : undefined}
+      onClick={alreadyPurchased ? onView : undefined}
+      onKeyDown={alreadyPurchased ? (eventKey) => {
+        if (eventKey.key === 'Enter' || eventKey.key === ' ') {
+          eventKey.preventDefault();
+          onView();
+        }
+      } : undefined}
     >
       <div className={`relative ${featured ? 'h-64' : 'h-44'} overflow-hidden`}>
         <ImageWithFallback
-          src={event.image}
+          src={event.image || DEFAULT_EVENT_IMAGE}
           alt={event.title}
           className="size-full object-cover transition group-hover:scale-105"
         />
+        {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
         <div className="absolute left-3 top-3">
           <StatusBadge event={event} />
@@ -38,7 +50,7 @@ export function EventCard({
           style={{ background: 'rgba(0,0,0,0.55)', color: '#ffffff', fontWeight: 700 }}
         >
           <span className="size-1.5 rounded-full" style={{ background: '#ffffff', boxShadow: '0 0 5px rgba(255,255,255,0.6)' }} />
-          {event.hypePct}%
+          {event.hypePercentage}%
         </div>
         <div className="absolute inset-x-3 bottom-3">
           <h3 className="line-clamp-2 text-white" style={{ fontSize: featured ? 22 : 16, fontWeight: 700, lineHeight: 1.2 }}>
@@ -58,28 +70,36 @@ export function EventCard({
         </div>
 
         <div className="space-y-1">
-          <HypeMeter pct={event.hypePct} status={event.status} tier={tier} size="sm" showLabel={false} />
+          <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={statusIndex} size="sm" showLabel={false} />
           <div className="flex items-center justify-between text-xs">
             <span style={{ color: '#ffffff', fontWeight: 600 }}>
-              {event.backers} of {event.threshold} backers
+              {event.activeTicketCount} of {event.hypeThreshold} tickets pledged
             </span>
             <span style={{ color: 'var(--muted-foreground)' }}>{event.spotsLeft} spots left</span>
           </div>
         </div>
 
-        <Button
-          size="sm"
-          onClick={onView}
-          className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
-          style={{ borderRadius: 9999 }}
-          disabled={event.status === 'cancelled'}
-        >
-          {event.status === 'greenlit'
-            ? `Buy Ticket · $${event.price}`
-            : event.status === 'cancelled'
-            ? 'Cancelled'
-            : `Pledge · $${event.price}`}
-        </Button>
+        {alreadyPurchased ? (
+          <p className="mt-auto py-2 text-center text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+            Tickets already purchased
+          </p>
+        ) : (
+          <Button
+            size="sm"
+            onClick={onView}
+            className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
+            style={{ borderRadius: 9999 }}
+            disabled={event.status === 'cancelled' || event.status === 'completed'}
+          >
+            {event.status === 'greenlit'
+              ? `Buy Ticket · $${event.price}`
+              : event.status === 'cancelled'
+              ? 'Cancelled'
+              : event.status === 'completed'
+              ? 'Completed'
+              : `Pledge · $${event.price}`}
+          </Button>
+        )}
       </div>
     </div>
   );

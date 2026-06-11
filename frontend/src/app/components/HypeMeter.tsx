@@ -1,36 +1,39 @@
 import { Flame } from 'lucide-react';
-import { TIER_COLORS, TIER_LABELS } from './types';
+import { STATUS_COLORS, STATUS_LABELS } from './types';
 import type { EventStatus } from './types';
 
 export function HypeMeter({
   pct,
   status,
-  tier,
+  statusIndex,
   size = 'md',
   showLabel = true,
-  backers,
-  threshold,
+  activeTicketCount,
+  hypeThreshold,
 }: {
   pct: number;
   status: EventStatus;
-  tier: number;
+  statusIndex: number;
   size?: 'sm' | 'md' | 'lg';
   showLabel?: boolean;
-  backers?: number;
-  threshold?: number;
+  activeTicketCount?: number;
+  hypeThreshold?: number;
 }) {
-  const capped = Math.min(100, Math.max(0, pct));
-  const t = Math.max(0, Math.min(3, tier));
-  const color = status === 'cancelled' ? '#5a5a66' : '#ffffff';
-  const tierColor = status === 'cancelled' ? '#5a5a66' : TIER_COLORS[t];
-  const gradient = status === 'cancelled'
+  // Already capped at 100 by the backend; render directly.
+  const capped = pct;
+  const t = Math.max(0, Math.min(STATUS_COLORS.length - 1, statusIndex));
+  // Cancelled and completed events render in grey.
+  const inactive = status === 'cancelled' || status === 'completed';
+  const color = inactive ? '#5a5a66' : '#ffffff';
+  const statusColor = inactive ? '#5a5a66' : STATUS_COLORS[t];
+  const gradient = inactive
     ? '#5a5a66'
     : 'linear-gradient(90deg, #f97316, #ff4d2e)';
-  const glow = status === 'cancelled' ? 'none' : '0 0 12px rgba(255,77,46,0.3)';
+  const glow = inactive ? 'none' : '0 0 12px rgba(255,77,46,0.3)';
 
   const trackH = size === 'sm' ? 'h-2' : size === 'lg' ? 'h-4.5' : 'h-3';
-  const tierLabel = `Tier ${t + 1} · ${TIER_LABELS[t]}`;
-  const showFlame = capped >= 100 && status !== 'cancelled';
+  const statusName = STATUS_LABELS[t];
+  const showFlame = capped >= 100 && !inactive;
   const flameSize = size === 'sm' ? 16 : size === 'lg' ? 32 : 26;
 
   return (
@@ -40,19 +43,19 @@ export function HypeMeter({
           <div>
             <div style={{ fontSize: 36, fontWeight: 800, color, lineHeight: 1, fontFamily: "'Space Grotesk', sans-serif" }}>{capped}%</div>
             <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
-              {backers !== undefined && threshold !== undefined
-                ? `${backers} of ${threshold} backers`
-                : tierLabel}
+              {activeTicketCount !== undefined && hypeThreshold !== undefined
+                ? `${activeTicketCount} of ${hypeThreshold} tickets pledged`
+                : statusName}
             </div>
           </div>
-          <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs" style={{ background: `${tierColor}18`, color: tierColor }}>
-            <span className="size-1.5 rounded-full" style={{ background: tierColor, boxShadow: `0 0 6px ${tierColor}` }} />
-            {tierLabel}
+          <div className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs" style={{ background: `${statusColor}18`, color: statusColor }}>
+            <span className="size-1.5 rounded-full" style={{ background: statusColor, boxShadow: `0 0 6px ${statusColor}` }} />
+            {statusName}
           </div>
         </div>
       ) : showLabel ? (
         <div className="mb-1.5 flex items-baseline justify-between">
-          <span className="text-xs" style={{ color: tierColor }}>{tierLabel}</span>
+          <span className="text-xs" style={{ color: statusColor }}>{statusName}</span>
           <span style={{ color, fontWeight: 700, fontSize: 13, fontFamily: "'Space Grotesk', sans-serif" }}>
             {capped}%
           </span>
@@ -83,10 +86,10 @@ export function HypeMeter({
           </div>
         )}
       </div>
-      {showLabel && size === 'lg' && backers !== undefined && threshold !== undefined && (
+      {showLabel && size === 'lg' && activeTicketCount !== undefined && hypeThreshold !== undefined && (
         <div className="mt-2 flex justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>
           <span>0</span>
-          <span style={{ color, fontWeight: 600 }}>{threshold} needed</span>
+          <span style={{ color, fontWeight: 600 }}>{hypeThreshold} needed</span>
         </div>
       )}
     </div>

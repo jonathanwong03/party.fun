@@ -40,8 +40,15 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
-export function Countdown({ deadline, color = '#ffcb3c' }: { deadline: string; color?: string }) {
-  const target = useMemo(() => parse(deadline), [deadline]);
+export function Countdown({ deadline, targetIso, color = '#ffcb3c' }: { deadline?: string; targetIso?: string; color?: string }) {
+  const target = useMemo(() => {
+    // Prefer a raw ISO timestamp (robust, timezone-correct); fall back to parsing a display string.
+    if (targetIso) {
+      const d = new Date(targetIso);
+      if (!Number.isNaN(d.getTime())) return d;
+    }
+    return deadline ? parse(deadline) : null;
+  }, [targetIso, deadline]);
   const [diff, setDiff] = useState(0);
 
   useEffect(() => {

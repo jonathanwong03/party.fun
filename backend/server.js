@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express from 'express';
-import adminRoutes from './routes/adminRoutes.js';
-import authRoutes from './routes/authRoutes.js';
+import organiserRoutes from './routes/organiserRoutes.js';
 import checkoutRoutes from './routes/checkoutRoutes.js';
 import confirmationRoutes from './routes/confirmationRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
@@ -19,18 +19,26 @@ app.get('/api/health', (_req, res) => {
   });
 });
 
-app.use('/api/auth', authRoutes);
+// Auth (login/register/session) is handled directly by Supabase Auth in the
+// frontend, so there is no /api/auth route. These data routes forward the
+// caller's Supabase JWT to Supabase (see middleware/requireAuth.js).
 app.use('/api/events', eventRoutes);
 app.use('/api/checkout', checkoutRoutes);
 app.use('/api/profile', userRoutes);
 app.use('/api/confirmation', confirmationRoutes);
-app.use('/api/dashboard', adminRoutes);
+app.use('/api/hosted-events', organiserRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({
     route: req.originalUrl,
     status: 'not_found',
   });
+});
+
+// Surface async handler errors as JSON instead of crashing the process.
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ status: 'error', message: err?.message ?? 'Internal server error.' });
 });
 
 const server = app.listen(PORT, () => {

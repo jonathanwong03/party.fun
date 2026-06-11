@@ -10,7 +10,7 @@ export function Navbar({
   go,
   onMenuClick,
 }: {
-  role: Role;
+  role: Role | null;
   user: AuthUser | null;
   route: Route;
   go: (r: Route) => void;
@@ -27,7 +27,7 @@ export function Navbar({
     </button>
   );
 
-  const initial = user?.username?.charAt(0).toUpperCase() ?? (role === 'admin' ? 'A' : role === 'user' ? 'J' : '');
+  const initial = user?.username?.charAt(0).toUpperCase() ?? (role === 'organiser' ? 'A' : role === 'user' ? 'J' : '');
 
   return (
     <header
@@ -36,14 +36,16 @@ export function Navbar({
     >
       <div className="mx-auto grid h-16 max-w-[1536px] grid-cols-[1fr_auto_1fr] items-center px-6">
         <div className="flex items-center gap-3 justify-self-start">
-          <button
-            type="button"
-            onClick={onMenuClick}
-            aria-label="Open menu"
-            className="grid size-9 place-items-center rounded-full hover:bg-white/5"
-          >
-            <Menu size={20} color="#ffffff" />
-          </button>
+          {role && (
+            <button
+              type="button"
+              onClick={onMenuClick}
+              aria-label="Open menu"
+              className="grid size-9 place-items-center rounded-full hover:bg-white/5"
+            >
+              <Menu size={20} color="#ffffff" />
+            </button>
+          )}
           <button onClick={() => go({ name: 'landing' })} className="flex items-center">
             <Logo />
           </button>
@@ -51,12 +53,12 @@ export function Navbar({
 
         <nav className="hidden items-center gap-1 justify-self-center md:flex">
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
-          {(role === 'user' || role === 'admin') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
-          {role === 'admin' && navItem('Hosted Events', { name: 'admin' }, route.name === 'admin')}
+          {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
+          {role === 'organiser' && navItem('Hosted Events', { name: 'hosted-events' }, route.name === 'hosted-events')}
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end">
-          {(role === 'user' || role === 'admin') && (
+          {role ? (
             <>
               <button
                 type="button"
@@ -70,12 +72,25 @@ export function Navbar({
                 type="button"
                 aria-label="Profile"
                 onClick={() => go({ name: 'profile' })}
-                className="grid size-8 place-items-center rounded-full text-sm text-white transition hover:opacity-90"
+                className="grid size-8 place-items-center overflow-hidden rounded-full text-sm text-white transition hover:opacity-90"
                 style={{ background: '#ff4d2e', fontWeight: 600 }}
               >
-                {initial}
+                {user?.avatarUrl ? (
+                  <img src={user.avatarUrl} alt="Profile" className="size-full object-cover" />
+                ) : (
+                  initial
+                )}
               </button>
             </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => go({ name: 'login' })}
+              className="rounded-full bg-[#ff4d2e] px-4 py-1.5 text-sm text-white transition hover:bg-[#ff6647]"
+              style={{ fontWeight: 600 }}
+            >
+              Login
+            </button>
           )}
         </div>
       </div>

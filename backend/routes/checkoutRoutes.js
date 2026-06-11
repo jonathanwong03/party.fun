@@ -1,11 +1,10 @@
 import express from 'express';
-import { getCheckout, getQuote, postCheckout, postPledge } from '../controllers/checkoutController.js';
+import { getQuote, postPledge } from '../controllers/checkoutController.js';
+import { optionalAuth, requireAuth } from '../middleware/requireAuth.js';
 
 const router = express.Router();
 
-router.get('/:eventId/quote', getQuote);
-router.get('/:eventId', getCheckout);
-router.post('/:eventId', postCheckout);
-router.post('/:eventId/pledge', postPledge);
+router.get('/:eventId/quote', optionalAuth, getQuote);
+router.post('/:eventId/pledge', requireAuth, postPledge);
 
 export default router;

@@ -1,9 +1,9 @@
 import { CheckCircle2, Calendar, MapPin, Ticket, ArrowRight } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
-import { getActiveTier, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, go, events }: { id: string; qty: number; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
   if (!event) {
     return (
@@ -25,7 +25,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
           You're in. Hype incoming.
         </h1>
         <p className="mt-2" style={{ color: 'var(--muted-foreground)' }}>
-          Your pledge is locked. We'll capture the funds only when the event hits its threshold.
+          Your payment was captured and your tickets are locked in.
         </p>
       </div>
 
@@ -39,21 +39,37 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Meta icon={Calendar} label="Date" value={`${event.date} · ${event.time}`} />
           <Meta icon={MapPin} label="Location" value={event.location.split(',')[0]} />
-          <Meta icon={Ticket} label="Tickets" value={`${qty} × $${event.price}`} />
+          <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              <Ticket size={12} /> Tickets
+            </div>
+            <div className="mt-1 space-y-0.5" style={{ fontWeight: 600 }}>
+              {lines && lines.length > 0 ? (
+                lines.map((l) => (
+                  <div key={l.label} className="flex items-baseline justify-between gap-2">
+                    <span>{l.count} × {l.label}</span>
+                    <span>{l.subtotalText}</span>
+                  </div>
+                ))
+              ) : (
+                <div>{qty} × ${event.price}</div>
+              )}
+            </div>
+          </div>
         </div>
 
         <div className="mt-5">
           <div className="mb-2 flex items-baseline justify-between text-sm">
             <span style={{ color: 'var(--muted-foreground)' }}>Current hype</span>
-            <span style={{ fontWeight: 600 }}>{event.backers} / {event.threshold} tickets</span>
+            <span style={{ fontWeight: 600 }}>{event.activeTicketCount} / {event.hypeThreshold} tickets</span>
           </div>
-          <HypeMeter pct={event.hypePct} status={event.status} tier={getActiveTier(event)} size="md" showLabel={false} />
+          <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={getActiveStatus(event)} size="md" showLabel={false} />
         </div>
       </div>
 
       <div className="mt-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <h3 className="mb-3">What happens next</h3>
-        <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}><li>Hype builds toward the threshold by {event.deadline}.</li><li>If greenlit, your card is charged and your ticket is emailed.</li><li>If the threshold isn't reached, you're refunded automatically. No questions.</li></ol>
+        <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}><li>Hype builds toward the threshold by {event.deadline}.</li><li>If the threshold is reached, the event is confirmed.</li><li>If the threshold is not reached, active tickets are refunded automatically.</li></ol>
       </div>
 
       <div className="mt-8 flex flex-col gap-3 sm:flex-row">
@@ -66,7 +82,7 @@ export function Confirmation({ id, qty, go, events }: { id: string; qty: number;
           Back to Events
         </Button>
         <Button
-          onClick={() => go({ name: 'profile' })}
+          onClick={() => go({ name: 'joined-events' })}
           className="flex-1 bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
           style={{ borderRadius: 12, height: 48 }}
         >
