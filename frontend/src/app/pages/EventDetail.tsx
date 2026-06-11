@@ -9,21 +9,6 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, type Attendee } from '../api';
 
-// Long date ("Thursday, 18 June") and compact time ("12:02pm") in Asia/Singapore,
-// falling back to the pre-formatted display strings when no ISO is available.
-function fmtDateLong(iso?: string, fallback?: string): string {
-  if (!iso) return fallback ?? '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return fallback ?? '';
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', weekday: 'long', day: 'numeric', month: 'long' }).format(d);
-}
-function fmtTime(iso?: string, fallback?: string): string {
-  if (!iso) return fallback ?? '';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return fallback ?? '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Singapore', hour: 'numeric', minute: '2-digit', hour12: true }).format(d).replace(/\s/g, '').toLowerCase();
-}
-
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
   let h = 0;
@@ -44,8 +29,8 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
     );
   }
   const activeStatus = getActiveStatus(event);
-  // Total tickets still available across both statuses (a pledge spills into the next status).
-  const available = event.statuses.reduce((sum, s) => sum + Math.max(0, s.qty - s.sold), 0);
+  // Tickets still available (computed by the backend; equals capacity minus active tickets).
+  const available = event.spotsLeft;
   // A cancelled event — or one the user already gave away all their tickets for — can't be (re-)pledged.
   const unavailable = event.status === 'cancelled' || !!cancelledEventIds?.has(event.id);
   const showCancelledCard = !!fromPast;
@@ -87,15 +72,15 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <CalendarClock size={13} /> Starts
               </div>
-              <div className="mt-1 font-bold text-white">{fmtDateLong(event.startsAt, event.date)}</div>
-              <div className="font-bold text-white">{fmtTime(event.startsAt, event.time)}</div>
+              <div className="mt-1 font-bold text-white">{event.startLong || event.date}</div>
+              <div className="font-bold text-white">{event.startClock || event.time}</div>
             </div>
             <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <CalendarClock size={13} /> Ends
               </div>
-              <div className="mt-1 font-bold text-white">{fmtDateLong(event.endsAt, event.endDate)}</div>
-              <div className="font-bold text-white">{fmtTime(event.endsAt, event.endTime)}</div>
+              <div className="mt-1 font-bold text-white">{event.endLong || event.endDate}</div>
+              <div className="font-bold text-white">{event.endClock || event.endTime}</div>
             </div>
             <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>

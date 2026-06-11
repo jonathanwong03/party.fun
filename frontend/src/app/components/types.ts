@@ -2,7 +2,7 @@ export type Route =
   | { name: 'landing' }
   | { name: 'event'; id: string; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean; bookingId?: string; qty?: number }
   | { name: 'checkout'; id: string; qty?: number }
-  | { name: 'confirmation'; id: string; qty: number; lines?: { label: string; count: number; price: number }[] }
+  | { name: 'confirmation'; id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[] }
   | { name: 'attendees'; id: string }
   | { name: 'login' }
   | { name: 'choose-account' }
@@ -52,31 +52,17 @@ export type EventItem = {
   startsAt?: string;
   endsAt?: string;
   deadlineAt?: string;
+  // Backend-computed: uncapped fill ratio + long date / compact time strings.
+  hypeRatio?: number;
+  startLong?: string;
+  startClock?: string;
+  endLong?: string;
+  endClock?: string;
 };
 
 // Index into the price-status arrays/colors: 1 once greenlit, else 0 (early_bird).
 export function getActiveStatus(e: EventItem): number {
   return e.status === 'greenlit' ? 1 : 0;
-}
-
-// Apply a pledge of `qty` tickets to an event, then recompute hype and capacity values.
-export function applyPledge(e: EventItem, qty: number): EventItem {
-  const idx = getActiveStatus(e);
-  const statuses = e.statuses.map((s, i) => (i === idx ? { ...s, sold: s.sold + qty } : s));
-  const activeTicketCount = e.activeTicketCount + qty;
-  const hypePercentage = Math.min(100, Math.round((activeTicketCount / e.hypeThreshold) * 100));
-  const spotsLeft = Math.max(0, e.maxCapacity - activeTicketCount);
-  return { ...e, statuses, activeTicketCount, hypePercentage, spotsLeft };
-}
-
-// Reverse a pledge of `qty` tickets, then recompute hype and capacity values.
-export function reversePledge(e: EventItem, qty: number): EventItem {
-  const idx = getActiveStatus(e);
-  const statuses = e.statuses.map((s, i) => (i === idx ? { ...s, sold: Math.max(0, s.sold - qty) } : s));
-  const activeTicketCount = Math.max(0, e.activeTicketCount - qty);
-  const hypePercentage = Math.min(100, Math.round((activeTicketCount / e.hypeThreshold) * 100));
-  const spotsLeft = Math.max(0, e.maxCapacity - activeTicketCount);
-  return { ...e, statuses, activeTicketCount, hypePercentage, spotsLeft };
 }
 
 // Price-status colors: Early Birds = yellow, Greenlit = green.

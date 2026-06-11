@@ -12,7 +12,9 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
+
+const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
@@ -35,7 +37,7 @@ type RouteState = {
   fromPast?: boolean;
   bookingId?: string;
   qty?: number;
-  lines?: { label: string; count: number; price: number }[];
+  lines?: { label: string; count: number; subtotalText: string }[];
 };
 
 function pathForRoute(route: Route) {
@@ -173,6 +175,7 @@ function AppShell() {
   const updateAvatar = (url: string | null) => setUser((u) => (u ? { ...u, avatarUrl: url } : u));
   const [events, setEvents] = useState<EventItem[]>([]);
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
+  const [profileCounts, setProfileCounts] = useState<ProfileCounts>(EMPTY_COUNTS);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
   const addEvent = async (e: EventItem) => {
@@ -258,8 +261,10 @@ function AppShell() {
           const profile = await fetchProfile(role);
           if (ignore) return;
           setProfileTickets(profile.tickets);
+          setProfileCounts(profile.counts);
         } else {
           setProfileTickets([]);
+          setProfileCounts(EMPTY_COUNTS);
         }
         if (role === 'organiser') {
           const loadedDrafts = await fetchDrafts();
@@ -287,6 +292,7 @@ function AppShell() {
     const result = await createPledge(role, eventId, qty, amount);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
+    setProfileCounts(result.profile.counts);
   };
 
   const giveAway = async (bookingId: string, quantity: number) => {
@@ -294,6 +300,7 @@ function AppShell() {
     const result = await giveAwayTickets(role, bookingId, quantity);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
+    setProfileCounts(result.profile.counts);
   };
 
   const removeBooking = async (bookingId: string) => {
@@ -301,6 +308,7 @@ function AppShell() {
     const result = await deleteBooking(role, bookingId);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
+    setProfileCounts(result.profile.counts);
   };
 
   const myEventIds = useMemo(() => {
@@ -393,7 +401,7 @@ function AppShell() {
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
-        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} onDelete={removeBooking} />} />
+        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />

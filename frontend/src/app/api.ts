@@ -10,7 +10,7 @@ export type ProfileTicket = {
   tab: 'upcoming' | 'past' | 'cancelled';
 };
 
-export type QuoteLine = { label: string; price: number; count: number };
+export type QuoteLine = { label: string; price: number; count: number; subtotal: number; subtotalText: string };
 
 export type Quote = {
   eventId: string;
@@ -18,12 +18,25 @@ export type Quote = {
   lines: QuoteLine[];
   subtotal: number;
   total: number;
+  subtotalText: string;
+  totalText: string;
 };
+
+export type ProfileCounts = { upcoming: number; past: number; cancelled: number };
 
 export type ProfileResponse = {
   profile: { id: string; fullName: string; email: string; handle: string };
   tickets: ProfileTicket[];
   myEventIds: string[];
+  counts: ProfileCounts;
+};
+
+export type HostedSummary = {
+  revenueByEvent: Record<string, number>;
+  totalRevenue: number;
+  totalEvents: number;
+  upcoming: number;
+  confirmed: number;
 };
 
 export type MutationResponse = {
@@ -258,6 +271,10 @@ export async function deleteEventRequest(eventId: string): Promise<void> {
 }
 
 // ── Organiser drafts (persisted per-user via the backend) ─────────────────────
+
+export function fetchHostedSummary(): Promise<HostedSummary> {
+  return apiFetch<HostedSummary>('/api/hosted-events/summary');
+}
 
 export function fetchDrafts(): Promise<EventItem[]> {
   return apiFetch<EventItem[]>('/api/hosted-events/drafts');

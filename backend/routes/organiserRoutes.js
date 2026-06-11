@@ -6,6 +6,7 @@ import {
   getEditEvent,
   patchEvent,
   postCreateEvent,
+  getSummary,
   getDrafts,
   postDraft,
   deleteDraftHandler,
@@ -15,6 +16,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 const router = express.Router();
 
 router.get('/', getHostedEvents);
+router.get('/summary', requireAuth, getSummary);
 router.get('/events/new', getCreateEvent);
 router.post('/events', requireAuth, postCreateEvent);
 router.get('/events/:eventId/edit', getEditEvent);

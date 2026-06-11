@@ -19,7 +19,8 @@ export function HypeMeter({
   activeTicketCount?: number;
   hypeThreshold?: number;
 }) {
-  const capped = Math.min(100, Math.max(0, pct));
+  // Already capped at 100 by the backend; render directly.
+  const capped = pct;
   const t = Math.max(0, Math.min(STATUS_COLORS.length - 1, statusIndex));
   // Cancelled and completed events render in grey.
   const inactive = status === 'cancelled' || status === 'completed';

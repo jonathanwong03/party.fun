@@ -32,10 +32,9 @@ export function Landing({
     () => events.filter((e) => !myEventIds.has(e.id) && !e.mine && e.status !== 'cancelled' && !cancelledEventIds.has(e.id)),
     [events, myEventIds, cancelledEventIds],
   );
-  // "Most hyped" = highest raw fill ratio (uncapped, so 106% beats 105% even though
-  // both display as 100%); ties keep the first encountered.
-  const rawHype = (e: EventItem) => (e.hypeThreshold > 0 ? e.activeTicketCount / e.hypeThreshold : 0);
-  const featured = available.length ? available.reduce((best, e) => (rawHype(e) > rawHype(best) ? e : best)) : undefined;
+  // "Most hyped" = highest backend-computed fill ratio (uncapped, so 106% beats 105%
+  // though both display as 100%); ties keep the first encountered.
+  const featured = available.length ? available.reduce((best, e) => ((e.hypeRatio ?? 0) > (best.hypeRatio ?? 0) ? e : best)) : undefined;
   const rest = available.filter((e) => e.id !== featured?.id);
 
   const filtered = useMemo(() => {

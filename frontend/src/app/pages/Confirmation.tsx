@@ -3,7 +3,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; price: number }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
   if (!event) {
     return (
@@ -48,7 +48,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
                 lines.map((l) => (
                   <div key={l.label} className="flex items-baseline justify-between gap-2">
                     <span>{l.count} × {l.label}</span>
-                    <span>${(l.price * l.count).toFixed(2)}</span>
+                    <span>{l.subtotalText}</span>
                   </div>
                 ))
               ) : (

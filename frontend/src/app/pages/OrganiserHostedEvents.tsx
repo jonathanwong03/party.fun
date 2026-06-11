@@ -1,16 +1,16 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveStatus, type EventItem, type Route } from '../components/types';
+import { fetchHostedSummary, type HostedSummary } from '../api';
 
-// The single status shown in the dashboard's Status column: early_birds (< 100% hype),
-// greenlit (reached the hype threshold), completed (event has passed) or cancelled.
+// Display label for the dashboard's Status column, mapped from the backend status.
 function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED' {
   if (e.status === 'cancelled') return 'CANCELLED';
   if (e.status === 'completed') return 'COMPLETED';
-  if (e.status === 'greenlit' || e.activeTicketCount >= e.hypeThreshold) return 'GREENLIT';
+  if (e.status === 'greenlit') return 'GREENLIT';
   return 'EARLY BIRDS';
 }
 
@@ -30,7 +30,14 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
   const created = events.filter((e) => e.mine);
   const rows = isDrafts ? drafts : created;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
-  const totalPledged = created.reduce((s, e) => s + e.activeTicketCount * e.price, 0);
+
+  // Revenue + aggregate counts are computed by the backend (accurate, net of refunds).
+  const [summary, setSummary] = useState<HostedSummary>({ revenueByEvent: {}, totalRevenue: 0, totalEvents: 0, upcoming: 0, confirmed: 0 });
+  useEffect(() => {
+    let ignore = false;
+    fetchHostedSummary().then((s) => { if (!ignore) setSummary(s); }).catch(() => {});
+    return () => { ignore = true; };
+  }, [events]);
 
   return (
     <div>
@@ -58,10 +65,10 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
 
           {/* Summary cards */}
           <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={created.length.toString()} hint="All-time events" />
-            <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={created.filter((e) => dashboardStatus(e) !== 'CANCELLED').length.toString()} hint="Ongoing events" />
-            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Confirmed" value={created.filter((e) => e.status === 'greenlit').length.toString()} hint="Reached the hype threshold" />
-            <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${totalPledged.toLocaleString()}`} hint="Across all events" />
+            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={summary.totalEvents.toString()} hint="All-time events" />
+            <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={summary.upcoming.toString()} hint="Ongoing events" />
+            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Confirmed" value={summary.confirmed.toString()} hint="Reached the hype threshold" />
+            <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${summary.totalRevenue.toLocaleString()}`} hint="Across all events" />
           </div>
 
           {/* Tabs */}
@@ -124,7 +131,7 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                         </div>
                         <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}%</div>
                       </td>
-                      <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(e.activeTicketCount * e.price).toLocaleString()}</td>
+                      <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</td>
                       <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
                         {e.activeTicketCount}/{e.hypeThreshold}
                       </td>

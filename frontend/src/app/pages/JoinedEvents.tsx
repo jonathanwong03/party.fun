@@ -7,12 +7,12 @@ import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { getActiveStatus, type Route, type EventItem } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
-import type { ProfileTicket } from '../api';
+import type { ProfileTicket, ProfileCounts } from '../api';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
 type Row = ProfileTicket & { event: EventItem };
 
-export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; onDelete: (bookingId: string) => Promise<void> }) {
+export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; counts: ProfileCounts; onDelete: (bookingId: string) => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('upcoming');
   const [deleting, setDeleting] = useState<Row | null>(null);
   const rows = tickets
@@ -26,9 +26,9 @@ export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Ro
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
       <div className="mb-8 flex justify-around gap-4 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <Stat label="Pledged" value={String(rows.filter((row) => row.tab === 'upcoming').length)} />
-        <Stat label="Completed" value={String(rows.filter((row) => row.tab === 'past').length)} />
-        <Stat label="Cancelled" value={String(rows.filter((row) => row.tab === 'cancelled').length)} />
+        <Stat label="Pledged" value={String(counts.upcoming)} />
+        <Stat label="Completed" value={String(counts.past)} />
+        <Stat label="Cancelled" value={String(counts.cancelled)} />
       </div>
 
       <div className="mb-6 flex items-baseline justify-between">

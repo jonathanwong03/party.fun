@@ -46,7 +46,6 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
       </div>
     );
   }
-  const money = (n: number) => `$${n.toFixed(2)}`;
 
   // Card expiry from the MM/YY picker: present and not already past.
   const expiryError = (() => {
@@ -175,13 +174,13 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               <div className="space-y-1.5 text-sm">
                 {quote
                   ? quote.lines.map((l) => (
-                      <Row key={l.label} label={`${l.label} × ${l.count}`} value={money(l.price * l.count)} />
+                      <Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />
                     ))
                   : <Row label={`Ticket × ${qty}`} value="—" />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total</span>
-                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? money(quote.total) : '—'}</span>
+                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.totalText : '—'}</span>
               </div>
 
               <Button

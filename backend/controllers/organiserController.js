@@ -6,6 +6,7 @@ import {
   listDrafts,
   saveDraft,
   deleteDraft as removeDraft,
+  getHostedSummary,
 } from '../services/eventService.js';
 
 // The organiser console reads its events from the shared events list (filtered to
@@ -13,6 +14,10 @@ import {
 export const getHostedEvents = createPlaceholderHandler('organiser-hosted-events');
 export const getCreateEvent = createPlaceholderHandler('create-event');
 export const getEditEvent = createPlaceholderHandler('edit-event');
+
+export async function getSummary(req, res) {
+  res.json(await getHostedSummary(req.supabase, req.user.id));
+}
 
 export async function getDrafts(req, res) {
   res.json(await listDrafts(req.supabase));
