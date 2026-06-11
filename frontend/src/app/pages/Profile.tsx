@@ -15,7 +15,9 @@ export function Profile({
   const name = user?.username ?? 'Guest';
   const email = user?.email ?? '';
   const initial = name.charAt(0).toUpperCase();
-  const handle = `@${name.toLowerCase()}`;
+  const telegram = user?.telegram?.trim();
+  const phone = user?.phone?.trim();
+  const telegramHandle = telegram ? (telegram.startsWith('@') ? telegram : `@${telegram}`) : null;
 
   return (
     <div className="mx-auto max-w-xl px-6 py-10">
@@ -37,9 +39,12 @@ export function Profile({
         </div>
 
         <h1 className="mt-5" style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Hi, {name}!</h1>
-        <div className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-          {handle}{user?.role ? ` · ${user.role}` : ''}
-        </div>
+        {(telegramHandle || phone) && (
+          <div className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+            {telegramHandle && <div>Telegram: {telegramHandle}</div>}
+            {phone && <div>Phone Number: {phone}</div>}
+          </div>
+        )}
 
         <div className="my-6 h-px" style={{ background: 'var(--border)' }} />
 

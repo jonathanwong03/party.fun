@@ -47,7 +47,7 @@ export type MutationResponse = {
   reference?: string;
 };
 
-export type AuthUser = { id: string; username: string; email: string; role: Role; avatarUrl?: string | null };
+export type AuthUser = { id: string; username: string; email: string; role: Role; avatarUrl?: string | null; telegram?: string | null; phone?: string | null };
 
 export type Attendee = { name: string; username: string; avatarUrl: string | null };
 export type AttendeeDetail = { username: string; email: string; contact: string | null; socialLink: string | null; avatarUrl: string | null };
@@ -101,12 +101,13 @@ export async function loginRequest(identifier: string, password: string): Promis
 
   const { data: profile, error: profileError } = await supabase
     .from('USER')
-    .select('id, username, email, role, avatarUrl')
+    .select('id, username, email, role, avatarUrl, socialLink, contact')
     .eq('id', data.user.id)
     .single();
 
   if (profileError || !profile) throw new Error('Could not load user profile.');
-  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl };
+  // Telegram is stored in socialLink, phone number in contact.
+  return { id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact };
 }
 
 export async function registerRequest(input: {
@@ -115,15 +116,17 @@ export async function registerRequest(input: {
   password: string;
   role: Role;
   avatarUrl?: string;
+  telegram?: string;
+  phone?: string;
 }): Promise<AuthUser> {
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
-    options: { data: { username: input.username, name: input.username, role: input.role, avatarUrl: input.avatarUrl ?? null } },
+    options: { data: { username: input.username, name: input.username, role: input.role, avatarUrl: input.avatarUrl ?? null, telegram: input.telegram ?? null, phone: input.phone ?? null } },
   });
   if (error) throw new Error(error.message);
   if (!data.user) throw new Error('Sign up failed — please try again.');
-  return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl };
+  return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl, telegram: input.telegram ?? null, phone: input.phone ?? null };
 }
 
 // Persist a username change (own row); reject duplicates (USER.username is unique).
@@ -134,6 +137,17 @@ export async function updateUsernameRequest(username: string): Promise<void> {
     if (error.code === '23505') throw new Error('That username is taken.');
     throw new Error(error.message);
   }
+}
+
+// Persist the user's contact details (own row): Telegram → socialLink, phone → contact.
+// Empty strings are stored as NULL so the Profile line hides cleanly.
+export async function updateContactRequest(telegram: string, phone: string): Promise<void> {
+  const userId = await currentUserId();
+  const { error } = await supabase
+    .from('USER')
+    .update({ socialLink: telegram.trim() || null, contact: phone.trim() || null })
+    .eq('id', userId);
+  if (error) throw new Error(error.message);
 }
 
 // Permanently delete the signed-in user's account (blocked server-side if they host events).

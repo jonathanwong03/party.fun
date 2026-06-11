@@ -71,7 +71,7 @@ export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (r
             const badgeLabel = booking.tab === 'past'
               ? 'Completed'
               : eventCancelled
-              ? 'Event cancelled'
+              ? 'Cancelled by Organiser'
               : isCancelled
               ? 'Cancelled by Buyer'
               : undefined;
