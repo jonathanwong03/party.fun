@@ -1,6 +1,7 @@
 import express from 'express';
 import {
   deleteEvent,
+  postCancelEvent,
   getCreateEvent,
   getHostedEvents,
   getEditEvent,
@@ -21,6 +22,7 @@ router.get('/events/new', getCreateEvent);
 router.post('/events', requireAuth, postCreateEvent);
 router.get('/events/:eventId/edit', getEditEvent);
 router.patch('/events/:eventId', requireAuth, patchEvent);
+router.post('/events/:eventId/cancel', requireAuth, postCancelEvent);
 router.delete('/events/:eventId', requireAuth, deleteEvent);
 
 // Organiser drafts (private, persisted per-user).

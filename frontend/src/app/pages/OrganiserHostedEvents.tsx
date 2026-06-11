@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Eye, Pencil, Trash2, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
+import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
@@ -21,9 +21,10 @@ const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' |
   COMPLETED: '#9a9aa5',
 };
 
-export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onDelete: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
+export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onCancel: (id: string, reason: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [tab, setTab] = useState<'created' | 'drafts'>('created');
+  const [reason, setReason] = useState('');
+  const [tab, setTab] = useState<'created' | 'drafts'>(route.name === 'hosted-events' ? route.tab ?? 'created' : 'created');
 
   const isDrafts = tab === 'drafts';
   // The dashboard is for events the organiser created themselves (mine), not the full catalogue.
@@ -152,13 +153,13 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                           {isDrafts ? (
                             <>
                               <IconBtn label="Resume" onClick={() => go({ name: 'create-event', draftId: e.id })}><Pencil size={14} /></IconBtn>
-                              <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                              <IconBtn label="Delete" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Trash2 size={14} /></IconBtn>
                             </>
                           ) : (
                             <>
                               <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
                               <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
-                              <IconBtn label="Delete" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                              <IconBtn label="Cancel" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Ban size={14} /></IconBtn>
                             </>
                           )}
                         </div>
@@ -178,11 +179,30 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
       </main>
 
       {target && (
-        <DeleteEventModal
-          eventName={target.title}
-          onCancel={() => setDeleting(null)}
-          onConfirm={() => { if (deleting) (isDrafts ? onDeleteDraft : onDelete)(deleting); setDeleting(null); }}
-        />
+        isDrafts ? (
+          <DeleteEventModal
+            eventName={target.title}
+            title="Delete draft?"
+            leadIn="You're about to delete the draft"
+            warning="When this draft is deleted, your progress won't be saved. Drafts aren't published, so no one has pledged."
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) onDeleteDraft(deleting); setDeleting(null); }}
+          />
+        ) : (
+          <DeleteEventModal
+            eventName={target.title}
+            title="Cancel Event?"
+            leadIn="You're about to cancel"
+            confirmWord="CANCEL"
+            actionLabel="Cancel Event"
+            warning="All pledges will be voided and any captured funds refunded. Backers will be notified by email."
+            reason={reason}
+            onReasonChange={setReason}
+            reasonPrompt="Why are you cancelling this event?"
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) onCancel(deleting, reason); setDeleting(null); }}
+          />
+        )
       )}
     </div>
   );

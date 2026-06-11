@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
@@ -38,6 +38,8 @@ type RouteState = {
   bookingId?: string;
   qty?: number;
   lines?: { label: string; count: number; subtotalText: string }[];
+  reference?: string;
+  tab?: 'created' | 'drafts';
 };
 
 function pathForRoute(route: Route) {
@@ -87,11 +89,15 @@ function stateForRoute(route: Route): RouteState | undefined {
   }
 
   if (route.name === 'confirmation') {
-    return { qty: route.qty, lines: route.lines };
+    return { qty: route.qty, lines: route.lines, reference: route.reference };
   }
 
   if (route.name === 'checkout') {
     return { qty: route.qty };
+  }
+
+  if (route.name === 'hosted-events') {
+    return route.tab ? { tab: route.tab } : undefined;
   }
 
   return undefined;
@@ -115,7 +121,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/settings') return { name: 'settings' };
-  if (pathname === '/hosted-events') return { name: 'hosted-events' };
+  if (pathname === '/hosted-events') return { name: 'hosted-events', tab: state?.tab };
   if (pathname === '/hosted-events/events/new') return { name: 'create-event' };
 
   const draftMatch = pathname.match(/^\/hosted-events\/drafts\/([^/]+)\/edit$/);
@@ -125,7 +131,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (checkoutMatch) return { name: 'checkout', id: checkoutMatch[1], qty: state?.qty };
 
   const confirmationMatch = pathname.match(/^\/confirmation\/([^/]+)$/);
-  if (confirmationMatch) return { name: 'confirmation', id: confirmationMatch[1], qty: state?.qty ?? 1, lines: state?.lines };
+  if (confirmationMatch) return { name: 'confirmation', id: confirmationMatch[1], qty: state?.qty ?? 1, lines: state?.lines, reference: state?.reference };
 
   const attendeesMatch = pathname.match(/^\/events\/([^/]+)\/attendees$/);
   if (attendeesMatch) return { name: 'attendees', id: attendeesMatch[1] };
@@ -181,8 +187,10 @@ function AppShell() {
   const addEvent = async (e: EventItem) => {
     setEvents((prev) => [e, ...prev]);
     try {
-      const realId = await createEventRequest(e);
-      setEvents((prev) => prev.map((ev) => (ev.id === e.id ? { ...ev, id: realId } : ev)));
+      await createEventRequest(e);
+      // Re-fetch so the rendered event uses backend-authoritative values
+      // (maxCapacity, hypeThreshold, spotsLeft, hype, featured) and the real id.
+      setEvents(await fetchEvents(role));
     } catch {
       setEvents((prev) => prev.filter((ev) => ev.id !== e.id));
     }
@@ -193,9 +201,21 @@ function AppShell() {
     try { await deleteEventRequest(id); } catch { /* already removed from state */ }
   };
 
+  // Soft-cancel: the event stays in the list (rendered as CANCELLED), so re-fetch
+  // rather than removing it optimistically.
+  const cancelEvent = async (id: string, reason: string) => {
+    try {
+      await cancelEventRequest(id, reason);
+      setEvents(await fetchEvents(role));
+    } catch { /* leave state as-is on failure */ }
+  };
+
   const updateEvent = async (updated: EventItem) => {
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    try { await updateEventRequest(updated); } catch { /* state already updated */ }
+    try {
+      await updateEventRequest(updated);
+      setEvents(await fetchEvents(role)); // reconcile with backend-computed values
+    } catch { /* state already updated */ }
   };
 
   const [drafts, setDrafts] = useState<EventItem[]>([]);
@@ -287,12 +307,13 @@ function AppShell() {
     };
   }, [role]);
 
-  const pledge = async (eventId: string, qty: number, amount: number) => {
-    if (!role) return;
+  const pledge = async (eventId: string, qty: number, amount: number): Promise<string | undefined> => {
+    if (!role) return undefined;
     const result = await createPledge(role, eventId, qty, amount);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
     setProfileCounts(result.profile.counts);
+    return result.reference;
   };
 
   const giveAway = async (bookingId: string, quantity: number) => {
@@ -395,10 +416,10 @@ function AppShell() {
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onDelete={deleteEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onDelete={deleteEvent} onUpdate={updateEvent} />} />
+        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} />} />
         <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
 
@@ -452,7 +473,7 @@ function CheckoutRoute({
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onPledge: (eventId: string, qty: number, amount: number) => Promise<void>;
+  onPledge: (eventId: string, qty: number, amount: number) => Promise<string | undefined>;
 }) {
   const { eventId = '' } = useParams();
   const location = useLocation();
@@ -478,7 +499,7 @@ function ConfirmationRoute({
 
   if (!role) return <Navigate to="/login" replace />;
 
-  return <Confirmation id={eventId} qty={state.qty ?? 1} lines={state.lines} role={role} go={go} events={events} />;
+  return <Confirmation id={eventId} qty={state.qty ?? 1} lines={state.lines} reference={state.reference} role={role} go={go} events={events} />;
 }
 
 function AttendeesRoute({
@@ -499,17 +520,17 @@ function EditEventRoute({
   activeRoute,
   go,
   events,
-  onDelete,
+  onCancel,
   onUpdate,
 }: {
   activeRoute: Route;
   go: (r: Route) => void;
   events: EventItem[];
-  onDelete: (id: string) => void;
+  onCancel: (id: string, reason: string) => void;
   onUpdate: (e: EventItem) => void;
 }) {
   const { eventId = '' } = useParams();
-  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onDelete={onDelete} onUpdate={onUpdate} />;
+  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onCancel={onCancel} onUpdate={onUpdate} />;
 }
 
 function ResumeDraftRoute({

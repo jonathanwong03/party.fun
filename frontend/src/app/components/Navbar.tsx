@@ -32,7 +32,7 @@ export function Navbar({
   return (
     <header
       className="sticky top-0 z-30 border-b backdrop-blur-xl"
-      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.75)' }}
+      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.92)' }}
     >
       <div className="mx-auto grid h-16 max-w-[1536px] grid-cols-[1fr_auto_1fr] items-center px-6">
         <div className="flex items-center gap-3 justify-self-start">

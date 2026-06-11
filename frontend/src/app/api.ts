@@ -43,6 +43,8 @@ export type MutationResponse = {
   status: 'ok';
   event: EventItem | null;
   profile: ProfileResponse;
+  // Present on pledge responses: the persisted, stable confirmation reference.
+  reference?: string;
 };
 
 export type AuthUser = { id: string; username: string; email: string; role: Role; avatarUrl?: string | null };
@@ -268,6 +270,14 @@ export async function updateEventRequest(event: EventItem): Promise<void> {
 
 export async function deleteEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}`, { method: 'DELETE' });
+}
+
+// Soft-cancel a published event with a reason (backend refunds live pledges).
+export async function cancelEventRequest(eventId: string, reason: string): Promise<void> {
+  await apiFetch(`/api/hosted-events/events/${eventId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
 }
 
 // ── Organiser drafts (persisted per-user via the backend) ─────────────────────

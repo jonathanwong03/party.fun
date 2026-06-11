@@ -3,7 +3,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+export function Confirmation({ id, qty, lines, reference, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
   if (!event) {
     return (
@@ -12,7 +12,8 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
       </div>
     );
   }
-  const ref = 'PF-' + event.id.toUpperCase() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
+  // The reference is generated and persisted by the backend at pledge time.
+  const ref = reference ?? '—';
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-16">

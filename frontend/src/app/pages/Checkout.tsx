@@ -12,7 +12,7 @@ import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { required, cardError, cvcError } from '../components/validation';
 import { MonthYearPicker } from '../components/MonthYearPicker';
 
-export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
+export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<string | undefined> }) {
   const event = events.find((e) => e.id === id);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -82,8 +82,8 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     if (hasErr) return;
     try {
       setSubmitting(true);
-      await onPledge(event.id, qty, event.price);
-      go({ name: 'confirmation', id, qty, lines: quote?.lines });
+      const reference = await onPledge(event.id, qty, event.price);
+      go({ name: 'confirmation', id, qty, lines: quote?.lines, reference });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
     } finally {

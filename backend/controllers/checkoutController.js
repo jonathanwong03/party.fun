@@ -2,6 +2,7 @@ import { createPledge, quotePledge } from '../services/eventService.js';
 
 const PLEDGE_MESSAGES = {
   not_found: 'Event not found.',
+  event_cancelled: 'This event has been cancelled.',
   own_event: 'You cannot pledge for your own event.',
   active_booking_exists: 'Give away all active tickets before pledging for this event again.',
   not_enough_tickets: 'Not enough tickets are available.',
@@ -30,5 +31,5 @@ export async function postPledge(req, res) {
     });
     return;
   }
-  res.json({ status: 'ok', event: result.event, profile: result.profile });
+  res.json({ status: 'ok', event: result.event, profile: result.profile, reference: result.reference });
 }

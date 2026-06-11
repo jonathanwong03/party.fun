@@ -6,7 +6,7 @@ export function PricingTier({
   tiers,
   activeIndex,
 }: {
-  tiers: { label: string; price: number; qty: number; sold: number }[];
+  tiers: { label: string; price: number; qty: number; sold: number; fillPct?: number }[];
   activeIndex: number;
 }) {
   return (
@@ -19,7 +19,8 @@ export function PricingTier({
       {/* Rising bar chart */}
       <div className="mb-5 flex items-end gap-1.5 px-1">
         {tiers.map((t, i) => {
-          const fillPct = t.qty === 0 ? 0 : (t.sold / t.qty) * 100;
+          // Fill % is computed by the backend; fall back to a local calc if absent.
+          const fillPct = t.fillPct ?? (t.qty === 0 ? 0 : (t.sold / t.qty) * 100);
           const done = i < activeIndex;
           const active = i === activeIndex;
           const color = done ? TIER_COLORS[i] : active ? TIER_COLORS[i] : '#2a2a35';

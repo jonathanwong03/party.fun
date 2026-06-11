@@ -66,6 +66,8 @@ function mapRow(row, userId) {
       price: s.price,
       qty: s.ticketCapacity,
       sold: s.sold,
+      // Tier fill % computed in the backend; the frontend renders the bar from this.
+      fillPct: s.ticketCapacity > 0 ? (s.sold / s.ticketCapacity) * 100 : 0,
     })),
     mine: userId != null ? row.hostId === userId : undefined,
   };
@@ -76,7 +78,16 @@ function mapRow(row, userId) {
 export async function listEvents(sb, userId) {
   const { data, error } = await sb.rpc('get_events');
   if (error) throw new Error(error.message);
-  return (data ?? []).map((row) => mapRow(row, userId));
+  const events = (data ?? []).map((row) => mapRow(row, userId));
+  // Backend picks the single "most hyped" still-open event (highest hype ratio) so
+  // the Landing page renders the feature card without recomputing the winner.
+  let featured = null;
+  for (const e of events) {
+    if (e.mine || e.status === 'cancelled' || e.status === 'completed') continue;
+    if (!featured || (e.hypeRatio ?? 0) > (featured.hypeRatio ?? 0)) featured = e;
+  }
+  if (featured) featured.featured = true;
+  return events;
 }
 
 export async function getEvent(sb, eventId, userId) {
@@ -158,7 +169,9 @@ export async function createPledge(sb, userId, eventId, qty) {
   const { data, error } = await sb.rpc('create_pledge', { p_event_id: eventId, p_qty: Number(qty) });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
-  return mutationResult(sb, userId, eventId);
+  const result = await mutationResult(sb, userId, eventId);
+  // Surface the persisted booking reference so the confirmation page shows a stable value.
+  return { ...result, reference: data?.reference };
 }
 
 async function eventIdForBooking(sb, bookingId) {
@@ -239,6 +252,15 @@ export async function updateEvent(sb, e) {
 
 export async function deleteEvent(sb, eventId) {
   const { data, error } = await sb.rpc('delete_event', { p_event_id: eventId });
+  if (error) throw new Error(error.message);
+  if (data?.error) return { error: data.error };
+  return { status: 'ok' };
+}
+
+// Soft-cancel a published event: marks it cancelled, records the reason, and
+// refunds live pledges (all handled atomically in the cancel_event RPC).
+export async function cancelEvent(sb, eventId, reason) {
+  const { data, error } = await sb.rpc('cancel_event', { p_event_id: eventId, p_reason: reason });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   return { status: 'ok' };

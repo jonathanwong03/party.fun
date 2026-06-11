@@ -3,11 +3,24 @@ import {
   createEvent,
   updateEvent,
   deleteEvent as removeEvent,
+  cancelEvent as cancelEventService,
   listDrafts,
   saveDraft,
   deleteDraft as removeDraft,
   getHostedSummary,
 } from '../services/eventService.js';
+
+// Human-readable messages for the authoritative validation codes the RPCs return.
+const EVENT_ERROR_MESSAGES = {
+  price_order: 'Greenlit price must be higher than the Early Birds price.',
+  bad_schedule: 'The event end must be after its start.',
+  deadline_after_start: 'The deadline must be before the event start.',
+  not_future: 'Event start and deadline must be in the future.',
+  not_organiser: 'Only organisers can create events.',
+  not_found: 'Event not found.',
+  reason_required: 'A cancellation reason is required.',
+};
+const eventErrorMessage = (code, fallback) => EVENT_ERROR_MESSAGES[code] ?? fallback;
 
 // The organiser console reads its events from the shared events list (filtered to
 // `mine`), so these GET endpoints are unused by the frontend and stay as stubs.
@@ -36,7 +49,7 @@ export async function deleteDraftHandler(req, res) {
 export async function postCreateEvent(req, res) {
   const result = await createEvent(req.supabase, req.body);
   if (result.error) {
-    res.status(400).json({ status: result.error, message: 'Unable to create event.' });
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to create event.') });
     return;
   }
   res.status(201).json({ status: 'ok', eventId: result.eventId });
@@ -45,7 +58,7 @@ export async function postCreateEvent(req, res) {
 export async function patchEvent(req, res) {
   const result = await updateEvent(req.supabase, { ...req.body, id: req.params.eventId });
   if (result.error) {
-    res.status(400).json({ status: result.error, message: 'Unable to update event.' });
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to update event.') });
     return;
   }
   res.json({ status: 'ok' });
@@ -55,6 +68,15 @@ export async function deleteEvent(req, res) {
   const result = await removeEvent(req.supabase, req.params.eventId);
   if (result.error) {
     res.status(400).json({ status: result.error, message: 'Unable to delete event.' });
+    return;
+  }
+  res.json({ status: 'ok' });
+}
+
+export async function postCancelEvent(req, res) {
+  const result = await cancelEventService(req.supabase, req.params.eventId, req.body?.reason ?? '');
+  if (result.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to cancel event.') });
     return;
   }
   res.json({ status: 'ok' });
