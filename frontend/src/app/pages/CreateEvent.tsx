@@ -13,6 +13,7 @@ import { NumberStepper } from '../components/NumberStepper';
 import { DatePicker } from '../components/DatePicker';
 import { TimePicker } from '../components/TimePicker';
 import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError, futureDateTimeError } from '../components/validation';
+import { DEFAULT_EVENT_IMAGE } from '../components/media';
 
 export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? [];
@@ -347,13 +348,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
               <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <div className="mb-3 text-xs uppercase tracking-wider" style={{ color: 'var(--muted-foreground)' }}>Preview</div>
                 <div className="overflow-hidden rounded-xl" style={{ background: 'var(--surface-2)' }}>
-                  {image ? (
-                    <img src={image} alt="Event banner" className="h-32 w-full object-cover" />
-                  ) : (
-                    <div className="grid h-32 place-items-center" style={{ background: 'linear-gradient(135deg, rgba(255,77,46,0.4), rgba(255,203,60,0.3))' }}>
-                      <ImageIcon size={28} style={{ color: 'rgba(255,255,255,0.6)' }} />
-                    </div>
-                  )}
+                  <img src={image || DEFAULT_EVENT_IMAGE} alt="Event banner preview" className="h-32 w-full object-cover" />
                   <div className="space-y-3 p-4">
                     <h3 className="line-clamp-2">{title || 'Your event title'}</h3>
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>

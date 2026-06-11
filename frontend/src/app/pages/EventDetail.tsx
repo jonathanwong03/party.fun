@@ -16,7 +16,7 @@ function avatarColor(seed: string) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; cancelledEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
+export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; purchasedEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   const [giveAwayQty, setGiveAwayQty] = useState(1);
@@ -31,8 +31,8 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
   const activeStatus = getActiveStatus(event);
   // Tickets still available (computed by the backend; equals capacity minus active tickets).
   const available = event.spotsLeft;
-  // A cancelled event — or one the user already gave away all their tickets for — can't be (re-)pledged.
-  const unavailable = event.status === 'cancelled' || !!cancelledEventIds?.has(event.id);
+  const alreadyPurchased = !!purchasedEventIds?.has(event.id);
+  const unavailable = event.status === 'cancelled';
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
   const showWhosGoing = !!fromOrganiser;
@@ -243,7 +243,7 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
             </div>
             {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>}
 
-            {!unavailable && (
+            {!alreadyPurchased && !unavailable && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
@@ -263,7 +263,11 @@ export function EventDetail({ id, go, role, events, cancelledEventIds, bookingId
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
-            {unavailable ? (
+            {alreadyPurchased ? (
+              <p className="py-3 text-center text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+                Tickets already purchased
+              </p>
+            ) : unavailable ? (
               <Button
                 disabled
                 className="w-full disabled:opacity-100"

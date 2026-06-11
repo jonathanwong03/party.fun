@@ -98,22 +98,22 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
             <div>
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
-                  <col style={{ width: '24%' }} />
+                  <col style={{ width: '22%' }} />
                   <col style={{ width: '11%' }} />
-                  <col style={{ width: '20%' }} />
+                  <col style={{ width: '19%' }} />
                   <col style={{ width: '13%' }} />
-                  <col style={{ width: '10%' }} />
-                  <col style={{ width: '11%' }} />
-                  <col style={{ width: '11%' }} />
+                  <col style={{ width: '12%' }} />
+                  <col style={{ width: '14%' }} />
+                  <col style={{ width: '9%' }} />
                 </colgroup>
                 <thead>
                   <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
                     <th className="px-3 py-3 text-left">Event</th>
                     <th className="px-3 py-3 text-left">Date</th>
                     <th className="px-3 py-3 text-left">Hype</th>
-                    <th className="px-3 py-3 text-right">Revenue</th>
-                    <th className="px-3 py-3 text-right">Threshold</th>
-                    <th className="px-3 py-3 text-left">Status</th>
+                    <th className="px-3 py-3 text-left">Revenue</th>
+                    <th className="px-3 py-3 text-left">Threshold</th>
+                    <th className="px-3 py-3 pl-6 text-left">Status</th>
                     <th className="px-3 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -131,11 +131,11 @@ export function OrganiserHostedEvents({ route, go, events, onDelete, drafts, onD
                         </div>
                         <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}%</div>
                       </td>
-                      <td className="px-3 py-4 text-right" style={{ fontWeight: 600 }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</td>
-                      <td className="px-3 py-4 text-right" style={{ color: 'var(--muted-foreground)' }}>
+                      <td className="px-3 py-4 text-left" style={{ fontWeight: 600 }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-4 text-left" style={{ color: 'var(--muted-foreground)' }}>
                         {e.activeTicketCount}/{e.hypeThreshold}
                       </td>
-                      <td className="px-3 py-4">
+                      <td className="px-3 py-4 pl-6">
                         {isDrafts ? (
                           <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>Draft</span>
                         ) : (

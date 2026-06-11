@@ -311,17 +311,9 @@ function AppShell() {
     setProfileCounts(result.profile.counts);
   };
 
-  const myEventIds = useMemo(() => {
-    const ids = new Set<string>();
-    profileTickets.forEach((ticket) => {
-      if (ticket.activeTicketCount > 0) ids.add(ticket.eventId);
-    });
-    return ids;
-  }, [profileTickets]);
-
-  // Events that sit in the user's Cancelled tab — unavailable to re-pledge and hidden from All Events.
-  const cancelledEventIds = useMemo(
-    () => new Set(profileTickets.filter((ticket) => ticket.tab === 'cancelled').map((ticket) => ticket.eventId)),
+  // Active and buyer-cancelled purchases remain visible in All Events, but cannot be purchased again.
+  const purchasedEventIds = useMemo(
+    () => new Set(profileTickets.filter((ticket) => ticket.tab === 'upcoming' || ticket.tab === 'cancelled').map((ticket) => ticket.eventId)),
     [profileTickets],
   );
 
@@ -395,8 +387,8 @@ function AppShell() {
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
-        <BrowserRoute path="/events" element={<Landing go={go} myEventIds={myEventIds} cancelledEventIds={cancelledEventIds} events={events} loading={loadingData} error={dataError} />} />
-        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} cancelledEventIds={cancelledEventIds} onGiveAway={giveAway} />} />
+        <BrowserRoute path="/events" element={<Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />
+        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} purchasedEventIds={purchasedEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/events/:eventId/attendees" element={<AttendeesRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
@@ -421,13 +413,13 @@ function EventDetailRoute({
   role,
   go,
   events,
-  cancelledEventIds,
+  purchasedEventIds,
   onGiveAway,
 }: {
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  cancelledEventIds: Set<string>;
+  purchasedEventIds: Set<string>;
   onGiveAway: (bookingId: string, quantity: number) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
@@ -440,7 +432,7 @@ function EventDetailRoute({
       role={role}
       go={go}
       events={events}
-      cancelledEventIds={cancelledEventIds}
+      purchasedEventIds={purchasedEventIds}
       qty={state.qty}
       bookingId={state.bookingId}
       onGiveAway={onGiveAway}

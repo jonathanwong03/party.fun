@@ -8,15 +8,13 @@ import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 
 export function Landing({
   go,
-  myEventIds = new Set<string>(),
-  cancelledEventIds = new Set<string>(),
+  purchasedEventIds = new Set<string>(),
   events,
   loading = false,
   error = null,
 }: {
   go: (r: Route) => void;
-  myEventIds?: Set<string>;
-  cancelledEventIds?: Set<string>;
+  purchasedEventIds?: Set<string>;
   events: EventItem[];
   loading?: boolean;
   error?: string | null;
@@ -26,11 +24,10 @@ export function Landing({
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
 
-  // 3. Hide events the user has already pledged for (they reside in "My Events", not here)
-  //    and events the organiser created themselves (those belong only in the organiser dashboard).
+  // Organiser-owned, globally cancelled, and completed events do not belong in discovery.
   const available = useMemo(
-    () => events.filter((e) => !myEventIds.has(e.id) && !e.mine && e.status !== 'cancelled' && !cancelledEventIds.has(e.id)),
-    [events, myEventIds, cancelledEventIds],
+    () => events.filter((e) => !e.mine && e.status !== 'cancelled' && e.status !== 'completed'),
+    [events],
   );
   // "Most hyped" = highest backend-computed fill ratio (uncapped, so 106% beats 105%
   // though both display as 100%); ties keep the first encountered.
@@ -69,7 +66,6 @@ export function Landing({
       {/* Hero */}
       <section className="relative mb-10 overflow-hidden rounded-3xl border p-8 md:p-12"
         style={{ borderColor: 'var(--border)', background: 'linear-gradient(135deg, rgba(255,77,46,0.18), rgba(124,92,255,0.10) 50%, rgba(41,224,122,0.10))' }}>
-        <div className="pointer-events-none absolute -right-20 -top-20 size-[420px] rounded-full" style={{ background: 'radial-gradient(closest-side, rgba(255,77,46,0.35), transparent 70%)' }} />
         <div className="relative max-w-2xl">
           
           <h1 className="mt-4" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.03em' }}>Greenlit the parties <span style={{ color: '#ff4d2e' }}>your campus</span> actually wants.</h1>
@@ -90,7 +86,7 @@ export function Landing({
             <h2>Most Hyped</h2>
           </div>
           <div className="mb-12">
-            <EventCard event={featured} featured onView={() => go({ name: 'event', id: featured.id })} />
+            <EventCard event={featured} featured alreadyPurchased={purchasedEventIds.has(featured.id)} onView={() => go({ name: 'event', id: featured.id })} />
           </div>
         </>
       )}
@@ -133,7 +129,7 @@ export function Landing({
       {/* Grid */}
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {filtered.map((e) => (
-          <EventCard key={e.id} event={e} onView={() => go({ name: 'event', id: e.id })} />
+          <EventCard key={e.id} event={e} alreadyPurchased={purchasedEventIds.has(e.id)} onView={() => go({ name: 'event', id: e.id })} />
         ))}
       </div>
 

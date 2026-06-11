@@ -10,17 +10,28 @@ export function EventCard({
   event,
   onView,
   featured = false,
+  alreadyPurchased = false,
 }: {
   event: EventItem;
   onView: () => void;
   featured?: boolean;
+  alreadyPurchased?: boolean;
 }) {
   const statusIndex = getActiveStatus(event);
 
   return (
     <div
-      className="group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)]"
+      className={`group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)] ${alreadyPurchased ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d2e]' : ''}`}
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
+      role={alreadyPurchased ? 'button' : undefined}
+      tabIndex={alreadyPurchased ? 0 : undefined}
+      onClick={alreadyPurchased ? onView : undefined}
+      onKeyDown={alreadyPurchased ? (eventKey) => {
+        if (eventKey.key === 'Enter' || eventKey.key === ' ') {
+          eventKey.preventDefault();
+          onView();
+        }
+      } : undefined}
     >
       <div className={`relative ${featured ? 'h-64' : 'h-44'} overflow-hidden`}>
         <ImageWithFallback
@@ -68,21 +79,27 @@ export function EventCard({
           </div>
         </div>
 
-        <Button
-          size="sm"
-          onClick={onView}
-          className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
-          style={{ borderRadius: 9999 }}
-          disabled={event.status === 'cancelled' || event.status === 'completed'}
-        >
-          {event.status === 'greenlit'
-            ? `Buy Ticket · $${event.price}`
-            : event.status === 'cancelled'
-            ? 'Cancelled'
-            : event.status === 'completed'
-            ? 'Completed'
-            : `Pledge · $${event.price}`}
-        </Button>
+        {alreadyPurchased ? (
+          <p className="mt-auto py-2 text-center text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+            Tickets already purchased
+          </p>
+        ) : (
+          <Button
+            size="sm"
+            onClick={onView}
+            className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
+            style={{ borderRadius: 9999 }}
+            disabled={event.status === 'cancelled' || event.status === 'completed'}
+          >
+            {event.status === 'greenlit'
+              ? `Buy Ticket · $${event.price}`
+              : event.status === 'cancelled'
+              ? 'Cancelled'
+              : event.status === 'completed'
+              ? 'Completed'
+              : `Pledge · $${event.price}`}
+          </Button>
+        )}
       </div>
     </div>
   );
