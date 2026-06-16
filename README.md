@@ -39,6 +39,38 @@ VITE_SUPABASE_ANON_KEY=<your Supabase anon / publishable key>
 
 Vite only reads `.env` at startup, so (re)start the dev server after creating or changing it — otherwise login fails with `supabaseUrl is required`.
 
+### Email notifications (Resend)
+
+Transactional emails (account created, pledge confirmed, tickets given away, event cancelled / missed-threshold, organiser event created) are sent via [Resend](https://resend.com). Add to `backend/.env`:
+
+```
+RESEND_API_KEY=re_...                         # from resend.com → API Keys
+NOTIFICATION_FROM_EMAIL=onboarding@resend.dev # or an address on your verified Resend domain
+NOTIFICATION_OVERRIDE_EMAIL=you@example.com   # dev: redirect ALL emails here (see below)
+APP_BASE_URL=http://localhost:5173            # where the email buttons link (set to your deployed URL in prod)
+```
+
+With the key set, **real emails are sent**. During development, set `NOTIFICATION_OVERRIDE_EMAIL` so every email — even those addressed to mock/fake user addresses — is redirected to a real inbox you control. It accepts **one address or a comma-separated list**, e.g. `NOTIFICATION_OVERRIDE_EMAIL=alice@example.com,bob@example.com`.
+
+Notes:
+- On Resend's free tier **without a verified domain**, you can only send from `onboarding@resend.dev` **to your own Resend account email** — so the override should be (or include) that address. To send to arbitrary recipients or multiple real inboxes, verify a domain in Resend and set `NOTIFICATION_FROM_EMAIL` to an address on it.
+- If `RESEND_API_KEY` is left unset, the backend automatically falls back to a console "mock" mode (prints each email instead of sending) so the app still runs without credentials.
+
+### Password reset (Supabase recovery OTP)
+
+"Forgot password" uses Supabase Auth's recovery one-time code. In the Supabase dashboard:
+1. **Authentication → Providers → Email**: ensure email auth is enabled.
+2. **Authentication → Email Templates → Reset Password**: include the 6-digit code, e.g. `Your party.fun reset code is {{ .Token }}` (replaces the default magic-link template with the code the app prompts for).
+3. Reset (and signup confirmation) emails are sent by **Supabase**, not Resend, so test these flows with a **real email address** you can receive at.
+
+### Deadline processing (scheduler)
+
+Events that pass their deadline below the hype threshold are auto-cancelled and refunded by a scheduled job: a Supabase **`pg_cron`** schedule runs `expire_overdue_events()` and invokes the **`notify-expired-events` Edge Function**, which emails affected backers and organisers via Resend. The Edge Function needs the Resend key as a Supabase secret:
+
+```
+supabase secrets set RESEND_API_KEY=re_...
+```
+
 ```powershell
 cd "C:\smu heap\party.fun\frontend"
 npm install

@@ -373,7 +373,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
           eventName={existing.title}
           title="Cancel Event?"
           leadIn="You're about to cancel"
-          confirmWord="CANCEL"
+          confirmWord="CONFIRM"
           actionLabel="Cancel Event"
           warning="All pledges will be voided and any captured funds refunded. Backers will be notified by email."
           reason={cancelReason}

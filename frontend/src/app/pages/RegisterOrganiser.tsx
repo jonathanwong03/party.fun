@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest } from '../api';
+import { registerRequest, sendWelcomeEmailRequest } from '../api';
 import type { Route } from '../components/types';
 
 export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
@@ -51,6 +51,8 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
           setSubmitting(true);
           try {
             await registerRequest({ username: organiserName, email, password, role: 'organiser', telegram: telegram || undefined, phone: phone || undefined });
+            // Best-effort welcome email (needs the just-created session); never blocks signup.
+            try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');

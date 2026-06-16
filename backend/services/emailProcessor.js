@@ -31,12 +31,17 @@ export async function sendEmail({ to, subject, html }) {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.NOTIFICATION_FROM_EMAIL || 'onboarding@resend.dev';
   
-  // Developer sandbox override: redirects all emails to a single test email if defined
-  const overrideEmail = process.env.NOTIFICATION_OVERRIDE_EMAIL;
-  const recipient = overrideEmail ? overrideEmail.trim() : to;
-  
-  if (overrideEmail) {
-    console.log(`[EmailProcessor] Override active: Redirecting email target from ${to} to ${recipient}`);
+  // Developer sandbox override: redirects all emails to one or more test inboxes if
+  // defined. Accepts a single address or a comma-separated list (Resend `to` takes an
+  // array of up to 50 recipients).
+  const overrideRaw = process.env.NOTIFICATION_OVERRIDE_EMAIL;
+  const overrideList = overrideRaw
+    ? overrideRaw.split(',').map((e) => e.trim()).filter(Boolean)
+    : [];
+  const recipient = overrideList.length ? (overrideList.length === 1 ? overrideList[0] : overrideList) : to;
+
+  if (overrideList.length) {
+    console.log(`[EmailProcessor] Override active: Redirecting email target from ${to} to ${overrideList.join(', ')}`);
   }
 
   if (!isApiKeyValid(apiKey)) {

@@ -5,6 +5,10 @@ export type Route =
   | { name: 'confirmation'; id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string }
   | { name: 'attendees'; id: string }
   | { name: 'login' }
+  | { name: 'forgot-password' }
+  | { name: 'verify-code'; email: string }
+  | { name: 'reset-confirm' }
+  | { name: 'reset-password' }
   | { name: 'choose-account' }
   | { name: 'register-user' }
   | { name: 'register-organiser' }

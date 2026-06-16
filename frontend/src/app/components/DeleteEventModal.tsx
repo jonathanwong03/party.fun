@@ -40,9 +40,8 @@ export function DeleteEventModal({
   reasonPrompt?: string;
 }) {
   const [confirmText, setConfirmText] = useState('');
-  // When a reason field is shown, it must be filled before the action is allowed.
-  const reasonOk = onReasonChange ? (reason ?? '').trim().length > 0 : true;
-  const canDelete = confirmText.trim().toLowerCase() === confirmWord.toLowerCase() && reasonOk;
+  // The reason field (when shown) is optional — only the confirm word gates the action.
+  const canDelete = confirmText.trim().toLowerCase() === confirmWord.toLowerCase();
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/70 p-4 backdrop-blur-sm">

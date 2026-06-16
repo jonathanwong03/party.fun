@@ -5,6 +5,7 @@ import checkoutRoutes from './routes/checkoutRoutes.js';
 import confirmationRoutes from './routes/confirmationRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import userRoutes from './routes/userRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -27,6 +28,7 @@ app.use('/api/checkout', checkoutRoutes);
 app.use('/api/profile', userRoutes);
 app.use('/api/confirmation', confirmationRoutes);
 app.use('/api/hosted-events', organiserRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

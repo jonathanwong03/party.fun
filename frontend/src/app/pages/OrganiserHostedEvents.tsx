@@ -14,6 +14,14 @@ function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED'
   return 'EARLY BIRDS';
 }
 
+const STATUS_FILTERS: { key: 'all' | EventItem['status']; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'early_bird', label: 'Early Birds' },
+  { key: 'greenlit', label: 'Greenlit' },
+  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'completed', label: 'Completed' },
+];
+
 const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED', string> = {
   GREENLIT: '#29e07a',
   'EARLY BIRDS': '#ffcb3c',
@@ -25,11 +33,13 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
   const [deleting, setDeleting] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [tab, setTab] = useState<'created' | 'drafts'>(route.name === 'hosted-events' ? route.tab ?? 'created' : 'created');
+  const [statusFilter, setStatusFilter] = useState<'all' | EventItem['status']>('all');
 
   const isDrafts = tab === 'drafts';
   // The dashboard is for events the organiser created themselves (mine), not the full catalogue.
   const created = events.filter((e) => e.mine);
-  const rows = isDrafts ? drafts : created;
+  const filteredCreated = statusFilter === 'all' ? created : created.filter((e) => e.status === statusFilter);
+  const rows = isDrafts ? drafts : filteredCreated;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
 
   // Revenue + aggregate counts are computed by the backend (accurate, net of refunds).
@@ -89,6 +99,30 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
               </button>
             ))}
           </div>
+
+          {/* Status filter (created events only) */}
+          {!isDrafts && (
+            <div className="mb-5 flex flex-wrap gap-2">
+              {STATUS_FILTERS.map((f) => {
+                const active = statusFilter === f.key;
+                return (
+                  <button
+                    key={f.key}
+                    onClick={() => setStatusFilter(f.key)}
+                    className="rounded-full border px-3 py-1.5 text-xs transition"
+                    style={{
+                      borderColor: active ? '#ff4d2e' : 'var(--border)',
+                      background: active ? 'rgba(255,77,46,0.12)' : 'transparent',
+                      color: active ? '#ff4d2e' : 'var(--muted-foreground)',
+                      fontWeight: 600,
+                    }}
+                  >
+                    {f.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -193,7 +227,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
             eventName={target.title}
             title="Cancel Event?"
             leadIn="You're about to cancel"
-            confirmWord="CANCEL"
+            confirmWord="CONFIRM"
             actionLabel="Cancel Event"
             warning="All pledges will be voided and any captured funds refunded. Backers will be notified by email."
             reason={reason}

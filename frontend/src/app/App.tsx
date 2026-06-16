@@ -21,6 +21,10 @@ import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
 import { Confirmation } from './pages/Confirmation';
 import { Login } from './pages/Login';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { VerifyCode } from './pages/VerifyCode';
+import { ResetConfirm } from './pages/ResetConfirm';
+import { ResetPassword } from './pages/ResetPassword';
 import { ChooseAccount } from './pages/ChooseAccount';
 import { RegisterUser } from './pages/RegisterUser';
 import { RegisterOrganiser } from './pages/RegisterOrganiser';
@@ -40,6 +44,7 @@ type RouteState = {
   lines?: { label: string; count: number; subtotalText: string }[];
   reference?: string;
   tab?: 'created' | 'drafts';
+  email?: string;
 };
 
 function pathForRoute(route: Route) {
@@ -56,6 +61,14 @@ function pathForRoute(route: Route) {
       return `/events/${route.id}/attendees`;
     case 'login':
       return '/login';
+    case 'forgot-password':
+      return '/forgot-password';
+    case 'verify-code':
+      return '/forgot-password/verify';
+    case 'reset-confirm':
+      return '/forgot-password/confirm';
+    case 'reset-password':
+      return '/forgot-password/reset';
     case 'choose-account':
       return '/signup';
     case 'register-user':
@@ -100,11 +113,16 @@ function stateForRoute(route: Route): RouteState | undefined {
     return route.tab ? { tab: route.tab } : undefined;
   }
 
+  if (route.name === 'verify-code') {
+    return { email: route.email };
+  }
+
   return undefined;
 }
 
 function isAuthPath(pathname: string) {
-  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser';
+  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser'
+    || pathname.startsWith('/forgot-password');
 }
 
 // Pages a signed-out guest may view: the All Events list and any event detail.
@@ -114,6 +132,10 @@ function isPublicPath(pathname: string) {
 
 function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
+  if (pathname === '/forgot-password') return { name: 'forgot-password' };
+  if (pathname === '/forgot-password/verify') return { name: 'verify-code', email: state?.email ?? '' };
+  if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm' };
+  if (pathname === '/forgot-password/reset') return { name: 'reset-password' };
   if (pathname === '/signup') return { name: 'choose-account' };
   if (pathname === '/signup/user') return { name: 'register-user' };
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
@@ -407,6 +429,10 @@ function AppShell() {
       <Routes>
         <BrowserRoute path="/" element={<Navigate to="/events" replace />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/forgot-password" element={<ForgotPassword go={go} />} />
+        <BrowserRoute path="/forgot-password/verify" element={<VerifyCodeRoute go={go} />} />
+        <BrowserRoute path="/forgot-password/confirm" element={<ResetConfirm go={go} />} />
+        <BrowserRoute path="/forgot-password/reset" element={<ResetPassword go={go} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
@@ -502,6 +528,14 @@ function ConfirmationRoute({
   if (!role) return <Navigate to="/login" replace />;
 
   return <Confirmation id={eventId} qty={state.qty ?? 1} lines={state.lines} reference={state.reference} role={role} go={go} events={events} />;
+}
+
+function VerifyCodeRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const email = (location.state as RouteState | null)?.email;
+  // Direct hits / refreshes lose the email in router state — send back to step 1.
+  if (!email) return <Navigate to="/forgot-password" replace />;
+  return <VerifyCode go={go} email={email} />;
 }
 
 function AttendeesRoute({

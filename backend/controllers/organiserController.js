@@ -9,6 +9,7 @@ import {
   deleteDraft as removeDraft,
   getHostedSummary,
 } from '../services/eventService.js';
+import { notifyEventCreated, notifyEventCancelled } from '../services/notificationService.js';
 
 // Human-readable messages for the authoritative validation codes the RPCs return.
 const EVENT_ERROR_MESSAGES = {
@@ -52,6 +53,19 @@ export async function postCreateEvent(req, res) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to create event.') });
     return;
   }
+  // Fire-and-forget "event created" email to the organiser.
+  const { data: me } = await req.supabase.from('USER').select('email, username').eq('id', req.user.id).single();
+  if (me?.email) {
+    notifyEventCreated({
+      email: me.email,
+      organiserName: me.username,
+      eventTitle: req.body.title,
+      eventId: result.eventId,
+      hypeThreshold: req.body.hypeThreshold,
+      deadline: req.body.deadlineAt,
+    });
+  }
+
   res.status(201).json({ status: 'ok', eventId: result.eventId });
 }
 
@@ -74,10 +88,28 @@ export async function deleteEvent(req, res) {
 }
 
 export async function postCancelEvent(req, res) {
-  const result = await cancelEventService(req.supabase, req.params.eventId, req.body?.reason ?? '');
+  const eventId = req.params.eventId;
+  // Reason is optional in the UI; default it so the RPC's reason_required never trips.
+  const reason = (req.body?.reason ?? '').trim() || 'Cancelled by the organiser';
+  const result = await cancelEventService(req.supabase, eventId, reason);
   if (result.error) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to cancel event.') });
     return;
   }
+
+  // Fire-and-forget: email every refunded backer + the organiser. Runs after the
+  // cancel RPC so refundedAmount is set; get_event_backer_contacts is host-only.
+  const [{ data: ev }, { data: me }, { data: backers }] = await Promise.all([
+    req.supabase.from('EVENT').select('title').eq('id', eventId).single(),
+    req.supabase.from('USER').select('email, username').eq('id', req.user.id).single(),
+    req.supabase.rpc('get_event_backer_contacts', { p_event_id: eventId }),
+  ]);
+  notifyEventCancelled({
+    eventTitle: ev?.title ?? 'your event',
+    reason: 'organiser',
+    backers: (backers ?? []).map((b) => ({ email: b.email, username: b.username, refundAmount: b.refundAmount })),
+    organiser: me?.email ? { email: me.email, username: me.username } : null,
+  });
+
   res.json({ status: 'ok' });
 }

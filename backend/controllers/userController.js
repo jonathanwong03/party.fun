@@ -1,4 +1,5 @@
 import { getProfile as readProfile, giveAwayTickets, deleteBooking as removeBooking } from '../services/eventService.js';
+import { notifyTicketsGivenAway } from '../services/notificationService.js';
 
 export async function getProfile(req, res) {
   const profile = await readProfile(req.supabase);
@@ -14,6 +15,20 @@ export async function giveAwayBookingTickets(req, res) {
       message: result.error === 'not_found' ? 'Booking not found.' : 'Choose a valid number of active tickets.',
     });
     return;
+  }
+
+  // Fire-and-forget give-away email. allGivenAway = the booking has no active tickets left.
+  const bookingId = Number(req.params.bookingId);
+  const booking = (result.profile?.tickets ?? []).find((t) => Number(t.bookingId) === bookingId);
+  const { data: me } = await req.supabase.from('USER').select('email, username').eq('id', req.user.id).single();
+  if (me?.email && result.event) {
+    notifyTicketsGivenAway({
+      email: me.email,
+      username: me.username,
+      eventTitle: result.event.title,
+      qty: Number(req.body.quantity),
+      allGivenAway: !booking || booking.activeTicketCount === 0,
+    });
   }
 
   res.json({ status: 'ok', event: result.event, profile: result.profile });

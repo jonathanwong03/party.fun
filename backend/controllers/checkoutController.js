@@ -1,5 +1,6 @@
 
 import { createPledge, quotePledge } from '../services/eventService.js';
+import { notifyPledgeConfirmed } from '../services/notificationService.js';
 
 const PLEDGE_MESSAGES = {
   not_found: 'Event not found.',
@@ -32,5 +33,18 @@ export async function postPledge(req, res) {
     });
     return;
   }
+  // Fire-and-forget pledge-confirmation email to the pledger.
+  const { data: me } = await req.supabase.from('USER').select('email, username').eq('id', req.user.id).single();
+  if (me?.email && result.event) {
+    notifyPledgeConfirmed({
+      email: me.email,
+      username: me.username,
+      eventTitle: result.event.title,
+      qty: Number(req.body.qty),
+      pricePerTicket: result.event.price,
+      deadline: result.event.deadlineAt,
+    });
+  }
+
   res.json({ status: 'ok', event: result.event, profile: result.profile, reference: result.reference });
 }

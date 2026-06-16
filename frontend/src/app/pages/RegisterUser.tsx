@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest, uploadAvatar } from '../api';
+import { registerRequest, uploadAvatar, sendWelcomeEmailRequest } from '../api';
 import { supabase } from '../supabase';
 import { PRESET_AVATARS } from '../components/media';
 import type { Route } from '../components/types';
@@ -82,6 +82,8 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
                 try { await uploadAvatar(avatarFile); } catch { /* non-blocking */ }
               }
             }
+            // Best-effort welcome email (needs the just-created session); never blocks signup.
+            try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');

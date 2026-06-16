@@ -129,6 +129,12 @@ export async function registerRequest(input: {
   return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl, telegram: input.telegram ?? null, phone: input.phone ?? null };
 }
 
+// Best-effort "account created" email, sent right after signup (needs the new
+// session). Safe to ignore failures — it must never block the signup flow.
+export async function sendWelcomeEmailRequest(): Promise<void> {
+  await apiFetch('/api/notifications/welcome', { method: 'POST' });
+}
+
 // Persist a username change (own row); reject duplicates (USER.username is unique).
 export async function updateUsernameRequest(username: string): Promise<void> {
   const userId = await currentUserId();
@@ -154,8 +160,8 @@ export async function updateContactRequest(telegram: string, phone: string): Pro
 export async function deleteAccountRequest(): Promise<void> {
   const { error } = await supabase.rpc('delete_my_account');
   if (error) {
-    if (error.code === 'P0001' || /has_events/.test(error.message)) {
-      throw new Error('Delete your hosted events before deleting your account.');
+    if (error.code === 'P0001' || /has_active_events|has_events/.test(error.message)) {
+      throw new Error('You can only delete your account when you have no active (Early Birds or Greenlit) events.');
     }
     throw new Error(error.message);
   }
@@ -163,6 +169,27 @@ export async function deleteAccountRequest(): Promise<void> {
 }
 
 export async function logoutRequest(): Promise<void> {
+  await supabase.auth.signOut();
+}
+
+// ── Password reset (Supabase recovery OTP) ──────────────────────────────────────
+
+// Sends a 6-digit recovery code to the email (Supabase emails it; template uses {{ .Token }}).
+export async function requestPasswordReset(email: string): Promise<void> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
+  if (error) throw new Error(error.message);
+}
+
+// Verifies the 6-digit code; on success Supabase establishes a recovery session.
+export async function verifyResetCode(email: string, token: string): Promise<void> {
+  const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: token.trim(), type: 'recovery' });
+  if (error) throw new Error('That code is invalid or has expired. Please try again.');
+}
+
+// Sets the new password using the recovery session, then signs out so the user logs in fresh.
+export async function setNewPassword(password: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw new Error(error.message);
   await supabase.auth.signOut();
 }
 
