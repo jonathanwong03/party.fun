@@ -15,6 +15,7 @@ export async function giveAwayBookingTickets(req, res) {
     });
     return;
   }
+
   res.json({ status: 'ok', event: result.event, profile: result.profile });
 }
 
