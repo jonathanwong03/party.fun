@@ -172,25 +172,35 @@ export async function logoutRequest(): Promise<void> {
   await supabase.auth.signOut();
 }
 
-// ── Password reset (Supabase recovery OTP) ──────────────────────────────────────
+// ── Password reset (custom OTP via the backend + Resend) ────────────────────────
+// These are unauthenticated (the user is logged out), so they use a plain fetch.
 
-// Sends a 6-digit recovery code to the email (Supabase emails it; template uses {{ .Token }}).
-export async function requestPasswordReset(email: string): Promise<void> {
-  const { error } = await supabase.auth.resetPasswordForEmail(email.trim());
-  if (error) throw new Error(error.message);
+async function postPublic(path: string, body: unknown): Promise<void> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
 }
 
-// Verifies the 6-digit code; on success Supabase establishes a recovery session.
-export async function verifyResetCode(email: string, token: string): Promise<void> {
-  const { error } = await supabase.auth.verifyOtp({ email: email.trim(), token: token.trim(), type: 'recovery' });
-  if (error) throw new Error('That code is invalid or has expired. Please try again.');
+// Emails a 6-digit code (via Resend → the override inbox in dev) for any email in the DB.
+export function requestPasswordReset(email: string): Promise<void> {
+  return postPublic('/api/password-reset/request', { email: email.trim() });
 }
 
-// Sets the new password using the recovery session, then signs out so the user logs in fresh.
-export async function setNewPassword(password: string): Promise<void> {
-  const { error } = await supabase.auth.updateUser({ password });
-  if (error) throw new Error(error.message);
-  await supabase.auth.signOut();
+// Verifies the 6-digit code for that email.
+export function verifyResetCode(email: string, code: string): Promise<void> {
+  return postPublic('/api/password-reset/verify', { email: email.trim(), code: code.trim() });
+}
+
+// Sets the new password once the code is verified.
+export function setNewPassword(email: string, code: string, password: string): Promise<void> {
+  return postPublic('/api/password-reset/complete', { email: email.trim(), code: code.trim(), password });
 }
 
 // ── Storage uploads (direct to Supabase, scoped to the user's folder) ─────────

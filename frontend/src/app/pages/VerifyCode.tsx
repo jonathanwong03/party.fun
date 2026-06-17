@@ -22,7 +22,7 @@ export function VerifyCode({ go, email }: { go: (r: Route) => void; email: strin
     setSubmitting(true);
     try {
       await verifyResetCode(email, code);
-      go({ name: 'reset-confirm' });
+      go({ name: 'reset-confirm', email, code: code.trim() });
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : 'That code is invalid or has expired.');
     } finally {

@@ -56,12 +56,17 @@ Notes:
 - On Resend's free tier **without a verified domain**, you can only send from `onboarding@resend.dev` **to your own Resend account email** — so the override should be (or include) that address. To send to arbitrary recipients or multiple real inboxes, verify a domain in Resend and set `NOTIFICATION_FROM_EMAIL` to an address on it.
 - If `RESEND_API_KEY` is left unset, the backend automatically falls back to a console "mock" mode (prints each email instead of sending) so the app still runs without credentials.
 
-### Password reset (Supabase recovery OTP)
+### Password reset (custom OTP via Resend)
 
-"Forgot password" uses Supabase Auth's recovery one-time code. In the Supabase dashboard:
-1. **Authentication → Providers → Email**: ensure email auth is enabled.
-2. **Authentication → Email Templates → Reset Password**: include the 6-digit code, e.g. `Your party.fun reset code is {{ .Token }}` (replaces the default magic-link template with the code the app prompts for).
-3. Reset (and signup confirmation) emails are sent by **Supabase**, not Resend, so test these flows with a **real email address** you can receive at.
+"Forgot password" uses a custom one-time code, **not** Supabase's built-in recovery, so the code is emailed through Resend (and therefore honours `NOTIFICATION_OVERRIDE_EMAIL` in dev) and works for any email stored in the app's `USER` table — including test domains. The backend (`/api/password-reset/*`) generates a 6-digit code, emails it, verifies it, and then updates the password using the Supabase **service-role** key.
+
+Add the service-role key to `backend/.env` (server-only — never sent to the browser; the file is gitignored):
+
+```
+SUPABASE_SERVICE_ROLE_KEY=...   # Supabase dashboard → Project Settings → API → service_role (secret)
+```
+
+In dev, the reset code is redirected to your `NOTIFICATION_OVERRIDE_EMAIL` inbox (or printed to the backend console if no Resend key is set), so you can reset accounts that use fake email addresses.
 
 ### Deadline processing (scheduler)
 

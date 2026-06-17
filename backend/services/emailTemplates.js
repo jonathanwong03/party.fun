@@ -82,6 +82,18 @@ const h1 = (text) => `<h1 style="margin:0 0 16px;font-size:22px;font-weight:700;
 const p = (text) => `<p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#9ca3af;font-family:${FONT};">${text}</p>`;
 const divider = '<div style="height:1px;background-color:#1f1f2e;margin:14px 0;"></div>';
 
+export function passwordResetTemplate({ userName, code }) {
+  return emailShell(`
+    ${h1('Reset your password')}
+    ${p(`Hi ${userName || 'there'},`)}
+    ${p('Use the 6-digit code below to reset your party.fun password. It expires in 10 minutes.')}
+    <div style="text-align:center;margin:24px 0;">
+      <div style="display:inline-block;background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:18px 28px;font-family:${FONT};font-size:32px;font-weight:800;letter-spacing:10px;color:#ffffff;">${code}</div>
+    </div>
+    ${p("If you didn't request this, you can safely ignore this email — your password won't change.")}
+  `);
+}
+
 export function accountCreatedTemplate({ userName, role }) {
   const roleLabel = role === 'organiser' ? 'Organiser' : 'Attendee';
   return emailShell(`

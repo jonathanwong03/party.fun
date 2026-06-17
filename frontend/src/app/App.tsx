@@ -45,6 +45,7 @@ type RouteState = {
   reference?: string;
   tab?: 'created' | 'drafts';
   email?: string;
+  code?: string;
 };
 
 function pathForRoute(route: Route) {
@@ -117,6 +118,10 @@ function stateForRoute(route: Route): RouteState | undefined {
     return { email: route.email };
   }
 
+  if (route.name === 'reset-confirm' || route.name === 'reset-password') {
+    return { email: route.email, code: route.code };
+  }
+
   return undefined;
 }
 
@@ -134,8 +139,8 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
   if (pathname === '/forgot-password') return { name: 'forgot-password' };
   if (pathname === '/forgot-password/verify') return { name: 'verify-code', email: state?.email ?? '' };
-  if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm' };
-  if (pathname === '/forgot-password/reset') return { name: 'reset-password' };
+  if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm', email: state?.email ?? '', code: state?.code ?? '' };
+  if (pathname === '/forgot-password/reset') return { name: 'reset-password', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/signup') return { name: 'choose-account' };
   if (pathname === '/signup/user') return { name: 'register-user' };
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
@@ -431,8 +436,8 @@ function AppShell() {
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/forgot-password" element={<ForgotPassword go={go} />} />
         <BrowserRoute path="/forgot-password/verify" element={<VerifyCodeRoute go={go} />} />
-        <BrowserRoute path="/forgot-password/confirm" element={<ResetConfirm go={go} />} />
-        <BrowserRoute path="/forgot-password/reset" element={<ResetPassword go={go} />} />
+        <BrowserRoute path="/forgot-password/confirm" element={<ResetConfirmRoute go={go} />} />
+        <BrowserRoute path="/forgot-password/reset" element={<ResetPasswordRoute go={go} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
@@ -536,6 +541,20 @@ function VerifyCodeRoute({ go }: { go: (r: Route) => void }) {
   // Direct hits / refreshes lose the email in router state — send back to step 1.
   if (!email) return <Navigate to="/forgot-password" replace />;
   return <VerifyCode go={go} email={email} />;
+}
+
+function ResetConfirmRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const { email, code } = (location.state as RouteState | null) ?? {};
+  if (!email || !code) return <Navigate to="/forgot-password" replace />;
+  return <ResetConfirm go={go} email={email} code={code} />;
+}
+
+function ResetPasswordRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const { email, code } = (location.state as RouteState | null) ?? {};
+  if (!email || !code) return <Navigate to="/forgot-password" replace />;
+  return <ResetPassword go={go} email={email} code={code} />;
 }
 
 function AttendeesRoute({

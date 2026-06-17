@@ -8,7 +8,7 @@ import { setNewPassword } from '../api';
 import { required, confirmError } from '../components/validation';
 import type { Route } from '../components/types';
 
-export function ResetPassword({ go }: { go: (r: Route) => void }) {
+export function ResetPassword({ go, email, code }: { go: (r: Route) => void; email: string; code: string }) {
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [attempted, setAttempted] = useState(false);
@@ -25,7 +25,7 @@ export function ResetPassword({ go }: { go: (r: Route) => void }) {
     setError(null);
     setSubmitting(true);
     try {
-      await setNewPassword(password);
+      await setNewPassword(email, code, password);
       setDone(true);
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : 'Unable to update your password. Restart the reset flow and try again.');

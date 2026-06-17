@@ -7,8 +7,8 @@ export type Route =
   | { name: 'login' }
   | { name: 'forgot-password' }
   | { name: 'verify-code'; email: string }
-  | { name: 'reset-confirm' }
-  | { name: 'reset-password' }
+  | { name: 'reset-confirm'; email: string; code: string }
+  | { name: 'reset-password'; email: string; code: string }
   | { name: 'choose-account' }
   | { name: 'register-user' }
   | { name: 'register-organiser' }

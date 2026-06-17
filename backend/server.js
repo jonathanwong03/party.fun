@@ -6,6 +6,7 @@ import confirmationRoutes from './routes/confirmationRoutes.js';
 import eventRoutes from './routes/eventRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
+import passwordResetRoutes from './routes/passwordResetRoutes.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -29,6 +30,7 @@ app.use('/api/profile', userRoutes);
 app.use('/api/confirmation', confirmationRoutes);
 app.use('/api/hosted-events', organiserRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/password-reset', passwordResetRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

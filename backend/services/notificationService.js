@@ -71,6 +71,16 @@ export function notifyEventCreated({ email, organiserName, eventTitle, eventId, 
   );
 }
 
+// Password reset: emails the 6-digit code. Awaited (the request waits on the send),
+// unlike the fire-and-forget notifications above.
+export async function notifyPasswordReset({ email, username, code }) {
+  await send('passwordReset', {
+    to: email,
+    subject: 'Your party.fun password reset code',
+    html: templates.passwordResetTemplate({ userName: username, code }),
+  });
+}
+
 // #4 — event cancelled: full-refund email to every backer + a summary to the organiser.
 // `reason` is 'missed_threshold' or 'organiser'.
 export function notifyEventCancelled({ eventTitle, reason, backers = [], organiser = null }) {
