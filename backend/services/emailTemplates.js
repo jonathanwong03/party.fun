@@ -82,10 +82,14 @@ const h1 = (text) => `<h1 style="margin:0 0 16px;font-size:22px;font-weight:700;
 const p = (text) => `<p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#9ca3af;font-family:${FONT};">${text}</p>`;
 const divider = '<div style="height:1px;background-color:#1f1f2e;margin:14px 0;"></div>';
 
-export function passwordResetTemplate({ userName, code }) {
+// Recipient identity line, e.g. "Hi user123 (User)," — makes a shared demo inbox unambiguous.
+const roleLabel = (role) => (role === 'organiser' ? 'Organiser' : 'User');
+const greet = (name, role) => p(`Hi ${name} (${roleLabel(role)}),`);
+
+export function passwordResetTemplate({ userName, role, code }) {
   return emailShell(`
     ${h1('Reset your password')}
-    ${p(`Hi ${userName || 'there'},`)}
+    ${greet(userName || 'there', role)}
     ${p('Use the 6-digit code below to reset your party.fun password. It expires in 10 minutes.')}
     <div style="text-align:center;margin:24px 0;">
       <div style="display:inline-block;background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:18px 28px;font-family:${FONT};font-size:32px;font-weight:800;letter-spacing:10px;color:#ffffff;">${code}</div>
@@ -95,24 +99,24 @@ export function passwordResetTemplate({ userName, code }) {
 }
 
 export function accountCreatedTemplate({ userName, role }) {
-  const roleLabel = role === 'organiser' ? 'Organiser' : 'Attendee';
+  const accountType = role === 'organiser' ? 'Organiser' : 'Attendee';
   return emailShell(`
     ${h1('Welcome to party.fun! 🎉')}
-    ${p(`Hi ${userName},`)}
-    ${p(`Your <strong>${roleLabel}</strong> account has been created successfully. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
-    ${detailsBox('Account Details', row('Username', userName) + row('Account type', roleLabel))}
+    ${greet(userName, role)}
+    ${p(`Your <strong>${accountType}</strong> account has been created successfully. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
+    ${detailsBox('Account Details', row('Username', userName) + row('Account type', accountType))}
     ${button('Open party.fun', `${APP_URL}/login`)}
   `);
 }
 
-export function pledgeConfirmedTemplate({ userName, eventTitle, qty, pricePerTicket, total, deadline }) {
+export function pledgeConfirmedTemplate({ userName, role, eventTitle, qty, pricePerTicket, total, deadline }) {
   const formattedTotal = Number(total).toFixed(2);
   const formattedPrice = Number(pricePerTicket).toFixed(2);
   const formattedDeadline = sgDateTime(deadline, 'the funding deadline');
 
   return emailShell(`
     ${h1('Pledge Confirmed! 🚀')}
-    ${p(`Hi ${userName},`)}
+    ${greet(userName, role)}
     ${p(`Your pledge to <strong>${eventTitle}</strong> has been successfully placed. We've reserved your spots, but your card will only be charged once the threshold is crossed and the event goes greenlit!`)}
     ${detailsBox('Pledge Details',
       row('Event', eventTitle) +
@@ -132,7 +136,7 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
 
   return emailShell(`
     ${h1('Your event is live! 🚀')}
-    ${p(`Hi ${organiserName},`)}
+    ${greet(organiserName, 'organiser')}
     ${p(`Your event <strong>${eventTitle}</strong> has been created and is now open for pledges. It will greenlight automatically once it reaches its hype threshold.`)}
     ${detailsBox('Event Details',
       row('Event', eventTitle) +
@@ -143,7 +147,7 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   `);
 }
 
-export function eventCancelledTemplate({ userName, eventTitle, refundAmount, reason }) {
+export function eventCancelledTemplate({ userName, role, eventTitle, refundAmount, reason }) {
   const formattedRefund = Number(refundAmount || 0).toFixed(2);
   const missed = reason === 'missed_threshold';
   const intro = missed
@@ -152,7 +156,7 @@ export function eventCancelledTemplate({ userName, eventTitle, refundAmount, rea
 
   return emailShell(`
     ${h1('Event Cancelled')}
-    ${p(`Hi ${userName},`)}
+    ${greet(userName, role)}
     ${p(`${intro} You will receive a <strong>full refund</strong> of your pledge — no action needed on your part.`)}
     ${detailsBox('Refund Details',
       row('Event', eventTitle) +
@@ -172,7 +176,7 @@ export function eventCancelledOrganiserTemplate({ organiserName, eventTitle, rea
 
   return emailShell(`
     ${h1('Event Cancelled')}
-    ${p(`Hi ${organiserName},`)}
+    ${greet(organiserName, 'organiser')}
     ${p(`${intro} ${backerCount > 0 ? `All <strong>${backerCount}</strong> backer${backerCount === 1 ? '' : 's'} have been refunded in full and notified by email.` : 'There were no active backers to refund.'}`)}
     ${detailsBox('Cancellation Summary',
       row('Event', eventTitle) +
@@ -183,14 +187,14 @@ export function eventCancelledOrganiserTemplate({ organiserName, eventTitle, rea
   `);
 }
 
-export function ticketsGivenAwayTemplate({ userName, eventTitle, qty, allGivenAway }) {
+export function ticketsGivenAwayTemplate({ userName, role, eventTitle, qty, allGivenAway }) {
   const note = allGivenAway
     ? `You've given away <strong>all</strong> your tickets, so you will <strong>no longer be able to attend ${eventTitle}</strong>. The released spots have returned to the public pool.`
     : `You've given away <strong>${qty}</strong> ticket${qty === 1 ? '' : 's'} for <strong>${eventTitle}</strong>. Your remaining tickets are still active.`;
 
   return emailShell(`
     ${h1('Tickets Given Away')}
-    ${p(`Hi ${userName},`)}
+    ${greet(userName, role)}
     ${p(note)}
     ${detailsBox('Give-Away Details',
       row('Event', eventTitle) +

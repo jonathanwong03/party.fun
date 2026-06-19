@@ -32,13 +32,14 @@ export function notifyAccountCreated({ email, username, role }) {
 }
 
 // #3 — pledge confirmed (to the pledger)
-export function notifyPledgeConfirmed({ email, username, eventTitle, qty, pricePerTicket, deadline }) {
+export function notifyPledgeConfirmed({ email, username, role, eventTitle, qty, pricePerTicket, deadline }) {
   fireAndForget('pledgeConfirmed', () =>
     send('pledgeConfirmed', {
       to: email,
       subject: `Pledge Confirmed: ${eventTitle} 🚀`,
       html: templates.pledgeConfirmedTemplate({
         userName: username,
+        role,
         eventTitle,
         qty,
         pricePerTicket,
@@ -50,12 +51,12 @@ export function notifyPledgeConfirmed({ email, username, eventTitle, qty, priceP
 }
 
 // #5 — tickets given away (to the giver). allGivenAway → "can no longer attend".
-export function notifyTicketsGivenAway({ email, username, eventTitle, qty, allGivenAway }) {
+export function notifyTicketsGivenAway({ email, username, role, eventTitle, qty, allGivenAway }) {
   fireAndForget('ticketsGivenAway', () =>
     send('ticketsGivenAway', {
       to: email,
       subject: `Tickets given away: ${eventTitle}`,
-      html: templates.ticketsGivenAwayTemplate({ userName: username, eventTitle, qty, allGivenAway }),
+      html: templates.ticketsGivenAwayTemplate({ userName: username, role, eventTitle, qty, allGivenAway }),
     }),
   );
 }
@@ -73,11 +74,11 @@ export function notifyEventCreated({ email, organiserName, eventTitle, eventId, 
 
 // Password reset: emails the 6-digit code. Awaited (the request waits on the send),
 // unlike the fire-and-forget notifications above.
-export async function notifyPasswordReset({ email, username, code }) {
+export async function notifyPasswordReset({ email, username, role, code }) {
   await send('passwordReset', {
     to: email,
     subject: 'Your party.fun password reset code',
-    html: templates.passwordResetTemplate({ userName: username, code }),
+    html: templates.passwordResetTemplate({ userName: username, role, code }),
   });
 }
 
@@ -92,6 +93,7 @@ export function notifyEventCancelled({ eventTitle, reason, backers = [], organis
           subject: `Event cancelled — full refund: ${eventTitle}`,
           html: templates.eventCancelledTemplate({
             userName: b.username,
+            role: b.role,
             eventTitle,
             refundAmount: b.refundAmount ?? 0,
             reason,

@@ -16,7 +16,7 @@ const sixDigit = () => String(Math.floor(100000 + Math.random() * 900000));
 async function findUser(email) {
   const { data, error } = await adminClient()
     .from('USER')
-    .select('id, email, username')
+    .select('id, email, username, role')
     .ilike('email', normalise(email))
     .limit(1);
   if (error) throw new Error(error.message);
@@ -45,7 +45,7 @@ export async function requestReset(email) {
   store.set(normalise(email), { code, expiresAt: Date.now() + CODE_TTL_MS, attempts: 0, userId: user.id, username: user.username });
 
   // Awaited so the HTTP response reflects whether the email was dispatched.
-  await notifyPasswordReset({ email: user.email, username: user.username, code });
+  await notifyPasswordReset({ email: user.email, username: user.username, role: user.role, code });
   return { status: 'ok' };
 }
 

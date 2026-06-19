@@ -7,6 +7,7 @@ import eventRoutes from './routes/eventRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import passwordResetRoutes from './routes/passwordResetRoutes.js';
+import { startDeadlineScheduler } from './services/deadlineScheduler.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -47,6 +48,7 @@ app.use((err, _req, res, _next) => {
 
 const server = app.listen(PORT, () => {
   console.log(`API server running at http://localhost:${PORT}`);
+  startDeadlineScheduler();
 });
 
 server.on('error', (err) => {

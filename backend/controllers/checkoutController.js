@@ -34,11 +34,12 @@ export async function postPledge(req, res) {
     return;
   }
   // Fire-and-forget pledge-confirmation email to the pledger.
-  const { data: me } = await req.supabase.from('USER').select('email, username').eq('id', req.user.id).single();
+  const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
   if (me?.email && result.event) {
     notifyPledgeConfirmed({
       email: me.email,
       username: me.username,
+      role: me.role,
       eventTitle: result.event.title,
       qty: Number(req.body.qty),
       pricePerTicket: result.event.price,

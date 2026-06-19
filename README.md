@@ -56,6 +56,22 @@ Notes:
 - On Resend's free tier **without a verified domain**, you can only send from `onboarding@resend.dev` **to your own Resend account email** — so the override should be (or include) that address. To send to arbitrary recipients or multiple real inboxes, verify a domain in Resend and set `NOTIFICATION_FROM_EMAIL` to an address on it.
 - If `RESEND_API_KEY` is left unset, the backend automatically falls back to a console "mock" mode (prints each email instead of sending) so the app still runs without credentials.
 
+#### When emails are sent
+
+Each email greets the recipient as `Hi <username> (User|Organiser),` so you can tell whose account received it in a shared demo inbox.
+
+| Action that triggers it | Who receives the email |
+|---|---|
+| A new account is created (user or organiser) | the new account holder |
+| You pledge / buy tickets for an event | you (the buyer) |
+| You give away tickets (some or all) | you (different wording when you give away **all** — you can no longer attend) |
+| An organiser **creates** an event | the organiser |
+| An organiser **cancels** an event | every backer (full-refund notice) **and** the organiser |
+| An event **misses its hype threshold by the deadline** | every backer (full-refund notice) **and** the organiser — sent automatically by the scheduler |
+| You request a password reset | the account's email — the 6-digit code |
+
+In development, with `NOTIFICATION_OVERRIDE_EMAIL` set, **all** of these are redirected to that one inbox regardless of who they're addressed to (so you'll receive every email yourself). Without a `RESEND_API_KEY`, they're printed to the backend console instead. Note: the "deadline missed" email only fires while the backend is running (the scheduler checks on an interval).
+
 ### Password reset (custom OTP via Resend)
 
 "Forgot password" uses a custom one-time code, **not** Supabase's built-in recovery, so the code is emailed through Resend (and therefore honours `NOTIFICATION_OVERRIDE_EMAIL` in dev) and works for any email stored in the app's `USER` table — including test domains. The backend (`/api/password-reset/*`) generates a 6-digit code, emails it, verifies it, and then updates the password using the Supabase **service-role** key.
@@ -70,10 +86,10 @@ In dev, the reset code is redirected to your `NOTIFICATION_OVERRIDE_EMAIL` inbox
 
 ### Deadline processing (scheduler)
 
-Events that pass their deadline below the hype threshold are auto-cancelled and refunded by a scheduled job: a Supabase **`pg_cron`** schedule runs `expire_overdue_events()` and invokes the **`notify-expired-events` Edge Function**, which emails affected backers and organisers via Resend. The Edge Function needs the Resend key as a Supabase secret:
+Events that pass their deadline below the hype threshold are auto-cancelled and refunded by a **backend scheduler** ([services/deadlineScheduler.js](backend/services/deadlineScheduler.js)). On an interval it calls the `expire_overdue_events()` RPC (using the service-role key) and emails affected backers + the organiser via the same Resend pipeline (so the dev override inbox applies). It's enabled automatically when `SUPABASE_SERVICE_ROLE_KEY` is set; otherwise it logs a warning and stays off. Optional:
 
 ```
-supabase secrets set RESEND_API_KEY=re_...
+DEADLINE_CHECK_INTERVAL_MS=300000   # how often to check (default 5 min)
 ```
 
 ```powershell

@@ -107,7 +107,7 @@ export async function postCancelEvent(req, res) {
   notifyEventCancelled({
     eventTitle: ev?.title ?? 'your event',
     reason: 'organiser',
-    backers: (backers ?? []).map((b) => ({ email: b.email, username: b.username, refundAmount: b.refundAmount })),
+    backers: (backers ?? []).map((b) => ({ email: b.email, username: b.username, role: b.role, refundAmount: b.refundAmount })),
     organiser: me?.email ? { email: me.email, username: me.username } : null,
   });
 
