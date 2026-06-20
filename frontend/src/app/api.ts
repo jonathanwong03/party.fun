@@ -125,6 +125,48 @@ export async function loginWithGoogleRequest(): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+// Load the signed-in user's profile (or null if no session). `onboarded` is false
+// for a fresh OAuth account that hasn't picked a role yet.
+export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boolean }) | null> {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) return null;
+  const { data: profile, error } = await supabase
+    .from("USER")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded")
+    .eq("id", session.user.id)
+    .single();
+  if (error || !profile) return null;
+  return {
+    id: profile.id,
+    username: profile.username,
+    email: profile.email,
+    role: profile.role as Role,
+    avatarUrl: profile.avatarUrl,
+    telegram: profile.socialLink,
+    phone: profile.contact,
+    onboarded: profile.onboarded,
+  };
+}
+
+// Finish an OAuth sign-up: set the chosen role + username exactly once. Returns the
+// refreshed profile, or throws a friendly error.
+export async function completeOauthSignupRequest(role: Role, username: string): Promise<AuthUser> {
+  const { data, error } = await supabase.rpc("complete_oauth_signup", {
+    p_role: role,
+    p_username: username.trim(),
+  });
+  if (error) throw new Error(error.message);
+  const result = data as { status?: string; error?: string };
+  if (result?.error === "username_taken") throw new Error("That username is taken.");
+  if (result?.error === "username_required") throw new Error("Please choose a username.");
+  if (result?.error === "invalid_role") throw new Error("Please choose an account type.");
+  if (result?.error === "already_onboarded") throw new Error("This account is already set up. Please log in.");
+  if (result?.error) throw new Error("Could not finish setting up your account.");
+  const user = await fetchCurrentUser();
+  if (!user) throw new Error("Could not load your profile.");
+  return user;
+}
+
 export async function loginRequest(
   identifier: string,
   password: string,
@@ -397,7 +439,6 @@ export function fetchQuote(
 }
 
 // ── User writes ───────────────────────────────────────────────────────────────
-
 export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<MutationResponse> {
   return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
     method: 'POST',

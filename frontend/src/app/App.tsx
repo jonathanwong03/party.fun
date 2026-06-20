@@ -26,6 +26,8 @@ import { VerifyCode } from './pages/VerifyCode';
 import { ResetConfirm } from './pages/ResetConfirm';
 import { ResetPassword } from './pages/ResetPassword';
 import { ChooseAccount } from './pages/ChooseAccount';
+import { AuthCallback } from './pages/AuthCallback';
+import { FinishSignup } from './pages/FinishSignup';
 import { RegisterUser } from './pages/RegisterUser';
 import { RegisterOrganiser } from './pages/RegisterOrganiser';
 import { Profile } from './pages/Profile';
@@ -73,6 +75,10 @@ function pathForRoute(route: Route) {
       return '/forgot-password/reset';
     case 'choose-account':
       return '/signup';
+    case 'auth-callback':
+      return '/auth/callback';
+    case 'finish-signup':
+      return '/signup/finish';
     case 'register-user':
       return '/signup/user';
     case 'register-organiser':
@@ -130,6 +136,7 @@ function stateForRoute(route: Route): RouteState | undefined {
 
 function isAuthPath(pathname: string) {
   return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser'
+    || pathname === '/signup/finish' || pathname === '/auth/callback'
     || pathname.startsWith('/forgot-password');
 }
 
@@ -145,6 +152,8 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/forgot-password/reset') return { name: 'reset-password', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/signup') return { name: 'choose-account' };
+  if (pathname === '/auth/callback') return { name: 'auth-callback' };
+  if (pathname === '/signup/finish') return { name: 'finish-signup' };
   if (pathname === '/signup/user') return { name: 'register-user' };
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
   if (pathname === '/events') return { name: 'landing' };
@@ -283,12 +292,15 @@ function AppShell() {
       if (session) {
         const { data: profile } = await supabase
           .from('USER')
-          .select('id, username, email, role, avatarUrl, socialLink, contact')
+          .select('id, username, email, role, avatarUrl, socialLink, contact, onboarded')
           .eq('id', session.user.id)
           .single();
-        if (profile) {
+        if (profile && profile.onboarded) {
           setRole(profile.role as Role);
           setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact });
+        } else if (profile && !profile.onboarded && location.pathname !== '/auth/callback') {
+          // A signed-in OAuth user who never picked a role → resume finish-setup.
+          navigate('/signup/finish', { replace: true });
         }
       }
       setSessionLoaded(true);
@@ -454,6 +466,8 @@ function AppShell() {
         <BrowserRoute path="/forgot-password/confirm" element={<ResetConfirmRoute go={go} />} />
         <BrowserRoute path="/forgot-password/reset" element={<ResetPasswordRoute go={go} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
+        <BrowserRoute path="/auth/callback" element={<AuthCallback go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/signup/finish" element={<FinishSignup go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />

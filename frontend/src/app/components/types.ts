@@ -10,6 +10,8 @@ export type Route =
   | { name: 'reset-confirm'; email: string; code: string }
   | { name: 'reset-password'; email: string; code: string }
   | { name: 'choose-account' }
+  | { name: 'auth-callback' }
+  | { name: 'finish-signup' }
   | { name: 'register-user' }
   | { name: 'register-organiser' }
   | { name: 'profile' }
