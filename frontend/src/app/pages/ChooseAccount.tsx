@@ -1,8 +1,26 @@
+import { useState } from 'react';
 import { ArrowRight, Ticket, Megaphone } from 'lucide-react';
+import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
+import { loginWithGoogleRequest } from '../api';
 import type { Route } from '../components/types';
 
 export function ChooseAccount({ go }: { go: (r: Route) => void }) {
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleGoogle = async () => {
+    setError(null);
+    setGoogleSubmitting(true);
+    try {
+      await loginWithGoogleRequest();
+      // Redirects to Google; on return, /auth/callback routes new users to finish setup.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign up with Google.');
+      setGoogleSubmitting(false);
+    }
+  };
+
   return (
     <AuthShell
       title="Join party.fun"
@@ -32,6 +50,25 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
           onClick={() => go({ name: 'register-organiser' })}
         />
       </div>
+
+      <div className="mt-4 flex items-center gap-2">
+        <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+        <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>or</span>
+        <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+      </div>
+
+      {error && <p className="mt-3 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+
+      <Button
+        type="button"
+        onClick={handleGoogle}
+        disabled={googleSubmitting}
+        variant="outline"
+        className="mt-4 w-full"
+        style={{ borderRadius: 12, height: 46 }}
+      >
+        {googleSubmitting ? 'Redirecting…' : 'Sign up with Google'}
+      </Button>
     </AuthShell>
   );
 }
