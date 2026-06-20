@@ -129,6 +129,12 @@ export async function registerRequest(input: {
   return { id: data.user.id, username: input.username, email: input.email, role: input.role, avatarUrl: input.avatarUrl, telegram: input.telegram ?? null, phone: input.phone ?? null };
 }
 
+// Best-effort "account created" email, sent right after signup (needs the new
+// session). Safe to ignore failures — it must never block the signup flow.
+export async function sendWelcomeEmailRequest(): Promise<void> {
+  await apiFetch('/api/notifications/welcome', { method: 'POST' });
+}
+
 // Persist a username change (own row); reject duplicates (USER.username is unique).
 export async function updateUsernameRequest(username: string): Promise<void> {
   const userId = await currentUserId();
@@ -154,8 +160,8 @@ export async function updateContactRequest(telegram: string, phone: string): Pro
 export async function deleteAccountRequest(): Promise<void> {
   const { error } = await supabase.rpc('delete_my_account');
   if (error) {
-    if (error.code === 'P0001' || /has_events/.test(error.message)) {
-      throw new Error('Delete your hosted events before deleting your account.');
+    if (error.code === 'P0001' || /has_active_events|has_events/.test(error.message)) {
+      throw new Error('You can only delete your account when you have no active (Early Birds or Greenlit) events.');
     }
     throw new Error(error.message);
   }
@@ -164,6 +170,37 @@ export async function deleteAccountRequest(): Promise<void> {
 
 export async function logoutRequest(): Promise<void> {
   await supabase.auth.signOut();
+}
+
+// ── Password reset (custom OTP via the backend + Resend) ────────────────────────
+// These are unauthenticated (the user is logged out), so they use a plain fetch.
+
+async function postPublic(path: string, body: unknown): Promise<void> {
+  const response = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+}
+
+// Emails a 6-digit code (via Resend → the override inbox in dev) for any email in the DB.
+export function requestPasswordReset(email: string): Promise<void> {
+  return postPublic('/api/password-reset/request', { email: email.trim() });
+}
+
+// Verifies the 6-digit code for that email.
+export function verifyResetCode(email: string, code: string): Promise<void> {
+  return postPublic('/api/password-reset/verify', { email: email.trim(), code: code.trim() });
+}
+
+// Sets the new password once the code is verified.
+export function setNewPassword(email: string, code: string, password: string): Promise<void> {
+  return postPublic('/api/password-reset/complete', { email: email.trim(), code: code.trim(), password });
 }
 
 // ── Storage uploads (direct to Supabase, scoped to the user's folder) ─────────
@@ -243,11 +280,29 @@ export function fetchQuote(_role: Role | null, eventId: string, qty: number): Pr
 
 // ── User writes ───────────────────────────────────────────────────────────────
 
-export function createPledge(_role: Role, eventId: string, qty: number, _amount: number): Promise<MutationResponse> {
+export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<MutationResponse> {
   return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
     method: 'POST',
-    body: JSON.stringify({ qty }),
+    body: JSON.stringify({ qty, paymentMethod }),
   });
+}
+
+// ── Wallet + linked card (Stripe) ───────────────────────────────────────────────
+
+export type WalletTxn = { id: number; type: 'topup' | 'pledge' | 'refund'; source: 'wallet' | 'card'; amount: number; balanceAfter: number; eventId: string | null; createdAt: string };
+export type WalletInfo = { balance: number; card: { brand: string | null; last4: string | null } | null; transactions: WalletTxn[] };
+
+export function fetchWallet(): Promise<WalletInfo> {
+  return apiFetch<WalletInfo>('/api/wallet');
+}
+export function createSetupIntent(): Promise<{ clientSecret: string }> {
+  return apiFetch<{ clientSecret: string }>('/api/wallet/setup-intent', { method: 'POST' });
+}
+export function saveCard(paymentMethodId: string): Promise<{ card: { brand: string | null; last4: string | null } }> {
+  return apiFetch('/api/wallet/card', { method: 'POST', body: JSON.stringify({ paymentMethodId }) });
+}
+export function topUpWallet(amount: number): Promise<{ balance: number }> {
+  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount }) });
 }
 
 export function giveAwayTickets(_role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {
@@ -286,12 +341,17 @@ export async function deleteEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}`, { method: 'DELETE' });
 }
 
-// Soft-cancel a published event with a reason (backend refunds live pledges).
+// Soft-cancel a published event with a reason (backend refunds live pledges to wallets).
 export async function cancelEventRequest(eventId: string, reason: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   });
+}
+
+// Hide a cancelled event from the organiser's dashboard (backers keep their record).
+export async function hideEventRequest(eventId: string): Promise<void> {
+  await apiFetch(`/api/hosted-events/events/${eventId}/hide`, { method: 'POST' });
 }
 
 // ── Organiser drafts (persisted per-user via the backend) ─────────────────────

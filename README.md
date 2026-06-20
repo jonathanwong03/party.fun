@@ -39,6 +39,79 @@ VITE_SUPABASE_ANON_KEY=<your Supabase anon / publishable key>
 
 Vite only reads `.env` at startup, so (re)start the dev server after creating or changing it — otherwise login fails with `supabaseUrl is required`.
 
+### Email notifications (Resend)
+
+Transactional emails (account created, pledge confirmed, tickets given away, event cancelled / missed-threshold, organiser event created) are sent via [Resend](https://resend.com). Add to `backend/.env`:
+
+```
+RESEND_API_KEY=re_...                         # from resend.com → API Keys
+NOTIFICATION_FROM_EMAIL=onboarding@resend.dev # or an address on your verified Resend domain
+NOTIFICATION_OVERRIDE_EMAIL=you@example.com   # dev: redirect ALL emails here (see below)
+APP_BASE_URL=http://localhost:5173            # where the email buttons link (set to your deployed URL in prod)
+```
+
+With the key set, **real emails are sent**. During development, set `NOTIFICATION_OVERRIDE_EMAIL` so every email — even those addressed to mock/fake user addresses — is redirected to a real inbox you control. It accepts **one address or a comma-separated list**, e.g. `NOTIFICATION_OVERRIDE_EMAIL=alice@example.com,bob@example.com`.
+
+Notes:
+- On Resend's free tier **without a verified domain**, you can only send from `onboarding@resend.dev` **to your own Resend account email** — so the override should be (or include) that address. To send to arbitrary recipients or multiple real inboxes, verify a domain in Resend and set `NOTIFICATION_FROM_EMAIL` to an address on it.
+- If `RESEND_API_KEY` is left unset, the backend automatically falls back to a console "mock" mode (prints each email instead of sending) so the app still runs without credentials.
+
+#### When emails are sent
+
+Each email greets the recipient as `Hi <username> (User|Organiser),` so you can tell whose account received it in a shared demo inbox.
+
+| Action that triggers it | Who receives the email |
+|---|---|
+| A new account is created (user or organiser) | the new account holder |
+| You pledge / buy tickets for an event | you (the buyer) |
+| You give away tickets (some or all) | you (different wording when you give away **all** — you can no longer attend) |
+| An organiser **creates** an event | the organiser |
+| An organiser **cancels** an event | every backer (full-refund notice) **and** the organiser |
+| An event **misses its hype threshold by the deadline** | every backer (full-refund notice) **and** the organiser — sent automatically by the scheduler |
+| You request a password reset | the account's email — the 6-digit code |
+
+In development, with `NOTIFICATION_OVERRIDE_EMAIL` set, **all** of these are redirected to that one inbox regardless of who they're addressed to (so you'll receive every email yourself). Without a `RESEND_API_KEY`, they're printed to the backend console instead. Note: the "deadline missed" email only fires while the backend is running (the scheduler checks on an interval).
+
+### Password reset (custom OTP via Resend)
+
+"Forgot password" uses a custom one-time code, **not** Supabase's built-in recovery, so the code is emailed through Resend (and therefore honours `NOTIFICATION_OVERRIDE_EMAIL` in dev) and works for any email stored in the app's `USER` table — including test domains. The backend (`/api/password-reset/*`) generates a 6-digit code, emails it, verifies it, and then updates the password using the Supabase **service-role** key.
+
+Add the service-role key to `backend/.env` (server-only — never sent to the browser; the file is gitignored):
+
+```
+SUPABASE_SERVICE_ROLE_KEY=...   # Supabase dashboard → Project Settings → API → service_role (secret)
+```
+
+In dev, the reset code is redirected to your `NOTIFICATION_OVERRIDE_EMAIL` inbox (or printed to the backend console if no Resend key is set), so you can reset accounts that use fake email addresses.
+
+### Deadline processing (scheduler)
+
+Events that pass their deadline below the hype threshold are auto-cancelled and refunded by a **backend scheduler** ([services/deadlineScheduler.js](backend/services/deadlineScheduler.js)). On an interval it calls the `expire_overdue_events()` RPC (using the service-role key) and emails affected backers + the organiser via the same Resend pipeline (so the dev override inbox applies). It's enabled automatically when `SUPABASE_SERVICE_ROLE_KEY` is set; otherwise it logs a warning and stays off. Optional:
+
+```
+DEADLINE_CHECK_INTERVAL_MS=300000   # how often to check (default 5 min)
+```
+
+### Payments & wallet (Stripe, Test mode)
+
+Payments run through **Stripe in Test mode** — no real money moves. Each user has an **in‑app wallet** and can **link one card**; at checkout they pay from the **wallet** or the **linked card**.
+
+Keys (Stripe Dashboard → Developers → API keys, in **Test mode**):
+```
+# backend/.env
+STRIPE_SECRET_KEY=sk_test_...
+# frontend/.env  (restart Vite after adding)
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...
+```
+Test card: `4242 4242 4242 4242`, any future expiry, any CVC. Decline: `4000 0000 0000 0002`.
+
+How it works:
+- **Link a card** (Wallet page) via Stripe SetupIntent; the saved card is reused for both direct card payments and wallet top‑ups.
+- **Top up** charges the linked card and credits the wallet.
+- **Pledge** deducts instantly — from the wallet (atomic balance debit) or by charging the card (Stripe PaymentIntent).
+- **Refunds** follow the source: wallet‑paid → credited back to the wallet **instantly**; card‑paid → refunded to the card via Stripe (shown as ~3–5 business days; instant in Test mode).
+- Confirmation is **synchronous** (no webhooks). If `STRIPE_SECRET_KEY` is unset, card features are disabled and the app still runs (wallet pledges only require a balance).
+
 ```powershell
 cd "C:\smu heap\party.fun\frontend"
 npm install

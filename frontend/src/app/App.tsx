@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
@@ -21,12 +21,17 @@ import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
 import { Confirmation } from './pages/Confirmation';
 import { Login } from './pages/Login';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { VerifyCode } from './pages/VerifyCode';
+import { ResetConfirm } from './pages/ResetConfirm';
+import { ResetPassword } from './pages/ResetPassword';
 import { ChooseAccount } from './pages/ChooseAccount';
 import { RegisterUser } from './pages/RegisterUser';
 import { RegisterOrganiser } from './pages/RegisterOrganiser';
 import { Profile } from './pages/Profile';
 import { JoinedEvents } from './pages/JoinedEvents';
 import { Settings } from './pages/Settings';
+import { WalletPage } from './pages/WalletPage';
 import { OrganiserHostedEvents } from './pages/OrganiserHostedEvents';
 import { CreateEvent } from './pages/CreateEvent';
 import { Attendees } from './pages/Attendees';
@@ -40,6 +45,8 @@ type RouteState = {
   lines?: { label: string; count: number; subtotalText: string }[];
   reference?: string;
   tab?: 'created' | 'drafts';
+  email?: string;
+  code?: string;
 };
 
 function pathForRoute(route: Route) {
@@ -56,6 +63,14 @@ function pathForRoute(route: Route) {
       return `/events/${route.id}/attendees`;
     case 'login':
       return '/login';
+    case 'forgot-password':
+      return '/forgot-password';
+    case 'verify-code':
+      return '/forgot-password/verify';
+    case 'reset-confirm':
+      return '/forgot-password/confirm';
+    case 'reset-password':
+      return '/forgot-password/reset';
     case 'choose-account':
       return '/signup';
     case 'register-user':
@@ -68,6 +83,8 @@ function pathForRoute(route: Route) {
       return '/joined-events';
     case 'settings':
       return '/settings';
+    case 'wallet':
+      return '/wallet';
     case 'hosted-events':
       return '/hosted-events';
     case 'create-event':
@@ -100,11 +117,20 @@ function stateForRoute(route: Route): RouteState | undefined {
     return route.tab ? { tab: route.tab } : undefined;
   }
 
+  if (route.name === 'verify-code') {
+    return { email: route.email };
+  }
+
+  if (route.name === 'reset-confirm' || route.name === 'reset-password') {
+    return { email: route.email, code: route.code };
+  }
+
   return undefined;
 }
 
 function isAuthPath(pathname: string) {
-  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser';
+  return pathname === '/' || pathname === '/login' || pathname === '/signup' || pathname === '/signup/user' || pathname === '/signup/organiser'
+    || pathname.startsWith('/forgot-password');
 }
 
 // Pages a signed-out guest may view: the All Events list and any event detail.
@@ -114,6 +140,10 @@ function isPublicPath(pathname: string) {
 
 function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
+  if (pathname === '/forgot-password') return { name: 'forgot-password' };
+  if (pathname === '/forgot-password/verify') return { name: 'verify-code', email: state?.email ?? '' };
+  if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm', email: state?.email ?? '', code: state?.code ?? '' };
+  if (pathname === '/forgot-password/reset') return { name: 'reset-password', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/signup') return { name: 'choose-account' };
   if (pathname === '/signup/user') return { name: 'register-user' };
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
@@ -121,6 +151,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/settings') return { name: 'settings' };
+  if (pathname === '/wallet') return { name: 'wallet' };
   if (pathname === '/hosted-events') return { name: 'hosted-events', tab: state?.tab };
   if (pathname === '/hosted-events/events/new') return { name: 'create-event' };
 
@@ -185,6 +216,8 @@ function AppShell() {
   const [profileCounts, setProfileCounts] = useState<ProfileCounts>(EMPTY_COUNTS);
   const [loadingData, setLoadingData] = useState(false);
   const [dataError, setDataError] = useState<string | null>(null);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const refreshWallet = () => { fetchWallet().then((w) => setWalletBalance(w.balance)).catch(() => {}); };
   const addEvent = async (e: EventItem) => {
     setEvents((prev) => [e, ...prev]);
     try {
@@ -209,6 +242,12 @@ function AppShell() {
       await cancelEventRequest(id, reason);
       setEvents(await fetchEvents(role));
     } catch { /* leave state as-is on failure */ }
+  };
+
+  // Hide a cancelled event from the organiser dashboard (optimistic remove, then persist).
+  const hideEvent = async (id: string) => {
+    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, hostHidden: true } : e)));
+    try { await hideEventRequest(id); } catch { setEvents(await fetchEvents(role)); }
   };
 
   const updateEvent = async (updated: EventItem) => {
@@ -294,6 +333,7 @@ function AppShell() {
         } else {
           setDrafts([]);
         }
+        if (role) refreshWallet(); else setWalletBalance(null);
       } catch (error) {
         if (ignore) return;
         setDataError(error instanceof Error ? error.message : 'Unable to load app data.');
@@ -308,12 +348,13 @@ function AppShell() {
     };
   }, [role]);
 
-  const pledge = async (eventId: string, qty: number, amount: number): Promise<string | undefined> => {
+  const pledge = async (eventId: string, qty: number, amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<string | undefined> => {
     if (!role) return undefined;
-    const result = await createPledge(role, eventId, qty, amount);
+    const result = await createPledge(role, eventId, qty, amount, paymentMethod);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
     setProfileCounts(result.profile.counts);
+    refreshWallet(); // wallet pledge debits the balance
     return result.reference;
   };
 
@@ -364,6 +405,7 @@ function AppShell() {
     setUser(null);
     setEvents([]);
     setProfileTickets([]);
+    localStorage.removeItem('party_fun_user_id');
     navigate('/login', { replace: true });
   };
 
@@ -390,6 +432,7 @@ function AppShell() {
           user={user}
           route={activeRoute}
           go={go}
+          walletBalance={walletBalance}
           onMenuClick={() => setSidebarOpen(true)}
         />
       )}
@@ -406,6 +449,10 @@ function AppShell() {
       <Routes>
         <BrowserRoute path="/" element={<Navigate to="/events" replace />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
+        <BrowserRoute path="/forgot-password" element={<ForgotPassword go={go} />} />
+        <BrowserRoute path="/forgot-password/verify" element={<VerifyCodeRoute go={go} />} />
+        <BrowserRoute path="/forgot-password/confirm" element={<ResetConfirmRoute go={go} />} />
+        <BrowserRoute path="/forgot-password/reset" element={<ResetPasswordRoute go={go} />} />
         <BrowserRoute path="/signup" element={<ChooseAccount go={go} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
@@ -417,7 +464,8 @@ function AppShell() {
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/wallet" element={role ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/login" replace />} />
+        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} />} />
@@ -474,7 +522,7 @@ function CheckoutRoute({
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onPledge: (eventId: string, qty: number, amount: number) => Promise<string | undefined>;
+  onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card') => Promise<string | undefined>;
 }) {
   const { eventId = '' } = useParams();
   const location = useLocation();
@@ -501,6 +549,28 @@ function ConfirmationRoute({
   if (!role) return <Navigate to="/login" replace />;
 
   return <Confirmation id={eventId} qty={state.qty ?? 1} lines={state.lines} reference={state.reference} role={role} go={go} events={events} />;
+}
+
+function VerifyCodeRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const email = (location.state as RouteState | null)?.email;
+  // Direct hits / refreshes lose the email in router state — send back to step 1.
+  if (!email) return <Navigate to="/forgot-password" replace />;
+  return <VerifyCode go={go} email={email} />;
+}
+
+function ResetConfirmRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const { email, code } = (location.state as RouteState | null) ?? {};
+  if (!email || !code) return <Navigate to="/forgot-password" replace />;
+  return <ResetConfirm go={go} email={email} code={code} />;
+}
+
+function ResetPasswordRoute({ go }: { go: (r: Route) => void }) {
+  const location = useLocation();
+  const { email, code } = (location.state as RouteState | null) ?? {};
+  if (!email || !code) return <Navigate to="/forgot-password" replace />;
+  return <ResetPassword go={go} email={email} code={code} />;
 }
 
 function AttendeesRoute({

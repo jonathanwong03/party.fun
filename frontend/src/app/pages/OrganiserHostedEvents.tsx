@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
+import { useRef } from 'react';
+import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign, ChevronDown } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
@@ -14,6 +15,14 @@ function dashboardStatus(e: EventItem): 'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED'
   return 'EARLY BIRDS';
 }
 
+const STATUS_FILTERS: { key: 'all' | EventItem['status']; label: string }[] = [
+  { key: 'all', label: 'All' },
+  { key: 'early_bird', label: 'Early Birds' },
+  { key: 'greenlit', label: 'Greenlit' },
+  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'completed', label: 'Completed' },
+];
+
 const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED', string> = {
   GREENLIT: '#29e07a',
   'EARLY BIRDS': '#ffcb3c',
@@ -21,16 +30,23 @@ const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' |
   COMPLETED: '#9a9aa5',
 };
 
-export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onCancel: (id: string, reason: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
+// An event can't be cancelled once it has started.
+const hasStarted = (e: EventItem) => !!e.startsAt && new Date(e.startsAt).getTime() <= Date.now();
+
+export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, drafts, onDeleteDraft }: { route: Route; go: (r: Route) => void; events: EventItem[]; onCancel: (id: string, reason: string) => void; onHide: (id: string) => void; drafts: EventItem[]; onDeleteDraft: (id: string) => void }) {
   const [deleting, setDeleting] = useState<string | null>(null);
   const [reason, setReason] = useState('');
   const [tab, setTab] = useState<'created' | 'drafts'>(route.name === 'hosted-events' ? route.tab ?? 'created' : 'created');
+  const [statusFilter, setStatusFilter] = useState<'all' | EventItem['status']>('all');
 
   const isDrafts = tab === 'drafts';
-  // The dashboard is for events the organiser created themselves (mine), not the full catalogue.
-  const created = events.filter((e) => e.mine);
-  const rows = isDrafts ? drafts : created;
+  // The dashboard is for events the organiser created themselves (mine), excluding ones they've hidden.
+  const created = events.filter((e) => e.mine && !e.hostHidden);
+  const filteredCreated = statusFilter === 'all' ? created : created.filter((e) => e.status === statusFilter);
+  const rows = isDrafts ? drafts : filteredCreated;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
+  // Cancelled events get a "remove from dashboard" (hide) action instead of cancel.
+  const targetCancelled = !isDrafts && target?.status === 'cancelled';
 
   // Revenue + aggregate counts are computed by the backend (accurate, net of refunds).
   const [summary, setSummary] = useState<HostedSummary>({ revenueByEvent: {}, totalRevenue: 0, totalEvents: 0, upcoming: 0, confirmed: 0 });
@@ -89,6 +105,13 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
               </button>
             ))}
           </div>
+
+          {/* Status filter (created events only) */}
+          {!isDrafts && (
+            <div className="mb-5">
+              <FilterDropdown value={statusFilter} onChange={setStatusFilter} />
+            </div>
+          )}
 
           {/* Table */}
           <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -159,7 +182,11 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
                             <>
                               <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
                               <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
-                              <IconBtn label="Cancel" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Ban size={14} /></IconBtn>
+                              {e.status === 'cancelled' ? (
+                                <IconBtn label="Remove" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
+                              ) : (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
+                                <IconBtn label="Cancel" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Ban size={14} /></IconBtn>
+                              ) : null}
                             </>
                           )}
                         </div>
@@ -188,14 +215,25 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, drafts, onD
             onCancel={() => setDeleting(null)}
             onConfirm={() => { if (deleting) onDeleteDraft(deleting); setDeleting(null); }}
           />
+        ) : targetCancelled ? (
+          <DeleteEventModal
+            eventName={target.title}
+            title="Delete event?"
+            leadIn="You're about to remove"
+            confirmWord="CONFIRM"
+            actionLabel="Delete Event"
+            warning="This removes the event from your dashboard. Backers keep their record and refund."
+            onCancel={() => setDeleting(null)}
+            onConfirm={() => { if (deleting) onHide(deleting); setDeleting(null); }}
+          />
         ) : (
           <DeleteEventModal
             eventName={target.title}
             title="Cancel Event?"
             leadIn="You're about to cancel"
-            confirmWord="CANCEL"
+            confirmWord="CONFIRM"
             actionLabel="Cancel Event"
-            warning="All pledges will be voided and any captured funds refunded. Backers will be notified by email."
+            warning="All pledges will be refunded — wallet payments to backers' wallets instantly, card payments back to their cards. Backers will be notified by email."
             reason={reason}
             onReasonChange={setReason}
             reasonPrompt="Why are you cancelling this event?"
@@ -233,5 +271,45 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
     >
       {children}
     </button>
+  );
+}
+
+// Status filter as a dropdown (styled to match the app's pickers).
+function FilterDropdown({ value, onChange }: { value: 'all' | EventItem['status']; onChange: (v: 'all' | EventItem['status']) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = STATUS_FILTERS.find((f) => f.key === value) ?? STATUS_FILTERS[0];
+  useEffect(() => {
+    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, []);
+  return (
+    <div ref={ref} className="relative" style={{ width: 210 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between rounded-lg border px-3 text-sm transition hover:bg-white/5"
+        style={{ height: 40, background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
+      >
+        <span style={{ fontWeight: 600 }}>{current.label}</span>
+        <ChevronDown size={16} style={{ color: 'var(--muted-foreground)' }} />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-lg border shadow-lg" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)' }}>
+          {STATUS_FILTERS.map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              onClick={() => { onChange(f.key); setOpen(false); }}
+              className="block w-full px-3 py-2 text-left text-sm transition hover:bg-white/5"
+              style={{ color: f.key === value ? '#ff4d2e' : 'var(--foreground)', fontWeight: f.key === value ? 700 : 500 }}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
