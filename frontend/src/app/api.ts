@@ -466,7 +466,6 @@ export async function deleteEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}`, { method: "DELETE" });
 }
 
-
 // Soft-cancel a published event with a reason (backend refunds live pledges to wallets).
 export async function cancelEventRequest(eventId: string, reason: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}/cancel`, {
