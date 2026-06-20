@@ -5,12 +5,17 @@ export type Route =
   | { name: 'confirmation'; id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string }
   | { name: 'attendees'; id: string }
   | { name: 'login' }
+  | { name: 'forgot-password' }
+  | { name: 'verify-code'; email: string }
+  | { name: 'reset-confirm'; email: string; code: string }
+  | { name: 'reset-password'; email: string; code: string }
   | { name: 'choose-account' }
   | { name: 'register-user' }
   | { name: 'register-organiser' }
   | { name: 'profile' }
   | { name: 'joined-events' }
   | { name: 'settings' }
+  | { name: 'wallet' }
   | { name: 'hosted-events'; tab?: 'created' | 'drafts' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };
@@ -47,6 +52,8 @@ export type EventItem = {
   mine?: boolean;
   // Backend flags the single most-hyped open event so the Landing page renders only.
   featured?: boolean;
+  // Organiser hid this (cancelled) event from their own dashboard.
+  hostHidden?: boolean;
   endTime?: string;
   endDate?: string;
   // Raw ISO datetimes (for the countdown + edit-form validation); optional because

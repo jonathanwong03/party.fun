@@ -69,7 +69,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">
             <Label className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Password</Label>
-            <button type="button" className="text-xs text-[#ff4d2e]">Forgot?</button>
+            <button type="button" onClick={() => go({ name: 'forgot-password' })} className="text-xs text-[#ff4d2e]">Forgot?</button>
           </div>
           <Input
             name="password"

@@ -1,0 +1,29 @@
+import { stripe, stripeEnabled } from './stripeClient.js';
+import { adminClient } from './supabaseAdmin.js';
+
+// Issues Stripe refunds for an event's CARD-paid bookings (wallet refunds are done
+// in the cancel_event / expire_overdue_events RPCs). Safe to call repeatedly —
+// only bookings without a stripeRefundId are refunded. Never throws.
+export async function refundEventCardBookings(eventId) {
+  if (!stripeEnabled()) return;
+  try {
+    const admin = adminClient();
+    const { data: bookings } = await admin
+      .from('BOOKINGS')
+      .select('id, stripePaymentIntentId')
+      .eq('eventId', eventId)
+      .eq('paymentMethod', 'card')
+      .is('stripeRefundId', null)
+      .not('stripePaymentIntentId', 'is', null);
+    for (const b of bookings ?? []) {
+      try {
+        const refund = await stripe().refunds.create({ payment_intent: b.stripePaymentIntentId });
+        await admin.from('BOOKINGS').update({ stripeRefundId: refund.id }).eq('id', b.id);
+      } catch (e) {
+        console.error(`[stripeRefunds] refund failed for booking ${b.id}:`, e?.message || e);
+      }
+    }
+  } catch (e) {
+    console.error('[stripeRefunds] refundEventCardBookings error:', e?.message || e);
+  }
+}
