@@ -10,6 +10,7 @@ import {
   getHostedSummary,
 } from '../services/eventService.js';
 import { notifyEventCreated, notifyEventCancelled } from '../services/notificationService.js';
+import { refundEventCardBookings } from '../services/stripeRefunds.js';
 
 // Human-readable messages for the authoritative validation codes the RPCs return.
 const EVENT_ERROR_MESSAGES = {
@@ -96,6 +97,9 @@ export async function postCancelEvent(req, res) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to cancel event.') });
     return;
   }
+
+  // Issue real Stripe refunds for card-paid backers (wallet refunds done in the RPC).
+  await refundEventCardBookings(eventId);
 
   // Fire-and-forget: email every refunded backer + the organiser. Runs after the
   // cancel RPC so refundedAmount is set; get_event_backer_contacts is host-only.

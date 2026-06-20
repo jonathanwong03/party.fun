@@ -165,13 +165,18 @@ async function mutationResult(sb, userId, eventId) {
 
 // ── User writes ────────────────────────────────────────────────────────────
 
-export async function createPledge(sb, userId, eventId, qty) {
-  const { data, error } = await sb.rpc('create_pledge', { p_event_id: eventId, p_qty: Number(qty) });
+export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null) {
+  const { data, error } = await sb.rpc('create_pledge', {
+    p_event_id: eventId,
+    p_qty: Number(qty),
+    p_payment_method: paymentMethod,
+    p_payment_intent_id: paymentIntentId,
+  });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
-  // Surface the persisted booking reference so the confirmation page shows a stable value.
-  return { ...result, reference: data?.reference };
+  // Surface the persisted booking reference + charged amount for the confirmation page.
+  return { ...result, reference: data?.reference, amount: data?.amount };
 }
 
 async function eventIdForBooking(sb, bookingId) {

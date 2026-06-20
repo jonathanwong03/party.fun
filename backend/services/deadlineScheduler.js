@@ -1,5 +1,6 @@
 import { adminClient } from './supabaseAdmin.js';
 import { notifyEventCancelled } from './notificationService.js';
+import { refundEventCardBookings } from './stripeRefunds.js';
 
 // Periodically auto-cancels + refunds early_bird events that passed their deadline
 // below the hype threshold (via the expire_overdue_events RPC), then emails the
@@ -43,9 +44,10 @@ async function runOnce() {
   console.log(`[DeadlineScheduler] Expired ${ids.length} overdue event(s); sending refund notifications.`);
   for (const id of ids) {
     try {
+      await refundEventCardBookings(id); // real Stripe refunds for card-paid backers
       await gatherAndNotify(admin, id);
     } catch (e) {
-      console.error(`[DeadlineScheduler] notify failed for ${id}:`, e?.message || e);
+      console.error(`[DeadlineScheduler] post-expiry handling failed for ${id}:`, e?.message || e);
     }
   }
 }
