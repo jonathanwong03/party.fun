@@ -15,6 +15,7 @@ export type Route =
   | { name: 'profile' }
   | { name: 'joined-events' }
   | { name: 'settings' }
+  | { name: 'wallet' }
   | { name: 'hosted-events'; tab?: 'created' | 'drafts' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };

@@ -280,11 +280,29 @@ export function fetchQuote(_role: Role | null, eventId: string, qty: number): Pr
 
 // ── User writes ───────────────────────────────────────────────────────────────
 
-export function createPledge(_role: Role, eventId: string, qty: number, _amount: number): Promise<MutationResponse> {
+export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<MutationResponse> {
   return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
     method: 'POST',
-    body: JSON.stringify({ qty }),
+    body: JSON.stringify({ qty, paymentMethod }),
   });
+}
+
+// ── Wallet + linked card (Stripe) ───────────────────────────────────────────────
+
+export type WalletTxn = { id: number; type: 'topup' | 'pledge' | 'refund'; source: 'wallet' | 'card'; amount: number; balanceAfter: number; eventId: string | null; createdAt: string };
+export type WalletInfo = { balance: number; card: { brand: string | null; last4: string | null } | null; transactions: WalletTxn[] };
+
+export function fetchWallet(): Promise<WalletInfo> {
+  return apiFetch<WalletInfo>('/api/wallet');
+}
+export function createSetupIntent(): Promise<{ clientSecret: string }> {
+  return apiFetch<{ clientSecret: string }>('/api/wallet/setup-intent', { method: 'POST' });
+}
+export function saveCard(paymentMethodId: string): Promise<{ card: { brand: string | null; last4: string | null } }> {
+  return apiFetch('/api/wallet/card', { method: 'POST', body: JSON.stringify({ paymentMethodId }) });
+}
+export function topUpWallet(amount: number): Promise<{ balance: number }> {
+  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount }) });
 }
 
 export function giveAwayTickets(_role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {

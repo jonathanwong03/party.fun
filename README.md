@@ -92,6 +92,26 @@ Events that pass their deadline below the hype threshold are auto-cancelled and 
 DEADLINE_CHECK_INTERVAL_MS=300000   # how often to check (default 5 min)
 ```
 
+### Payments & wallet (Stripe, Test mode)
+
+Payments run through **Stripe in Test mode** — no real money moves. Each user has an **in‑app wallet** and can **link one card**; at checkout they pay from the **wallet** or the **linked card**.
+
+Keys (Stripe Dashboard → Developers → API keys, in **Test mode**):
+```
+# backend/.env
+STRIPE_SECRET_KEY=sk_test_...
+# frontend/.env  (restart Vite after adding)
+VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...
+```
+Test card: `4242 4242 4242 4242`, any future expiry, any CVC. Decline: `4000 0000 0000 0002`.
+
+How it works:
+- **Link a card** (Wallet page) via Stripe SetupIntent; the saved card is reused for both direct card payments and wallet top‑ups.
+- **Top up** charges the linked card and credits the wallet.
+- **Pledge** deducts instantly — from the wallet (atomic balance debit) or by charging the card (Stripe PaymentIntent).
+- **Refunds** follow the source: wallet‑paid → credited back to the wallet **instantly**; card‑paid → refunded to the card via Stripe (shown as ~3–5 business days; instant in Test mode).
+- Confirmation is **synchronous** (no webhooks). If `STRIPE_SECRET_KEY` is unset, card features are disabled and the app still runs (wallet pledges only require a balance).
+
 ```powershell
 cd "C:\smu heap\party.fun\frontend"
 npm install
