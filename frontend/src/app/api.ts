@@ -341,12 +341,17 @@ export async function deleteEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}`, { method: 'DELETE' });
 }
 
-// Soft-cancel a published event with a reason (backend refunds live pledges).
+// Soft-cancel a published event with a reason (backend refunds live pledges to wallets).
 export async function cancelEventRequest(eventId: string, reason: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ reason }),
   });
+}
+
+// Hide a cancelled event from the organiser's dashboard (backers keep their record).
+export async function hideEventRequest(eventId: string): Promise<void> {
+  await apiFetch(`/api/hosted-events/events/${eventId}/hide`, { method: 'POST' });
 }
 
 // ── Organiser drafts (persisted per-user via the backend) ─────────────────────

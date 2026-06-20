@@ -52,6 +52,8 @@ export type EventItem = {
   mine?: boolean;
   // Backend flags the single most-hyped open event so the Landing page renders only.
   featured?: boolean;
+  // Organiser hid this (cancelled) event from their own dashboard.
+  hostHidden?: boolean;
   endTime?: string;
   endDate?: string;
   // Raw ISO datetimes (for the countdown + edit-form validation); optional because

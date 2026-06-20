@@ -70,6 +70,7 @@ function mapRow(row, userId) {
       fillPct: s.ticketCapacity > 0 ? (s.sold / s.ticketCapacity) * 100 : 0,
     })),
     mine: userId != null ? row.hostId === userId : undefined,
+    hostHidden: row.hostHidden ?? false,
   };
 }
 
@@ -266,6 +267,14 @@ export async function deleteEvent(sb, eventId) {
 // refunds live pledges (all handled atomically in the cancel_event RPC).
 export async function cancelEvent(sb, eventId, reason) {
   const { data, error } = await sb.rpc('cancel_event', { p_event_id: eventId, p_reason: reason });
+  if (error) throw new Error(error.message);
+  if (data?.error) return { error: data.error };
+  return { status: 'ok' };
+}
+
+// Hide a (cancelled) event from the organiser's own dashboard; backers keep their record.
+export async function hideEvent(sb, eventId) {
+  const { data, error } = await sb.rpc('hide_event', { p_event_id: eventId });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   return { status: 'ok' };

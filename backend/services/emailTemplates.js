@@ -147,21 +147,26 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   `);
 }
 
-export function eventCancelledTemplate({ userName, role, eventTitle, refundAmount, reason }) {
+export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason }) {
   const formattedRefund = Number(refundAmount || 0).toFixed(2);
   const missed = reason === 'missed_threshold';
   const intro = missed
     ? `Unfortunately, <strong>${eventTitle}</strong> did not reach its hype threshold by the deadline, so it has been cancelled.`
     : `The organiser has cancelled <strong>${eventTitle}</strong>.`;
+  const card = method === 'card';
+  const refundLine = card
+    ? 'Your pledge has been <strong>refunded to your card</strong> — funds typically return within ~3–5 business days.'
+    : 'Your pledge has been <strong>refunded to your party.fun wallet instantly</strong>.';
+  const refundRowLabel = card ? 'Refunded to card' : 'Refunded to wallet';
 
   return emailShell(`
     ${h1('Event Cancelled')}
     ${greet(userName, role)}
-    ${p(`${intro} You will receive a <strong>full refund</strong> of your pledge — no action needed on your part.`)}
+    ${p(`${intro} ${refundLine} No action needed on your part.`)}
     ${detailsBox('Refund Details',
       row('Event', eventTitle) +
       divider +
-      row('Full refund', `$${formattedRefund}`, '#ff4d2e'),
+      row(refundRowLabel, `$${formattedRefund}`, '#ff4d2e'),
     )}
     ${p("We're sorry this one didn't happen — there are plenty more parties to back.")}
     ${button('Browse Other Events', `${APP_URL}/events`, '#374151')}

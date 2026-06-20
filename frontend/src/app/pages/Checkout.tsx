@@ -100,7 +100,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
 
           <div className="flex items-start gap-2 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
             <Shield size={14} className="mt-0.5 shrink-0" />
-            <span>Paid instantly. If the event is cancelled or misses its threshold, wallet payments are refunded to your wallet instantly; card payments are refunded to your card in ~3–5 business days.</span>
+            <span>Paid instantly. If the event is cancelled or misses its threshold, you're refunded automatically — wallet payments to your wallet instantly, card payments back to your card (~3–5 business days).</span>
           </div>
         </div>
 

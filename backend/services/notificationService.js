@@ -94,6 +94,7 @@ export function notifyEventCancelled({ eventTitle, reason, backers = [], organis
           html: templates.eventCancelledTemplate({
             userName: b.username,
             role: b.role,
+            method: b.method,
             eventTitle,
             refundAmount: b.refundAmount ?? 0,
             reason,

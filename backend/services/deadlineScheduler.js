@@ -14,14 +14,18 @@ async function gatherAndNotify(admin, eventId) {
   const { data: organiser } = await admin.from('USER').select('email, username').eq('id', event.hostId).single();
 
   // Sum the refund per backer for this event (deletedAt stays null after expiry).
-  const { data: bookings } = await admin.from('BOOKINGS').select('userId, refundedAmount').eq('eventId', eventId).is('deletedAt', null);
+  const { data: bookings } = await admin.from('BOOKINGS').select('userId, refundedAmount, paymentMethod').eq('eventId', eventId).is('deletedAt', null);
   const byUser = {};
-  for (const b of bookings ?? []) byUser[b.userId] = (byUser[b.userId] ?? 0) + Number(b.refundedAmount ?? 0);
+  for (const b of bookings ?? []) {
+    const cur = byUser[b.userId] ?? { amount: 0, method: b.paymentMethod };
+    cur.amount += Number(b.refundedAmount ?? 0);
+    byUser[b.userId] = cur;
+  }
   const ids = Object.keys(byUser);
   let backers = [];
   if (ids.length) {
     const { data: users } = await admin.from('USER').select('id, email, username, role').in('id', ids);
-    backers = (users ?? []).map((u) => ({ email: u.email, username: u.username, role: u.role, refundAmount: byUser[u.id] }));
+    backers = (users ?? []).map((u) => ({ email: u.email, username: u.username, role: u.role, method: byUser[u.id].method, refundAmount: byUser[u.id].amount }));
   }
 
   notifyEventCancelled({
@@ -34,22 +38,28 @@ async function gatherAndNotify(admin, eventId) {
 
 async function runOnce() {
   const admin = adminClient();
-  const { data, error } = await admin.rpc('expire_overdue_events');
-  if (error) {
-    console.error('[DeadlineScheduler] expire_overdue_events failed:', error.message);
-    return;
-  }
-  const ids = (data ?? []).map((r) => r.event_id);
-  if (!ids.length) return;
-  console.log(`[DeadlineScheduler] Expired ${ids.length} overdue event(s); sending refund notifications.`);
-  for (const id of ids) {
-    try {
-      await refundEventCardBookings(id); // real Stripe refunds for card-paid backers
-      await gatherAndNotify(admin, id);
-    } catch (e) {
-      console.error(`[DeadlineScheduler] post-expiry handling failed for ${id}:`, e?.message || e);
+
+  // 1) Cancel + refund (to wallet, in the RPC) events that missed their threshold.
+  const { data: expired, error: expireErr } = await admin.rpc('expire_overdue_events');
+  if (expireErr) {
+    console.error('[DeadlineScheduler] expire_overdue_events failed:', expireErr.message);
+  } else {
+    const ids = (expired ?? []).map((r) => r.event_id);
+    if (ids.length) {
+      console.log(`[DeadlineScheduler] Expired ${ids.length} overdue event(s); refunding + notifying.`);
+      for (const id of ids) {
+        try {
+          await refundEventCardBookings(id); // real Stripe refunds for card-paid backers
+          await gatherAndNotify(admin, id);
+        } catch (e) { console.error(`[DeadlineScheduler] post-expiry handling failed for ${id}:`, e?.message || e); }
+      }
     }
   }
+
+  // 2) Pay out greenlit events whose end time has passed (organiser wallet).
+  const { data: completed, error: payoutErr } = await admin.rpc('complete_due_events');
+  if (payoutErr) console.error('[DeadlineScheduler] complete_due_events failed:', payoutErr.message);
+  else if ((completed ?? []).length) console.log(`[DeadlineScheduler] Paid out ${completed.length} completed event(s) to organisers.`);
 }
 
 export function startDeadlineScheduler() {
