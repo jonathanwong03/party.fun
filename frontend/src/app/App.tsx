@@ -37,6 +37,9 @@ import { WalletPage } from './pages/WalletPage';
 import { OrganiserHostedEvents } from './pages/OrganiserHostedEvents';
 import { CreateEvent } from './pages/CreateEvent';
 import { Attendees } from './pages/Attendees';
+import { Analytics } from './pages/Analytics';
+import { AllAttendees } from './pages/AllAttendees';
+import { CheckIn } from './pages/CheckIn';
 
 type RouteState = {
   fromProfile?: boolean;
@@ -87,6 +90,12 @@ function pathForRoute(route: Route) {
       return '/profile';
     case 'joined-events':
       return '/joined-events';
+    case 'analytics':
+      return '/analytics';
+    case 'attendees-all':
+      return '/attendees';
+    case 'tickets':
+      return '/tickets';
     case 'settings':
       return '/settings';
     case 'wallet':
@@ -159,6 +168,9 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/events') return { name: 'landing' };
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
+  if (pathname === '/analytics') return { name: 'analytics' };
+  if (pathname === '/attendees') return { name: 'attendees-all' };
+  if (pathname === '/tickets') return { name: 'tickets' };
   if (pathname === '/settings') return { name: 'settings' };
   if (pathname === '/wallet') return { name: 'wallet' };
   if (pathname === '/hosted-events') return { name: 'hosted-events', tab: state?.tab };
@@ -477,6 +489,9 @@ function AppShell() {
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
+        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} /> : <Navigate to="/login" replace />} />
+        <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/tickets" element={role === 'organiser' ? <CheckIn events={events} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/wallet" element={role ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/login" replace />} />
         <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />

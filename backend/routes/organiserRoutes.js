@@ -9,6 +9,9 @@ import {
   patchEvent,
   postCreateEvent,
   getSummary,
+  getAllAttendees,
+  getEventTickets,
+  postCheckIn,
   getDrafts,
   postDraft,
   deleteDraftHandler,
@@ -19,6 +22,9 @@ const router = express.Router();
 
 router.get('/', getHostedEvents);
 router.get('/summary', requireAuth, getSummary);
+router.get('/attendees', requireAuth, getAllAttendees);
+router.get('/events/:eventId/tickets', requireAuth, getEventTickets);
+router.post('/check-in', requireAuth, postCheckIn);
 router.get('/events/new', getCreateEvent);
 router.post('/events', requireAuth, postCreateEvent);
 router.get('/events/:eventId/edit', getEditEvent);

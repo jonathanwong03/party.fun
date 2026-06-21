@@ -36,6 +36,32 @@ export async function getSummary(req, res) {
   res.json(await getHostedSummary(req.supabase, req.user.id));
 }
 
+// Aggregated attendee list across all of the organiser's events.
+export async function getAllAttendees(req, res) {
+  const { data, error } = await req.supabase.rpc('get_all_attendees');
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data ?? []);
+}
+
+// Tickets for one of the organiser's events (check-in list).
+export async function getEventTickets(req, res) {
+  const { data, error } = await req.supabase.rpc('get_event_tickets', { p_event_id: req.params.eventId });
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data ?? []);
+}
+
+// Door check-in. A per-ticket QR (PF-… code) checks in one ticket; a booking QR
+// (a bare uuid token) checks in all of that booking's remaining active tickets.
+export async function postCheckIn(req, res) {
+  const code = String(req.body?.qr ?? '').trim();
+  const isTicketCode = code.startsWith('PF-');
+  const { data, error } = isTicketCode
+    ? await req.supabase.rpc('check_in_ticket', { p_qr: code })
+    : await req.supabase.rpc('check_in_booking', { p_token: code });
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data);
+}
+
 export async function getDrafts(req, res) {
   res.json(await listDrafts(req.supabase));
 }

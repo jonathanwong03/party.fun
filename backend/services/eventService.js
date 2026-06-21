@@ -176,8 +176,9 @@ export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wa
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
-  // Surface the persisted booking reference + charged amount for the confirmation page.
-  return { ...result, reference: data?.reference, amount: data?.amount };
+  // Surface the booking reference + charged amount for the confirmation page, plus the
+  // booking id/QR token and whether this pledge just greenlit the event (for emails).
+  return { ...result, reference: data?.reference, amount: data?.amount, bookingId: data?.bookingId, qrToken: data?.qrToken, greenlitNow: data?.greenlitNow };
 }
 
 async function eventIdForBooking(sb, bookingId) {

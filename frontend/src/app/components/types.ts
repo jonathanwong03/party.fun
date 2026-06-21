@@ -16,6 +16,9 @@ export type Route =
   | { name: 'register-organiser' }
   | { name: 'profile' }
   | { name: 'joined-events' }
+  | { name: 'analytics' }
+  | { name: 'attendees-all' }
+  | { name: 'tickets' }
   | { name: 'settings' }
   | { name: 'wallet' }
   | { name: 'hosted-events'; tab?: 'created' | 'drafts' }

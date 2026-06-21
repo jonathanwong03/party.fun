@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus } from 'lucide-react';
+import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus, Mail } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
@@ -180,6 +180,13 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
               Your payment was captured when you pledged. If the event misses its hype threshold, active tickets are refunded automatically.
             </p>
+
+            <div className="mt-4 rounded-lg p-3" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: '#ffb4a3' }}>
+                <Mail size={14} className="mt-0.5 shrink-0" />
+                <span>🎟️ Your tickets were emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.</span>
+              </div>
+            </div>
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 

@@ -521,6 +521,65 @@ export async function hideEventRequest(eventId: string): Promise<void> {
   await apiFetch(`/api/hosted-events/events/${eventId}/hide`, { method: 'POST' });
 }
 
+// ── Analytics ─────────────────────────────────────────────────────────────────
+
+export type DayCount = { day: string; count: number };
+export type AnalyticsData = {
+  role: Role;
+  global: {
+    topEvents: { eventId: string; title: string; hostName: string; ticketsSold: number; pledgers: number; hypePct: number; status: string }[];
+    pledgesByDay: DayCount[];
+    statusBreakdown: { status: string; count: number }[];
+    priceBuckets: { bucket: string; count: number }[];
+  };
+  organiser: {
+    perEvent: { title: string; ticketsSold: number; capacity: number; projected: number; revenue: number }[];
+    pledgesByDay: DayCount[];
+    totals: { events: number; revenue: number; attendees: number };
+  } | null;
+  user: {
+    pledgesByDay: DayCount[];
+    spendByMonth: { month: string; amount: number }[];
+    totals: { joined: number; upcoming: number; spent: number };
+  };
+};
+
+export function fetchAnalytics(): Promise<AnalyticsData> {
+  return apiFetch<AnalyticsData>("/api/analytics");
+}
+
+// ── Attendees & ticket check-in (organiser) ───────────────────────────────────
+
+export type AttendeeRow = {
+  eventTitle: string;
+  username: string;
+  email: string;
+  contact: string | null;
+  socialLink: string | null;
+  ticketCount: number;
+  status: string;
+};
+
+export function fetchAllAttendees(): Promise<AttendeeRow[]> {
+  return apiFetch<AttendeeRow[]>("/api/hosted-events/attendees");
+}
+
+export type EventTicket = { qrCode: string; username: string; status: string };
+
+export function fetchEventTickets(eventId: string): Promise<EventTicket[]> {
+  return apiFetch<EventTicket[]>(`/api/hosted-events/events/${eventId}/tickets`);
+}
+
+export type CheckInResult = { status?: 'ok'; error?: string; attendee?: string; eventTitle?: string; checkedIn?: number; total?: number };
+
+// Unified check-in: a 'PF-' code checks in one ticket; a booking token checks in all remaining.
+export function checkInTicket(qr: string): Promise<CheckInResult> {
+  return apiFetch<CheckInResult>("/api/hosted-events/check-in", {
+    method: "POST",
+    body: JSON.stringify({ qr }),
+  });
+}
+
 // ── Organiser drafts (persisted per-user via the backend) ─────────────────────
 
 export function fetchHostedSummary(): Promise<HostedSummary> {

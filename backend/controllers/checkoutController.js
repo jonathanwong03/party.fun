@@ -1,6 +1,27 @@
 import { createPledge, quotePledge } from '../services/eventService.js';
-import { notifyPledgeConfirmed } from '../services/notificationService.js';
+import { notifyBookingTicket } from '../services/notificationService.js';
+import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+
+// On greenlight, re-issue a ticket email (booking QR + per-ticket PDF) to every backer.
+// Uses the service-role client because it reads across all backers' rows.
+async function fanOutGreenlitTickets(eventId) {
+  const admin = adminClient();
+  const { data: ev } = await admin.from('EVENT').select('title, location, startDate').eq('id', eventId).single();
+  if (!ev) return;
+  const dateText = fmtDate(ev.startDate);
+  const { data: bookings } = await admin.from('BOOKINGS').select('id, userId, reference, qrToken').eq('eventId', eventId).is('deletedAt', null);
+  for (const b of bookings ?? []) {
+    const { data: tix } = await admin.from('TICKETS').select('qrCode, status').eq('bookingId', b.id);
+    const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
+    if (!codes.length) continue;
+    const { data: u } = await admin.from('USER').select('email, username, role').eq('id', b.userId).single();
+    if (!u?.email) continue;
+    notifyBookingTicket({ email: u.email, username: u.username, role: u.role, eventTitle: ev.title, dateText, location: ev.location, reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes, greenlit: true });
+  }
+}
 
 const PLEDGE_MESSAGES = {
   not_found: 'Event not found.',
@@ -83,18 +104,23 @@ export async function postPledge(req, res) {
     });
     return;
   }
-  // Fire-and-forget pledge-confirmation email to the pledger.
+  // Fire-and-forget: email the buyer their booking ticket (booking QR + per-ticket PDF).
   const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
-  if (me?.email && result.event) {
-    notifyPledgeConfirmed({
-      email: me.email,
-      username: me.username,
-      role: me.role,
-      eventTitle: result.event.title,
-      qty: Number(req.body.qty),
-      pricePerTicket: result.event.price,
-      deadline: result.event.deadlineAt,
+  const [{ data: ev }, { data: tix }] = await Promise.all([
+    req.supabase.from('EVENT').select('title, location, startDate').eq('id', eventId).single(),
+    req.supabase.from('TICKETS').select('qrCode, status, bookingId').eq('bookingId', result.bookingId),
+  ]);
+  const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
+  if (me?.email && ev && codes.length && result.qrToken) {
+    notifyBookingTicket({
+      email: me.email, username: me.username, role: me.role,
+      eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: ev.location,
+      reference: result.reference, bookingToken: result.qrToken, ticketCodes: codes,
     });
+  }
+  // If this pledge crossed the threshold, re-issue tickets to all backers as "greenlit".
+  if (result.greenlitNow) {
+    Promise.resolve().then(() => fanOutGreenlitTickets(eventId)).catch((e) => console.error('[Checkout] greenlit fan-out failed:', e?.message || e));
   }
 
   res.json({ status: 'ok', event: result.event, profile: result.profile, reference: result.reference });

@@ -21,14 +21,14 @@ export function Sidebar({
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
     { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
+    { label: 'Analytics', icon: BarChart3, target: { name: 'analytics' }, active: route.name === 'analytics' },
   ];
 
   const organiserOnly: Item[] = [
     { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'hosted-events' }, active: route.name === 'hosted-events' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
-    { label: 'Analytics', icon: BarChart3, target: { name: 'hosted-events' }, active: false },
-    { label: 'Attendees', icon: Users, target: { name: 'hosted-events' }, active: false },
-    { label: 'Tickets', icon: Ticket, target: { name: 'hosted-events' }, active: false },
+    { label: 'Attendees', icon: Users, target: { name: 'attendees-all' }, active: route.name === 'attendees-all' },
+    { label: 'Tickets', icon: Ticket, target: { name: 'tickets' }, active: route.name === 'tickets' },
   ];
 
   const tail: Item[] = [

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useRef } from 'react';
-import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign, ChevronDown } from 'lucide-react';
+import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveStatus, type EventItem, type Route } from '../components/types';
@@ -109,7 +109,16 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
           {/* Status filter (created events only) */}
           {!isDrafts && (
             <div className="mb-5">
-              <FilterDropdown value={statusFilter} onChange={setStatusFilter} />
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | EventItem['status'])}>
+                <SelectTrigger className="w-full md:w-52" style={{ background: 'var(--surface-2)' }}>
+                  <SelectValue placeholder="Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_FILTERS.map((f) => (
+                    <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -271,45 +280,5 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
     >
       {children}
     </button>
-  );
-}
-
-// Status filter as a dropdown (styled to match the app's pickers).
-function FilterDropdown({ value, onChange }: { value: 'all' | EventItem['status']; onChange: (v: 'all' | EventItem['status']) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = STATUS_FILTERS.find((f) => f.key === value) ?? STATUS_FILTERS[0];
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-  return (
-    <div ref={ref} className="relative" style={{ width: 210 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-lg border px-3 text-sm transition hover:bg-white/5"
-        style={{ height: 40, background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
-      >
-        <span style={{ fontWeight: 600 }}>{current.label}</span>
-        <ChevronDown size={16} style={{ color: 'var(--muted-foreground)' }} />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-lg border shadow-lg" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)' }}>
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => { onChange(f.key); setOpen(false); }}
-              className="block w-full px-3 py-2 text-left text-sm transition hover:bg-white/5"
-              style={{ color: f.key === value ? '#ff4d2e' : 'var(--foreground)', fontWeight: f.key === value ? 700 : 500 }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

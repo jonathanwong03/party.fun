@@ -130,6 +130,29 @@ export function pledgeConfirmedTemplate({ userName, role, eventTitle, qty, price
   `);
 }
 
+// Booking ticket: the printable PDF (one per-ticket QR per page) is attached to
+// this email. Each attendee shows their own ticket's QR at the door.
+export function bookingTicketTemplate({ userName, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken }) {
+  const lead = greenlit
+    ? `Great news — <strong>${eventTitle}</strong> is greenlit and your spot is locked in! Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`
+    : `Your pledge to <strong>${eventTitle}</strong> is confirmed. Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`;
+  return emailShell(`
+    ${h1(greenlit ? 'You’re in — event greenlit 🎉' : 'Your ticket 🎟️')}
+    ${greet(userName, role)}
+    ${p(lead)}
+    ${p(`<span style="color:#ff4d2e;font-weight:700;">Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} in the attached PDF (<strong>tickets.pdf</strong>).</span> It has one printable ticket with its own QR code per person — show each QR at the door to check in. QR codes are only valid during the event.`)}
+    ${detailsBox('Ticket Details',
+      row('Event', eventTitle) +
+      (dateText ? row('When', dateText) : '') +
+      (location ? row('Where', location) : '') +
+      divider +
+      row('Tickets', `${remaining}`, '#ff4d2e') +
+      row('Reference', reference ?? '—'),
+    )}
+    ${qrToken ? button('Download your tickets (PDF)', `${APP_URL}/api/tickets/by-token/${qrToken}/pdf`) : ''}
+  `);
+}
+
 export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeThreshold, deadline }) {
   const formattedDeadline = sgDateTime(deadline, 'the funding deadline');
   const manageUrl = eventId ? `${APP_URL}/hosted-events/events/${eventId}/edit` : `${APP_URL}/hosted-events`;

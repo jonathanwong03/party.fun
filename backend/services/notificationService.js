@@ -3,6 +3,7 @@
 // logged but never block or fail the HTTP request that triggered them.
 import * as templates from './emailTemplates.js';
 import { sendEmail } from './emailProcessor.js';
+import { buildTicketsPdf } from './ticketPdf.js';
 
 // Run an async notification job without awaiting it; swallow + log any error.
 function fireAndForget(label, job) {
@@ -11,12 +12,12 @@ function fireAndForget(label, job) {
     .catch((err) => console.error(`[NotificationService] ${label} failed:`, err?.message || err));
 }
 
-async function send(label, { to, subject, html }) {
+async function send(label, { to, subject, html, attachments }) {
   if (!to) {
     console.warn(`[NotificationService] ${label}: no recipient email; skipped.`);
     return;
   }
-  const result = await sendEmail({ to, subject, html });
+  const result = await sendEmail({ to, subject, html, attachments });
   console.log(`[NotificationService] ${label} → ${to}: ${result.success ? 'sent' : `failed (${result.error})`}`);
 }
 
@@ -48,6 +49,27 @@ export function notifyPledgeConfirmed({ email, username, role, eventTitle, qty, 
       }),
     }),
   );
+}
+
+// Booking ticket email: a printable PDF of N individual per-ticket QRs attached
+// (one ticket per page). Sent at purchase, on greenlit, and whenever the remaining
+// count changes. Fire-and-forget.
+export function notifyBookingTicket({ email, username, role, eventTitle, dateText, location, reference, bookingToken, ticketCodes = [], greenlit = false }) {
+  fireAndForget('bookingTicket', async () => {
+    const remaining = ticketCodes.length;
+    const pdfBuffer = await buildTicketsPdf({
+      event: { title: eventTitle, dateText, location, reference },
+      tickets: ticketCodes.map((qrCode) => ({ qrCode })),
+    });
+    await send('bookingTicket', {
+      to: email,
+      subject: greenlit ? `You're in: ${eventTitle} 🎉` : `Your ticket: ${eventTitle} 🎟️`,
+      html: templates.bookingTicketTemplate({ userName: username, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken: bookingToken }),
+      attachments: [
+        { filename: 'tickets.pdf', content: pdfBuffer.toString('base64') },
+      ],
+    });
+  });
 }
 
 // #5 — tickets given away (to the giver). allGivenAway → "can no longer attend".
