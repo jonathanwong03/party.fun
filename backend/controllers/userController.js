@@ -1,5 +1,5 @@
 import { getProfile as readProfile, giveAwayTickets, deleteBooking as removeBooking } from '../services/eventService.js';
-import { notifyPledgeCancelled } from '../services/notificationService.js';
+import { notifyPledgeCancelled, notifyTicketsGivenAway } from '../services/notificationService.js';
 
 export async function getProfile(req, res) {
   const profile = await readProfile(req.supabase);
@@ -19,8 +19,10 @@ export async function giveAwayBookingTickets(req, res) {
   }
 
   const profile = result.profile?.profile;
-  const ticket = result.profile?.tickets?.find((t) => String(t.bookingId) === String(req.params.bookingId));
+  const bookingId = Number(req.params.bookingId);
+  const ticket = result.profile?.tickets?.find((t) => Number(t.bookingId) === bookingId);
   const eventId = ticket?.eventId;
+
   if (profile && eventId) {
     const pricePerTicket = result.event?.price ?? 0;
     notifyPledgeCancelled({
@@ -31,6 +33,19 @@ export async function giveAwayBookingTickets(req, res) {
       eventTitle: result.event?.title ?? 'your event',
       qty: quantity,
       refundAmount: pricePerTicket * quantity,
+    });
+  }
+
+  // Fire-and-forget give-away email. allGivenAway = the booking has no active tickets left.
+  const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
+  if (me?.email && result.event) {
+    notifyTicketsGivenAway({
+      email: me.email,
+      username: me.username,
+      role: me.role,
+      eventTitle: result.event.title,
+      qty: quantity,
+      allGivenAway: !ticket || ticket.activeTicketCount === 0,
     });
   }
 

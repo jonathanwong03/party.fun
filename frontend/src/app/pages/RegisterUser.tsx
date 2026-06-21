@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest, uploadAvatar } from '../api';
+import { registerRequest, uploadAvatar, sendWelcomeEmailRequest } from '../api';
 import { supabase } from '../supabase';
 import { PRESET_AVATARS } from '../components/media';
 import type { Route } from '../components/types';
@@ -15,6 +15,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [telegram, setTelegram] = useState('');
   const [phone, setPhone] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -72,7 +73,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           try {
             // A preset avatar is a stable URL — pass it through signup metadata so the
             // DB trigger stores it (no session needed). An uploaded file is handled below.
-            await registerRequest({ username, email, password, role: 'user', avatarUrl: presetUrl ?? undefined });
+            await registerRequest({ username, email, password, role: 'user', avatarUrl: presetUrl ?? undefined, telegram: telegram || undefined, phone: phone || undefined });
             // Upload the optional avatar only if signup produced a session (no email
             // confirmation). Otherwise it can be set later in Settings.
             if (avatarFile) {
@@ -81,6 +82,8 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
                 try { await uploadAvatar(avatarFile); } catch { /* non-blocking */ }
               }
             }
+            // Best-effort welcome email (needs the just-created session); never blocks signup.
+            try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
@@ -134,7 +137,10 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           <Field label="Password" type="password" autoComplete="new-password" placeholder="********" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
           <Field label="Confirm" type="password" autoComplete="new-password" placeholder="********" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Phone / Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
+          <Field label="Phone number (optional)" autoComplete="off" placeholder="e.g. +65 9123 4567" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
 
         {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
 

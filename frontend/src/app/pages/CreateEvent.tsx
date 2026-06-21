@@ -15,7 +15,7 @@ import { TimePicker } from '../components/TimePicker';
 import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError, futureDateTimeError } from '../components/validation';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 
-export function CreateEvent({ route, go, editId, events, onPublish, onDelete, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onDelete?: (id: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
+export function CreateEvent({ route, go, editId, events, onPublish, onCancel, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onCancel?: (id: string, reason: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? [];
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const draftSource = draftId ? (drafts ?? []).find((d) => d.id === draftId) : undefined;
@@ -49,6 +49,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
   const [greenlitQty, setGreenlitQty] = useState<number>(source?.statuses[1]?.qty ?? 150);
   const maxCapacity = ebQty + greenlitQty;
   const [deleting, setDeleting] = useState(false);
+  const [cancelReason, setCancelReason] = useState('');
   const [showErrors, setShowErrors] = useState(false);
   const [image, setImage] = useState<string>(source?.image ?? '');
   const [imageBusy, setImageBusy] = useState(false);
@@ -171,7 +172,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       ],
     };
     onSaveDraft?.(draft);
-    go({ name: 'hosted-events' });
+    go({ name: 'hosted-events', tab: 'drafts' });
   };
 
   const handleSave = () => {
@@ -326,8 +327,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
                     <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'hosted-events' })}>
                       Cancel
                     </Button>
-                    <Button onClick={() => setDeleting(true)} className="ml-auto bg-[#ff3354] text-white hover:bg-[#ff4865]" style={{ borderRadius: 10, height: 44 }}>
-                      Delete Event
+                    <Button onClick={() => { setCancelReason(''); setDeleting(true); }} className="ml-auto bg-[#ff3354] text-white hover:bg-[#ff4865]" style={{ borderRadius: 10, height: 44 }}>
+                      Cancel Event
                     </Button>
                   </>
                 ) : (
@@ -370,10 +371,18 @@ export function CreateEvent({ route, go, editId, events, onPublish, onDelete, on
       {deleting && existing && (
         <DeleteEventModal
           eventName={existing.title}
+          title="Cancel Event?"
+          leadIn="You're about to cancel"
+          confirmWord="CONFIRM"
+          actionLabel="Cancel Event"
+          warning="All pledges will be voided and any captured funds refunded. Backers will be notified by email."
+          reason={cancelReason}
+          onReasonChange={setCancelReason}
+          reasonPrompt="Why are you cancelling this event?"
           onCancel={() => setDeleting(false)}
           onConfirm={() => {
             setDeleting(false);
-            onDelete?.(existing.id);
+            onCancel?.(existing.id, cancelReason);
             go({ name: 'hosted-events' });
           }}
         />

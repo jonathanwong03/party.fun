@@ -91,7 +91,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
           </div>
 
           {/* description */}
-          <div>
+          <div className="rounded-2xl glass p-6 transition-all duration-300">
             <h2 className="mb-3">About this party</h2>
             <p style={{ color: 'var(--muted-foreground)' }}>{event.description}</p>
           </div>

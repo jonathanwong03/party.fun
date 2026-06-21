@@ -3,14 +3,16 @@ import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
-import { loginRequest, type AuthUser } from '../api';
+import { loginRequest, loginWithGoogleRequest, type AuthUser } from '../api';
 import type { Route } from '../components/types';
+
 
 export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user: AuthUser) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,6 +25,18 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
       setError(err instanceof Error ? err.message : 'Unable to log in.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    setError(null);
+    setGoogleSubmitting(true);
+    try {
+      await loginWithGoogleRequest();
+      // Browser redirects to Google here; nothing else runs until they return.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to sign in with Google.');
+      setGoogleSubmitting(false);
     }
   };
 
@@ -55,7 +69,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
         <div>
           <div className="mb-1.5 flex items-baseline justify-between">
             <Label className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Password</Label>
-            <button type="button" className="text-xs text-[#ff4d2e]">Forgot?</button>
+            <button type="button" onClick={() => go({ name: 'forgot-password' })} className="text-xs text-[#ff4d2e]">Forgot?</button>
           </div>
           <Input
             name="password"
@@ -71,6 +85,23 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
           {submitting ? 'Logging in…' : 'Login'}
         </Button>
       </form>
+
+      <div className="mt-4 flex items-center gap-2">
+        <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+        <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>or</span>
+        <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
+      </div>
+
+      <Button
+        type="button"
+        onClick={handleGoogleLogin}
+        disabled={googleSubmitting}
+        variant="outline"
+        className="mt-4 w-full"
+        style={{ borderRadius: 12, height: 46 }}
+      >
+        {googleSubmitting ? 'Redirecting…' : 'Continue with Google'}
+      </Button>
     </AuthShell>
   );
 }

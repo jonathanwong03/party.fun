@@ -1,5 +1,5 @@
 import { Logo } from './Logo';
-import { Menu, Settings as SettingsIcon } from 'lucide-react';
+import { Menu, Settings as SettingsIcon, Wallet as WalletIcon } from 'lucide-react';
 import type { Role, Route } from './types';
 import type { AuthUser } from '../api';
 
@@ -8,12 +8,14 @@ export function Navbar({
   user,
   route,
   go,
+  walletBalance,
   onMenuClick,
 }: {
   role: Role | null;
   user: AuthUser | null;
   route: Route;
   go: (r: Route) => void;
+  walletBalance?: number | null;
   onMenuClick: () => void;
 }) {
   const navItem = (label: string, target: Route, _active: boolean) => (
@@ -32,7 +34,7 @@ export function Navbar({
   return (
     <header
       className="sticky top-0 z-30 border-b backdrop-blur-xl"
-      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.75)' }}
+      style={{ borderColor: 'rgba(255,255,255,0.08)', background: 'rgba(0,0,0,0.92)' }}
     >
       <div className="mx-auto grid h-16 max-w-[1536px] grid-cols-[1fr_auto_1fr] items-center px-6">
         <div className="flex items-center gap-3 justify-self-start">
@@ -60,6 +62,16 @@ export function Navbar({
         <div className="flex items-center gap-2 justify-self-end">
           {role ? (
             <>
+              <button
+                type="button"
+                aria-label="Wallet"
+                onClick={() => go({ name: 'wallet' })}
+                className="inline-flex items-center gap-1.5 rounded-full px-3 text-sm text-white transition hover:bg-white/10"
+                style={{ height: 36, background: 'rgba(255,255,255,0.06)', fontWeight: 600 }}
+              >
+                <WalletIcon size={15} color="#ffffff" />
+                {walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}
+              </button>
               <button
                 type="button"
                 aria-label="Settings"

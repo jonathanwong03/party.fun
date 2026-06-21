@@ -3,6 +3,7 @@ import { AlertTriangle, X } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
+import { Textarea } from './ui/textarea';
 import { NumberStepper } from './NumberStepper';
 
 export function DeleteEventModal({
@@ -18,6 +19,9 @@ export function DeleteEventModal({
   maxQuantity,
   onQuantityChange,
   quantityPrompt,
+  reason,
+  onReasonChange,
+  reasonPrompt,
 }: {
   eventName: string;
   onCancel: () => void;
@@ -31,8 +35,12 @@ export function DeleteEventModal({
   maxQuantity?: number;
   onQuantityChange?: (quantity: number) => void;
   quantityPrompt?: string;
+  reason?: string;
+  onReasonChange?: (reason: string) => void;
+  reasonPrompt?: string;
 }) {
   const [confirmText, setConfirmText] = useState('');
+  // The reason field (when shown) is optional — only the confirm word gates the action.
   const canDelete = confirmText.trim().toLowerCase() === confirmWord.toLowerCase();
 
   return (
@@ -63,6 +71,21 @@ export function DeleteEventModal({
           <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.25)', color: '#ff7a93' }}>
             {warning}
           </div>
+
+          {onReasonChange && (
+            <div>
+              <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                {reasonPrompt ?? 'Reason'}
+              </Label>
+              <Textarea
+                value={reason ?? ''}
+                onChange={(e) => onReasonChange(e.target.value)}
+                placeholder="Let your backers know why"
+                rows={3}
+                style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
+              />
+            </div>
+          )}
 
           {quantity !== undefined && maxQuantity !== undefined && onQuantityChange && (
             <div className="flex items-center justify-between gap-4">

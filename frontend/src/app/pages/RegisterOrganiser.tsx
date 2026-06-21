@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest } from '../api';
+import { registerRequest, sendWelcomeEmailRequest } from '../api';
 import type { Route } from '../components/types';
 
 export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
@@ -13,8 +13,8 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
-  const [contact, setContact] = useState('');
-  const [social, setSocial] = useState('');
+  const [telegram, setTelegram] = useState('');
+  const [phone, setPhone] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -50,7 +50,9 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
           if (hasErr) return;
           setSubmitting(true);
           try {
-            await registerRequest({ username: organiserName, email, password, role: 'organiser' });
+            await registerRequest({ username: organiserName, email, password, role: 'organiser', telegram: telegram || undefined, phone: phone || undefined });
+            // Best-effort welcome email (needs the just-created session); never blocks signup.
+            try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
             go({ name: 'login' });
           } catch (err) {
             setSubmitError(err instanceof Error ? err.message : 'Unable to create account.');
@@ -59,14 +61,16 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
           }
         }}
       >
-        <Field label="Organiser name" autoComplete="off" placeholder="Your organisation name" value={organiserName} onChange={(e) => setOrganiserName(e.target.value)} error={attempted ? errs.organiserName : null} />
+        <Field label="Username" autoComplete="off" placeholder="Choose a username" value={organiserName} onChange={(e) => setOrganiserName(e.target.value)} error={attempted ? errs.organiserName : null} />
         <Field label="Email" type="email" autoComplete="off" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} error={attempted ? errs.email : null} />
         <div className="grid grid-cols-2 gap-3">
           <Field label="Password" type="password" autoComplete="new-password" placeholder="••••••••" value={password} onChange={(e) => setPassword(e.target.value)} error={attempted ? errs.password : null} />
           <Field label="Confirm" type="password" autoComplete="new-password" placeholder="••••••••" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={attempted ? errs.confirm : null} />
         </div>
-        <Field label="Contact / Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={contact} onChange={(e) => setContact(e.target.value)} />
-        <Field label="Social link (optional)" autoComplete="off" placeholder="instagram.com/yourpage" value={social} onChange={(e) => setSocial(e.target.value)} />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Telegram (optional)" autoComplete="off" placeholder="@yourhandle" value={telegram} onChange={(e) => setTelegram(e.target.value)} />
+          <Field label="Phone number (optional)" autoComplete="off" placeholder="e.g. +65 9123 4567" value={phone} onChange={(e) => setPhone(e.target.value)} />
+        </div>
 
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>

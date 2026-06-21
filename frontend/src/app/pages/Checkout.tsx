@@ -1,41 +1,25 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Shield, CreditCard, MapPin } from 'lucide-react';
+import { ChevronLeft, Shield, Wallet as WalletIcon, CreditCard } from 'lucide-react';
 import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
 import { HypeMeter } from '../components/HypeMeter';
 import { StatusBadge } from '../components/StatusBadge';
-import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
+import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
-import { fetchQuote, type Quote } from '../api';
+import { fetchQuote, fetchWallet, type Quote, type WalletInfo } from '../api';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
-import { required, cardError, cvcError } from '../components/validation';
-import { MonthYearPicker } from '../components/MonthYearPicker';
 
-export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number) => Promise<void> }) {
+export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card') => Promise<string | undefined> }) {
   const event = events.find((e) => e.id === id);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [wallet, setWallet] = useState<WalletInfo | null>(null);
+  const [method, setMethod] = useState<'wallet' | 'card'>('wallet');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [form, setForm] = useState({
-    nameOnCard: '',
-    card: '',
-    expiry: '',
-    cvc: '',
-    country: '',
-    address: '',
-    city: '',
-    state: '',
-    zip: '',
-  });
-  const [attempted, setAttempted] = useState(false);
 
-  // The backend computes subtotal/fee/total; the frontend only displays them.
   useEffect(() => {
     let ignore = false;
-    fetchQuote(role, id, qty)
-      .then((q) => { if (!ignore) setQuote(q); })
-      .catch(() => { if (!ignore) setQuote(null); });
+    fetchQuote(role, id, qty).then((q) => { if (!ignore) setQuote(q); }).catch(() => { if (!ignore) setQuote(null); });
+    fetchWallet().then((w) => { if (!ignore) setWallet(w); }).catch(() => { if (!ignore) setWallet(null); });
     return () => { ignore = true; };
   }, [role, id, qty]);
 
@@ -47,43 +31,19 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     );
   }
 
-  // Card expiry from the MM/YY picker: present and not already past.
-  const expiryError = (() => {
-    const m = /^(\d{2})\/(\d{2})$/.exec(form.expiry.trim());
-    if (!m) return 'Select an expiry date.';
-    const now = new Date();
-    const month = Number(m[1]);
-    const year = 2000 + Number(m[2]);
-    if (month < 1 || month > 12) return 'Select an expiry date.';
-    if (year < now.getFullYear() || (year === now.getFullYear() && month < now.getMonth() + 1)) return 'Card has expired.';
-    return null;
-  })();
-
-  // All fields are required (payment is simulated; nothing is stored).
-  const errs = {
-    nameOnCard: required(form.nameOnCard),
-    card: cardError(form.card),
-    expiry: expiryError,
-    cvc: cvcError(form.cvc),
-    country: required(form.country),
-    address: required(form.address),
-    city: required(form.city),
-    state: required(form.state),
-    zip: required(form.zip),
-  };
-  const hasErr = Object.values(errs).some(Boolean);
-
-  const set = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm((prev) => ({ ...prev, [key]: e.target.value }));
+  const total = quote?.total ?? 0;
+  const balance = wallet?.balance ?? 0;
+  const hasCard = !!wallet?.card;
+  const walletShort = balance < total;
+  const canPay = method === 'wallet' ? !walletShort : hasCard;
 
   const handleConfirm = async () => {
-    setAttempted(true);
     setSubmitError(null);
-    if (hasErr) return;
+    if (!canPay) return;
     try {
       setSubmitting(true);
-      await onPledge(event.id, qty, event.price);
-      go({ name: 'confirmation', id, qty, lines: quote?.lines });
+      const reference = await onPledge(event.id, qty, event.price, method);
+      go({ name: 'confirmation', id, qty, lines: quote?.lines, reference });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
     } finally {
@@ -93,63 +53,55 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
-      <button
-        onClick={() => go({ name: 'event', id })}
-        className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
-        style={{ color: 'var(--muted-foreground)' }}
-      >
+      <button onClick={() => go({ name: 'event', id })} className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground" style={{ color: 'var(--muted-foreground)' }}>
         <ChevronLeft size={14} /> Back to event
       </button>
 
-      <h1 className="mb-6" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
-        Checkout
-      </h1>
+      <h1 className="mb-6" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>Checkout</h1>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
-        {/* Form */}
+        {/* Payment source */}
         <div className="space-y-6">
           <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4">Tickets</h3>
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Current status</div>
-                <div style={{ fontWeight: 600 }}>{statusStageLabel(event)}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</div>
-                <div style={{ fontWeight: 600 }}>{qty} ticket{qty === 1 ? '' : 's'}</div>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4 flex items-center gap-2"><CreditCard size={16} /> Credit Card Details</h3>
-            <div className="space-y-4">
-              <Field label="Name on card" placeholder="Name on card" value={form.nameOnCard} onChange={set('nameOnCard')} error={attempted ? errs.nameOnCard : null} />
-              <Field label="Card number" placeholder="0000 0000 0000 0000" value={form.card} onChange={set('card')} error={attempted ? errs.card : null} />
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Card expiration</Label>
-                  <MonthYearPicker value={form.expiry} onChange={(v) => setForm((p) => ({ ...p, expiry: v }))} error={!!(attempted && errs.expiry)} />
-                  {attempted && errs.expiry && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.expiry}</p>}
+            <h3 className="mb-4">Pay with</h3>
+            <div className="space-y-3">
+              {/* Wallet */}
+              <PaySource
+                active={method === 'wallet'}
+                onClick={() => setMethod('wallet')}
+                icon={<WalletIcon size={18} />}
+                title="In-app wallet"
+                subtitle={`Balance: $${balance.toFixed(2)}`}
+                warn={walletShort ? 'Not enough balance' : null}
+              />
+              {method === 'wallet' && walletShort && (
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
+                  Your wallet is short by ${(total - balance).toFixed(2)}.{' '}
+                  <button onClick={() => go({ name: 'wallet' })} className="underline" style={{ fontWeight: 700 }}>Top up</button> or pay by card.
                 </div>
-                <Field label="Security code" placeholder="Code" value={form.cvc} onChange={set('cvc')} error={attempted ? errs.cvc : null} />
-              </div>
+              )}
+              {/* Card */}
+              <PaySource
+                active={method === 'card'}
+                onClick={() => setMethod('card')}
+                icon={<CreditCard size={18} />}
+                title="Debit / credit card"
+                subtitle={hasCard ? `${wallet!.card!.brand ?? 'Card'} •••• ${wallet!.card!.last4}` : 'No card linked'}
+                warn={!hasCard ? 'Link a card' : null}
+              />
+              {method === 'card' && !hasCard && (
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
+                  You haven't linked a card.{' '}
+                  <button onClick={() => go({ name: 'wallet' })} className="underline" style={{ fontWeight: 700 }}>Link a card</button> in your wallet first.
+                </div>
+              )}
             </div>
           </section>
 
-          <section className="rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <h3 className="mb-4 flex items-center gap-2"><MapPin size={16} /> Billing address</h3>
-            <div className="space-y-4">
-              <Field label="Country" placeholder="Country" value={form.country} onChange={set('country')} error={attempted ? errs.country : null} />
-              <Field label="Address" placeholder="Street address" value={form.address} onChange={set('address')} error={attempted ? errs.address : null} />
-              <div className="grid grid-cols-2 gap-4">
-                <Field label="City" placeholder="City" value={form.city} onChange={set('city')} error={attempted ? errs.city : null} />
-                <Field label="State" placeholder="State" value={form.state} onChange={set('state')} error={attempted ? errs.state : null} />
-              </div>
-              <Field label="ZIP code" placeholder="ZIP code" value={form.zip} onChange={set('zip')} error={attempted ? errs.zip : null} />
-            </div>
-          </section>
+          <div className="flex items-start gap-2 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
+            <Shield size={14} className="mt-0.5 shrink-0" />
+            <span>Paid instantly. If the event is cancelled or misses its threshold, you're refunded automatically — wallet payments to your wallet instantly, card payments back to your card (~3–5 business days).</span>
+          </div>
         </div>
 
         {/* Summary */}
@@ -166,43 +118,23 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 <h3 className="line-clamp-2">{event.title}</h3>
                 <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{event.date} · {event.time}</div>
               </div>
-
               <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={getActiveStatus(event)} size="sm" />
-
               <div className="h-px" style={{ background: 'var(--border)' }} />
-
               <div className="space-y-1.5 text-sm">
-                {quote
-                  ? quote.lines.map((l) => (
-                      <Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />
-                    ))
-                  : <Row label={`Ticket × ${qty}`} value="—" />}
+                {quote ? quote.lines.map((l) => (<Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />)) : <Row label={`Ticket × ${qty}`} value="—" />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total</span>
                 <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.totalText : '—'}</span>
               </div>
 
-              <Button
-                onClick={handleConfirm}
-                disabled={submitting}
-                className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
-                style={{ borderRadius: 12, height: 48 }}
-              >
-                {submitting ? 'Confirming...' : 'Confirm Pledge'}
+              <Button onClick={handleConfirm} disabled={submitting || !canPay || !quote} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50" style={{ borderRadius: 12, height: 48 }}>
+                {submitting ? 'Processing…' : method === 'wallet' ? 'Pay with wallet' : 'Pay with card'}
               </Button>
 
-              {(attempted && hasErr) || submitError ? (
-                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
-                  {submitError || 'Please fill in all required details before confirming your pledge.'}
-                </div>
-              ) : null}
-
-              <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
-                style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
-                <Shield size={14} className="mt-0.5 shrink-0" />
-                <span>Your payment is captured now. If the event misses its hype threshold, active tickets are refunded automatically.</span>
-              </div>
+              {submitError && (
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>{submitError}</div>
+              )}
             </div>
           </div>
         </aside>
@@ -211,13 +143,24 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   );
 }
 
-function Field({ label, error, ...props }: { label: string; error?: string | null } & React.InputHTMLAttributes<HTMLInputElement>) {
+function PaySource({ active, onClick, icon, title, subtitle, warn }: { active: boolean; onClick: () => void; icon: React.ReactNode; title: string; subtitle: string; warn: string | null }) {
   return (
-    <div>
-      <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
-      <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
-      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
-    </div>
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full items-center gap-3 rounded-xl border p-4 text-left transition"
+      style={{ borderColor: active ? '#ff4d2e' : 'var(--border)', background: active ? 'rgba(255,77,46,0.08)' : 'var(--surface-2)' }}
+    >
+      <div className="grid size-9 place-items-center rounded-lg" style={{ background: 'var(--surface)', color: active ? '#ff4d2e' : 'var(--muted-foreground)' }}>{icon}</div>
+      <div className="flex-1">
+        <div style={{ fontWeight: 600 }}>{title}</div>
+        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{subtitle}</div>
+      </div>
+      {warn && <span className="text-xs" style={{ color: '#ffd968', fontWeight: 600 }}>{warn}</span>}
+      <span className="grid size-5 place-items-center rounded-full border" style={{ borderColor: active ? '#ff4d2e' : 'var(--border-strong)' }}>
+        {active && <span className="size-2.5 rounded-full" style={{ background: '#ff4d2e' }} />}
+      </span>
+    </button>
   );
 }
 

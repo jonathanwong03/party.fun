@@ -66,7 +66,15 @@ export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (r
         <div className="space-y-3">
           {items.map((booking) => {
             const isCancelled = booking.tab === 'cancelled';
-            const badgeLabel = booking.tab === 'past' ? 'Completed' : isCancelled ? 'Cancelled by Buyer' : undefined;
+            // Distinguish an organiser-cancelled event (refunded) from a buyer giving away all tickets.
+            const eventCancelled = booking.event.status === 'cancelled';
+            const badgeLabel = booking.tab === 'past'
+              ? 'Completed'
+              : eventCancelled
+              ? 'Cancelled by Organiser'
+              : isCancelled
+              ? 'Cancelled by Buyer'
+              : undefined;
             return (
               <div key={booking.bookingId} className="flex flex-col gap-4 rounded-2xl border p-4 md:flex-row md:items-center" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
                 <div className="relative h-24 w-full overflow-hidden rounded-xl md:w-40 md:shrink-0">
@@ -103,8 +111,8 @@ export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (r
                       onClick={() => setDeleting(booking)}
                       aria-label="Delete"
                       title="Delete"
-                      className="grid size-9 shrink-0 place-items-center rounded-full border transition hover:bg-[rgba(255,51,84,0.12)]"
-                      style={{ borderColor: 'rgba(255,51,84,0.4)', color: '#ff3354' }}
+                      className="grid size-9 shrink-0 place-items-center rounded-lg transition hover:bg-white/5"
+                      style={{ color: '#ff3354' }}
                     >
                       <Trash2 size={16} />
                     </button>

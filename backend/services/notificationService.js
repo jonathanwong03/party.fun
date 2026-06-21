@@ -64,58 +64,156 @@ async function logNotification({ userId, email, eventId, type, subject, status, 
   }
 }
 
-export async function notifyPledgeConfirmed({ userId, email, username, eventId, eventTitle, deadline, qty, pricePerTicket }) {
-  try {
-    const subject = `Pledge Confirmed: ${eventTitle} 🚀`;
-    const html = templates.pledgeConfirmedTemplate({
-      userName: username,
-      eventTitle,
-      qty,
-      pricePerTicket,
-      total: qty * pricePerTicket,
-      deadline,
-    });
-    const result = await dependencies.sendEmail({ to: email, subject, html });
-    await logNotification({
-      userId,
-      email,
-      eventId,
-      type: 'pledge_confirmed',
-      subject,
-      status: deliveryStatus(result),
-      error: result.error,
-    });
-  } catch (error) {
-    console.error('[NotificationService] Error in notifyPledgeConfirmed:', error);
-  }
+// Run an async notification job without awaiting it; swallow + log any error.
+function fireAndForget(label, job) {
+  Promise.resolve()
+    .then(job)
+    .catch((err) => console.error(`[NotificationService] ${label} failed:`, err?.message || err));
 }
 
-export async function notifyPledgeCancelled({ userId, email, username, eventId, eventTitle, qty, refundAmount }) {
-  try {
-    const subject = `Pledge Cancelled: ${eventTitle}`;
-    const html = templates.pledgeCancelledTemplate({
-      userName: username,
-      eventTitle,
-      qty,
-      refundAmount,
-    });
-    const result = await dependencies.sendEmail({ to: email, subject, html });
-    await logNotification({
-      userId,
-      email,
-      eventId,
-      type: 'pledge_cancelled',
-      subject,
-      status: deliveryStatus(result),
-      error: result.error,
-    });
-  } catch (error) {
-    console.error('[NotificationService] Error in notifyPledgeCancelled:', error);
+async function send(label, { to, subject, html, logPayload = {} }) {
+  if (!to) {
+    console.warn(`[NotificationService] ${label}: no recipient email; skipped.`);
+    return { success: false, error: 'no_email' };
   }
+  const result = await dependencies.sendEmail({ to, subject, html });
+  const status = deliveryStatus(result);
+  console.log(`[NotificationService] ${label} → ${to}: ${status}${result.error ? ` (${result.error})` : ''}`);
+  
+  await logNotification({
+    userId: logPayload.userId,
+    email: to,
+    eventId: logPayload.eventId,
+    type: logPayload.type || label,
+    subject,
+    status,
+    error: result.error,
+  });
+
+  return result;
 }
 
-export async function notifyEventGreenlit(eventId, event) {
-  try {
+// #1 — account created (user or organiser)
+export function notifyAccountCreated({ email, username, role }) {
+  fireAndForget('accountCreated', () =>
+    send('accountCreated', {
+      to: email,
+      subject: 'Welcome to party.fun 🎉',
+      html: templates.accountCreatedTemplate({ userName: username, role }),
+    }),
+  );
+}
+
+// #3 — pledge confirmed (to the pledger)
+export function notifyPledgeConfirmed({ userId, email, username, role, eventId, eventTitle, qty, pricePerTicket, deadline }) {
+  fireAndForget('pledgeConfirmed', () =>
+    send('pledgeConfirmed', {
+      to: email,
+      subject: `Pledge Confirmed: ${eventTitle} 🚀`,
+      html: templates.pledgeConfirmedTemplate({
+        userName: username,
+        role,
+        eventTitle,
+        qty,
+        pricePerTicket,
+        total: Number(qty) * Number(pricePerTicket),
+        deadline,
+      }),
+      logPayload: { userId, eventId, type: 'pledge_confirmed' },
+    }),
+  );
+}
+
+// #5 — tickets given away (to the giver). allGivenAway → "can no longer attend".
+export function notifyTicketsGivenAway({ userId, email, username, role, eventId, eventTitle, qty, allGivenAway }) {
+  fireAndForget('ticketsGivenAway', () =>
+    send('ticketsGivenAway', {
+      to: email,
+      subject: `Tickets given away: ${eventTitle}`,
+      html: templates.ticketsGivenAwayTemplate({ userName: username, role, eventTitle, qty, allGivenAway }),
+      logPayload: { userId, eventId, type: 'tickets_given_away' },
+    }),
+  );
+}
+
+// #6 — organiser created an event (to the organiser)
+export function notifyEventCreated({ email, organiserName, eventTitle, eventId, hypeThreshold, deadline }) {
+  fireAndForget('eventCreated', () =>
+    send('eventCreated', {
+      to: email,
+      subject: `Your event is live: ${eventTitle}`,
+      html: templates.eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeThreshold, deadline }),
+      logPayload: { eventId, type: 'event_created' },
+    }),
+  );
+}
+
+// Password reset: emails the 6-digit code. Awaited (the request waits on the send),
+// unlike the fire-and-forget notifications above.
+export async function notifyPasswordReset({ email, username, role, code }) {
+  await send('passwordReset', {
+    to: email,
+    subject: 'Your party.fun password reset code',
+    html: templates.passwordResetTemplate({ userName: username, role, code }),
+  });
+}
+
+// #4 — event cancelled: full-refund email to every backer + a summary to the organiser.
+// `reason` is 'missed_threshold' or 'organiser'.
+export function notifyEventCancelled({ eventTitle, reason, backers = [], organiser = null }) {
+  fireAndForget('eventCancelled', async () => {
+    await Promise.all(
+      backers.map((b) =>
+        send('eventCancelled(backer)', {
+          to: b.email,
+          subject: `Event cancelled — full refund: ${eventTitle}`,
+          html: templates.eventCancelledTemplate({
+            userName: b.username,
+            role: b.role,
+            method: b.method,
+            eventTitle,
+            refundAmount: b.refundAmount ?? 0,
+            reason,
+          }),
+          logPayload: { userId: b.userId, type: 'event_cancelled' },
+        }),
+      ),
+    );
+
+    if (organiser?.email) {
+      await send('eventCancelled(organiser)', {
+        to: organiser.email,
+        subject: `Your event was cancelled: ${eventTitle}`,
+        html: templates.eventCancelledOrganiserTemplate({
+          organiserName: organiser.username,
+          eventTitle,
+          reason,
+          backerCount: backers.length,
+        }),
+        logPayload: { userId: organiser.userId, type: 'event_cancelled' },
+      });
+    }
+  });
+}
+
+export function notifyPledgeCancelled({ userId, email, username, eventId, eventTitle, qty, refundAmount }) {
+  fireAndForget('pledgeCancelled', () =>
+    send('pledgeCancelled', {
+      to: email,
+      subject: `Pledge Cancelled: ${eventTitle}`,
+      html: templates.pledgeCancelledTemplate({
+        userName: username,
+        eventTitle,
+        qty,
+        refundAmount,
+      }),
+      logPayload: { userId, eventId, type: 'pledge_cancelled' },
+    }),
+  );
+}
+
+export function notifyEventGreenlit(eventId, event) {
+  fireAndForget('eventGreenlit', async () => {
     if (!event) {
       console.error(`[NotificationService] Cannot send greenlit alerts: Event ${eventId} not found.`);
       return;
@@ -129,7 +227,7 @@ export async function notifyEventGreenlit(eventId, event) {
 
     const { data: bookings, error } = await supabase
       .from('BOOKINGS')
-      .select('userId, USER!inner(email, username)')
+      .select('userId, USER!inner(email, username, role)')
       .eq('eventId', eventId)
       .gt('activeTicketCount', 0);
 
@@ -159,19 +257,14 @@ export async function notifyEventGreenlit(eventId, event) {
           location: event.location,
           backers_count: event.activeTicketCount ?? backers.length,
         });
-        const result = await dependencies.sendEmail({ to: user.email, subject, html });
-        await logNotification({
-          userId: row.userId,
-          email: user.email,
-          eventId,
-          type: 'event_greenlit',
+
+        await send('eventGreenlit', {
+          to: user.email,
           subject,
-          status: deliveryStatus(result),
-          error: result.error,
+          html,
+          logPayload: { userId: row.userId, eventId, type: 'event_greenlit' },
         });
       }),
     );
-  } catch (error) {
-    console.error('[NotificationService] Error in notifyEventGreenlit:', error);
-  }
+  });
 }

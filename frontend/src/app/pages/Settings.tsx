@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft } from 'lucide-react';
+import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft, AtSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -7,13 +7,14 @@ import { Switch } from '../components/ui/switch';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { PRESET_AVATARS } from '../components/media';
 import type { Route } from '../components/types';
-import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, type AuthUser } from '../api';
+import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, type AuthUser } from '../api';
 
 export function Settings({
   user,
   go,
   onChangeUsername,
   onChangeAvatar,
+  onChangeContact,
   onDeleteAccount,
   theme,
   onToggleTheme,
@@ -22,6 +23,7 @@ export function Settings({
   go: (r: Route) => void;
   onChangeUsername: (name: string) => void;
   onChangeAvatar: (url: string | null) => void;
+  onChangeContact: (telegram: string | null, phone: string | null) => void;
   onDeleteAccount: () => Promise<void>;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -88,6 +90,28 @@ export function Settings({
       setSaved(true);
     } catch (err) {
       setUsernameError(err instanceof Error ? err.message : 'Unable to change username.');
+    }
+  };
+
+  // Contact details (Telegram → socialLink, Phone → contact)
+  const [telegram, setTelegram] = useState(user?.telegram ?? '');
+  const [phone, setPhone] = useState(user?.phone ?? '');
+  const [contactSaved, setContactSaved] = useState(false);
+  const [contactError, setContactError] = useState<string | null>(null);
+  const [contactBusy, setContactBusy] = useState(false);
+  const contactChanged = telegram.trim() !== (user?.telegram ?? '').trim() || phone.trim() !== (user?.phone ?? '').trim();
+
+  const applyContact = async () => {
+    setContactError(null);
+    setContactBusy(true);
+    try {
+      await updateContactRequest(telegram, phone);
+      onChangeContact(telegram.trim() || null, phone.trim() || null);
+      setContactSaved(true);
+    } catch (err) {
+      setContactError(err instanceof Error ? err.message : 'Unable to save contact details.');
+    } finally {
+      setContactBusy(false);
     }
   };
 
@@ -209,6 +233,51 @@ export function Settings({
 
         {usernameError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{usernameError}</p>}
         {saved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Username updated.</p>}
+      </section>
+
+      {/* Contact details */}
+      <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="mb-4 flex items-center gap-2">
+          <AtSign size={18} />
+          <h3>Contact details</h3>
+        </div>
+        <p className="mb-4 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+          Shown on your profile and shared with organisers of events you join. Both are optional.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Telegram</Label>
+            <Input
+              value={telegram}
+              autoComplete="off"
+              placeholder="@yourhandle"
+              onChange={(e) => { setTelegram(e.target.value); setContactSaved(false); setContactError(null); }}
+              style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
+            />
+          </div>
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Phone number</Label>
+            <Input
+              value={phone}
+              autoComplete="off"
+              placeholder="e.g. +65 9123 4567"
+              onChange={(e) => { setPhone(e.target.value); setContactSaved(false); setContactError(null); }}
+              style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
+            />
+          </div>
+        </div>
+
+        <Button
+          onClick={applyContact}
+          disabled={!contactChanged || contactBusy}
+          className="mt-4 bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
+          style={{ borderRadius: 12, height: 44 }}
+        >
+          {contactBusy ? 'Saving…' : 'Save contact details'}
+        </Button>
+
+        {contactError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{contactError}</p>}
+        {contactSaved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Contact details updated.</p>}
       </section>
 
       {/* Appearance */}

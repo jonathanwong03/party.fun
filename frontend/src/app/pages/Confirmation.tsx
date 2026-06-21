@@ -3,7 +3,7 @@ import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
 
-export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; role: Role; go: (r: Route) => void; events: EventItem[] }) {
+export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
   if (!event) {
     return (
@@ -12,7 +12,6 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
       </div>
     );
   }
-  const ref = 'PF-' + event.id.toUpperCase() + '-' + String(Math.floor(Math.random() * 9000) + 1000);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-16">
@@ -27,14 +26,14 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
         <p className="mt-2" style={{ color: 'var(--muted-foreground)' }}>
           Your payment was captured and your tickets are locked in.
         </p>
+        <p className="mt-2 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>
+          A confirmation email has been sent to your inbox.
+        </p>
       </div>
 
       <div className="mt-8 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="flex items-baseline justify-between">
           <h3>{event.title}</h3>
-          <span className="rounded-full px-2.5 py-1 text-xs" style={{ background: 'var(--surface-2)', color: 'var(--muted-foreground)' }}>
-            Ref: {ref}
-          </span>
         </div>
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Meta icon={Calendar} label="Date" value={`${event.date} · ${event.time}`} />
