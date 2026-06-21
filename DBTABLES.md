@@ -52,9 +52,34 @@ Profile of `AUTH_USERS` — **no `passwordHash`** (credentials live in `AUTH_USE
 | id | uuid (PK) | |
 | eventId | uuid (FK → EVENT.id) | |
 | hypeThreshold | int | min active tickets to confirm |
-| maxCapacity | int | hard ticket cap |
+| maxCapacity | int | hard ticket cap ($C$ in the bonding curve) |
 | deadline | timestamptz | hype deadline |
+| **hypeDrivenPricing** | boolean | default `false`; when true, quotes use the bonding curve instead of static `PRICE_STATUSES` |
+| **basePrice** | numeric \| null | $P_{base}$ — starting ticket price at active count zero; required when `hypeDrivenPricing = true` |
+| **maxPrice** | numeric \| null | $P_{max}$ — peak ticket price at full capacity; required when `hypeDrivenPricing = true` |
 | createdAt / updatedAt | timestamptz | |
+
+**Constraint (when `hypeDrivenPricing = true`):** `basePrice < maxPrice` and both must be `> 0`. Enforced in Postgres and in `backend/utils/pricingCalculator.js` (`validateHypePricingConfig`).
+
+```sql
+alter table public."EVENT_SETTINGS"
+  add column if not exists "hypeDrivenPricing" boolean not null default false,
+  add column if not exists "basePrice" numeric,
+  add column if not exists "maxPrice" numeric;
+
+alter table public."EVENT_SETTINGS"
+  add constraint event_settings_hype_pricing_bounds
+  check (
+    "hypeDrivenPricing" = false
+    or (
+      "basePrice" is not null
+      and "maxPrice" is not null
+      and "basePrice" > 0
+      and "maxPrice" > 0
+      and "basePrice" < "maxPrice"
+    )
+  );
+```
 
 ### `PRICE_STATUSES` (many per EVENT — was `PRICE_TIERS`)
 The two price points an event sells through. One-to-many child of EVENT (can't be columns on EVENT).
