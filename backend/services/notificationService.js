@@ -106,7 +106,7 @@ export function notifyAccountCreated({ email, username, role }) {
 }
 
 // #3 — pledge confirmed (to the pledger)
-export function notifyPledgeConfirmed({ userId, email, username, role, eventId, eventTitle, qty, pricePerTicket, deadline }) {
+export function notifyPledgeConfirmed({ userId, email, username, role, eventId, eventTitle, qty, pricePerTicket, totalAmount, deadline }) {
   return fireAndForget('pledgeConfirmed', () =>
     send('pledgeConfirmed', {
       to: email,
@@ -117,7 +117,7 @@ export function notifyPledgeConfirmed({ userId, email, username, role, eventId, 
         eventTitle,
         qty,
         pricePerTicket,
-        total: Number(qty) * Number(pricePerTicket),
+        total: totalAmount ?? Number(qty) * Number(pricePerTicket),
         deadline,
       }),
       logPayload: { userId, eventId, type: 'pledge_confirmed' },

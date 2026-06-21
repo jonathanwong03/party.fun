@@ -76,4 +76,26 @@ describe('notifyPledgeConfirmed', () => {
     assert.equal(logs[0].status, 'failed');
     assert.equal(logs[0].error_message, 'network down');
   });
+
+  it('uses totalAmount when provided for non-uniform ticket pricing', async () => {
+    let templateArgs = null;
+    dependencies.sendEmail = async ({ html }) => {
+      templateArgs = html;
+      return { success: true, mock: true, messageId: 'mock-msg-2' };
+    };
+
+    await notifyPledgeConfirmed({
+      userId: 'user-1',
+      email: 'user@smu.edu.sg',
+      username: 'jamie',
+      eventId: 'event-1',
+      eventTitle: 'Curve Party',
+      deadline: '2026-12-15T18:00:00+08:00',
+      qty: 2,
+      pricePerTicket: 10.115,
+      totalAmount: 20.23,
+    });
+
+    assert.match(templateArgs, /\$20\.23/);
+  });
 });

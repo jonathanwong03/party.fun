@@ -243,12 +243,13 @@ async function mutationResult(sb, userId, eventId) {
 
 // ── User writes ────────────────────────────────────────────────────────────
 
-export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null) {
+export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null, chargedAmount = null) {
   const { data, error } = await sb.rpc('create_pledge', {
     p_event_id: eventId,
     p_qty: Number(qty),
     p_payment_method: paymentMethod,
     p_payment_intent_id: paymentIntentId,
+    p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
   });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };

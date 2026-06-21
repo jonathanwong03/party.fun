@@ -18,6 +18,7 @@ const PLEDGE_MESSAGES = {
   not_enough_tickets: 'Not enough tickets are available.',
   insufficient_funds: 'Not enough wallet balance — top up or pay by card.',
   no_card: 'Link a card before paying by card.',
+  price_mismatch: 'The ticket price changed — refresh and try again.',
 };
 
 export async function getQuote(req, res) {
@@ -41,6 +42,7 @@ export async function postPledge(req, res) {
   let paymentIntentId = null;
 
   const eventBefore = await dependencies.getEvent(req.supabase, eventId, req.user.id);
+  let chargedAmount = null;
 
   // Card path: charge the saved card via Stripe BEFORE creating the booking.
   if (method === 'card') {
@@ -78,9 +80,10 @@ export async function postPledge(req, res) {
       return;
     }
     paymentIntentId = pi.id;
+    chargedAmount = quote.total;
   }
 
-  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId);
+  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId, chargedAmount);
   if (result.error) {
     // Card was charged but booking failed (e.g. sold out) → refund immediately.
     if (method === 'card' && paymentIntentId) {
@@ -95,7 +98,10 @@ export async function postPledge(req, res) {
   }
 
   const profile = result.profile?.profile;
-  const pricePerTicket = result.event?.price ?? 0;
+  const capturedTotal = result.amount != null ? Number(result.amount) : null;
+  const pricePerTicket = capturedTotal != null && qty > 0
+    ? capturedTotal / qty
+    : (result.event?.price ?? 0);
   if (profile) {
     void dependencies.notifyPledgeConfirmed({
       userId: req.user.id,
@@ -106,6 +112,7 @@ export async function postPledge(req, res) {
       deadline: result.event?.deadline ?? eventBefore?.deadline ?? '',
       qty,
       pricePerTicket,
+      totalAmount: capturedTotal ?? undefined,
     });
   }
 
