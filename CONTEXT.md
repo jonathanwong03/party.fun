@@ -79,3 +79,28 @@ _Out of v1 scope_: deadline-failure refunds, organiser-initiated event cancellat
 **Transactional notification**:
 An email triggered by a domain event (pledge, give-away, greenlit). Delivery is a side effect — the underlying action succeeds even if the email fails.
 _Avoid_: Confirmation requirement, two-phase commit, delivery guarantee
+
+## Hype-Driven Pricing
+
+**Hype-Driven Pricing**:
+A pricing model where the price of a ticket dynamically increases as the **Active Ticket Count** approaches or exceeds the **Hype Threshold**.
+_Avoid_: Surge pricing, dynamic ticket cost, custom tier pricing
+
+**Bonding Curve**:
+The mathematical formula that defines the relationship between the **Active Ticket Count** ($x$) and the dynamic price of a ticket ($P$):
+$$P(x) = P_{base} \cdot \left( \frac{P_{max}}{P_{base}} \right)^{\frac{x}{C}}$$
+where $P_{base}$ is the Base Ticket Price, $P_{max}$ is the Max Ticket Price, and $C$ is the event's `maxCapacity`.
+_Avoid_: Pricing algorithm, dynamic formula
+
+**Base Ticket Price ($P_{base}$)**:
+The starting price of the first ticket pledged when the active ticket count is zero.
+_Avoid_: Early bird price, starting price, initial cost
+
+**Max Ticket Price ($P_{max}$)**:
+The theoretical price of a ticket when the event is at full capacity.
+_Avoid_: Greenlit price, cap price, peak price
+
+**Price Elasticity**:
+The property where the ticket price fluctuates symmetrically (both up and down) with the current live **Active Ticket Count**.
+_Avoid_: Reversible price, pricing drops
+
