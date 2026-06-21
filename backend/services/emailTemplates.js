@@ -61,6 +61,33 @@ const sgDateTime = (iso, fallback) =>
 const h1 = (text) => `<h1 style="margin:0 0 16px;font-size:22px;font-weight:700;color:#ffffff;line-height:1.3;font-family:${FONT};">${text}</h1>`;
 const p = (text) => `<p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:#9ca3af;font-family:${FONT};">${text}</p>`;
 const divider = '<div style="height:1px;background-color:#1f1f2e;margin:14px 0;"></div>';
+// Shared dark shell. Layout styles live in <style>; brand/content styling is inline.
+const emailShell = (content) => `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>party.fun</title>
+</head>
+<body style="margin:0;padding:0;background-color:#0b0b0f;color:#f3f4f6;font-family:${FONT};">
+  <div style="width:100%;background-color:#0b0b0f;padding:40px 20px;box-sizing:border-box;">
+    <div style="max-width:600px;margin:0 auto;background-color:#12121a;border:1px solid #1f1f2e;border-radius:16px;overflow:hidden;">
+      <div style="padding:30px 40px 24px;text-align:center;border-bottom:1px solid #1f1f2e;">
+        ${logo()}
+      </div>
+      <div style="padding:40px;">
+        ${content}
+      </div>
+      <div style="padding:30px 40px;text-align:center;font-size:12px;color:#4b5563;border-top:1px solid #1f1f2e;background-color:#0e0e14;font-family:${FONT};">
+        &copy; 2026 party.fun. All campus rights reserved.<br>
+        This is a transactional notification for your party.fun activity.
+      </div>
+    </div>
+  </div>
+</body>
+</html>
+`;
 
 // Recipient identity line, e.g. "Hi user123 (User)," — makes a shared demo inbox unambiguous.
 const roleLabel = (role) => (role === 'organiser' ? 'Organiser' : 'User');
@@ -90,22 +117,24 @@ export function accountCreatedTemplate({ userName, role }) {
 }
 
 export function pledgeConfirmedTemplate({ userName, role, eventTitle, qty, pricePerTicket, total, deadline }) {
+  const safeName = escapeHtml(userName);
+  const safeTitle = escapeHtml(eventTitle);
   const formattedTotal = Number(total).toFixed(2);
   const formattedPrice = Number(pricePerTicket).toFixed(2);
   const formattedDeadline = sgDateTime(deadline, 'the funding deadline');
 
   return emailShell(`
     ${h1('Pledge Confirmed! 🚀')}
-    ${greet(userName, role)}
-    ${p(`Your pledge to <strong>${eventTitle}</strong> has been successfully placed. We've reserved your spots, but your card will only be charged once the threshold is crossed and the event goes greenlit!`)}
+    ${greet(safeName, role)}
+    ${p(`Your pledge to <strong>${safeTitle}</strong> is confirmed. Your payment of <strong>$${formattedTotal}</strong> has been <strong>captured</strong> and your tickets are locked in.`)}
     ${detailsBox('Pledge Details',
-      row('Event', eventTitle) +
+      row('Event', safeTitle) +
       row('Tickets', qty) +
       row('Price per ticket', `$${formattedPrice}`) +
       divider +
-      row('Total locked', `$${formattedTotal}`, '#ff4d2e'),
+      row('Total Captured', `$${formattedTotal}`, '#ff4d2e'),
     )}
-    ${p(`If this event doesn't reach its backers threshold by <strong>${formattedDeadline}</strong>, it will fail and your pending pledge will be cancelled automatically at no cost to you.`)}
+    ${p(`If this event does not reach its hype threshold by <strong>${formattedDeadline}</strong>, it will not greenlight and your payment will be refunded automatically.`)}
     ${button('View My Pledges', `${APP_URL}/joined-events`)}
   `);
 }
@@ -187,7 +216,6 @@ export function ticketsGivenAwayTemplate({ userName, role, eventTitle, qty, allG
     )}
     ${p('Giving away tickets is final and non-refundable, as noted at the time.')}
     ${button('View My Events', `${APP_URL}/joined-events`)}
->>>>>>> 22b62a7b9042c0e6a8a6979e247be16a84c7be38
   `);
 }
 

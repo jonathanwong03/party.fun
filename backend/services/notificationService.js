@@ -66,9 +66,10 @@ async function logNotification({ userId, email, eventId, type, subject, status, 
 
 // Run an async notification job without awaiting it; swallow + log any error.
 function fireAndForget(label, job) {
-  Promise.resolve()
+  const p = Promise.resolve()
     .then(job)
     .catch((err) => console.error(`[NotificationService] ${label} failed:`, err?.message || err));
+  return p;
 }
 
 async function send(label, { to, subject, html, logPayload = {} }) {
@@ -95,7 +96,7 @@ async function send(label, { to, subject, html, logPayload = {} }) {
 
 // #1 — account created (user or organiser)
 export function notifyAccountCreated({ email, username, role }) {
-  fireAndForget('accountCreated', () =>
+  return fireAndForget('accountCreated', () =>
     send('accountCreated', {
       to: email,
       subject: 'Welcome to party.fun 🎉',
@@ -106,7 +107,7 @@ export function notifyAccountCreated({ email, username, role }) {
 
 // #3 — pledge confirmed (to the pledger)
 export function notifyPledgeConfirmed({ userId, email, username, role, eventId, eventTitle, qty, pricePerTicket, deadline }) {
-  fireAndForget('pledgeConfirmed', () =>
+  return fireAndForget('pledgeConfirmed', () =>
     send('pledgeConfirmed', {
       to: email,
       subject: `Pledge Confirmed: ${eventTitle} 🚀`,
@@ -126,7 +127,7 @@ export function notifyPledgeConfirmed({ userId, email, username, role, eventId, 
 
 // #5 — tickets given away (to the giver). allGivenAway → "can no longer attend".
 export function notifyTicketsGivenAway({ userId, email, username, role, eventId, eventTitle, qty, allGivenAway }) {
-  fireAndForget('ticketsGivenAway', () =>
+  return fireAndForget('ticketsGivenAway', () =>
     send('ticketsGivenAway', {
       to: email,
       subject: `Tickets given away: ${eventTitle}`,
@@ -138,7 +139,7 @@ export function notifyTicketsGivenAway({ userId, email, username, role, eventId,
 
 // #6 — organiser created an event (to the organiser)
 export function notifyEventCreated({ email, organiserName, eventTitle, eventId, hypeThreshold, deadline }) {
-  fireAndForget('eventCreated', () =>
+  return fireAndForget('eventCreated', () =>
     send('eventCreated', {
       to: email,
       subject: `Your event is live: ${eventTitle}`,
@@ -161,7 +162,7 @@ export async function notifyPasswordReset({ email, username, role, code }) {
 // #4 — event cancelled: full-refund email to every backer + a summary to the organiser.
 // `reason` is 'missed_threshold' or 'organiser'.
 export function notifyEventCancelled({ eventTitle, reason, backers = [], organiser = null }) {
-  fireAndForget('eventCancelled', async () => {
+  return fireAndForget('eventCancelled', async () => {
     await Promise.all(
       backers.map((b) =>
         send('eventCancelled(backer)', {
@@ -197,7 +198,7 @@ export function notifyEventCancelled({ eventTitle, reason, backers = [], organis
 }
 
 export function notifyPledgeCancelled({ userId, email, username, eventId, eventTitle, qty, refundAmount }) {
-  fireAndForget('pledgeCancelled', () =>
+  return fireAndForget('pledgeCancelled', () =>
     send('pledgeCancelled', {
       to: email,
       subject: `Pledge Cancelled: ${eventTitle}`,
