@@ -85,6 +85,8 @@ alter table public."EVENT_SETTINGS"
 
 **`create_pledge` / pledge capture:** when `hypeDrivenPricing = true`, the RPC sums `hype_ticket_price(basePrice, maxPrice, maxCapacity, active + k)` for each ticket $k = 0..Q-1$, inserts one `BOOKING_ITEMS` row per ticket at the curve price, sets `BOOKINGS.amountPaid` to that sum, and validates card charges via optional `p_charged_amount`. Migration: `backend/migrations/20260618_hype_driven_pricing_pledge.sql`.
 
+**Give-away elasticity:** `give_away_tickets` marks tickets `given_away` (excluded from `active_ticket_count`). Subsequent quotes and `current_dynamic_price` on `get_events` drop as $x$ decreases. Migration: `backend/migrations/20260619_hype_get_events_giveaway.sql`. The listing API exposes `hypeDrivenPricing`, `basePrice`, `maxPrice`, `currentDynamicPrice` (and snake_case aliases) on each event.
+
 ### `PRICE_STATUSES` (many per EVENT — was `PRICE_TIERS`)
 The two price points an event sells through. One-to-many child of EVENT (can't be columns on EVENT).
 | Column | Type | Notes |

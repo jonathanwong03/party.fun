@@ -4,10 +4,11 @@ import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
+import { EventSettingsPricingCard, HypePricingPanel } from '../components/HypePricingPanel';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
-import { fetchAttendees, type Attendee } from '../api';
+import { fetchAttendees, fetchQuote, type Attendee } from '../api';
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
@@ -17,10 +18,31 @@ function avatarColor(seed: string) {
 }
 
 export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; purchasedEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
-  const event = events.find((e) => e.id === id);
   const [cancelling, setCancelling] = useState(false);
   const [giveAwayQty, setGiveAwayQty] = useState(1);
   const [buyQty, setBuyQty] = useState(1);
+  const [pledgeEstimate, setPledgeEstimate] = useState<string | null>(null);
+
+  const event = events.find((e) => e.id === id);
+  const alreadyPurchased = !!event && !!purchasedEventIds?.has(event.id);
+  const unavailable = event?.status === 'cancelled';
+  const showCancelledCard = !!fromPast;
+  const showOptOut = !!fromProfile;
+  const showWhosGoing = !!fromOrganiser;
+  const showOwnEvent = !!role && !!event?.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
+
+  useEffect(() => {
+    if (!event || showOptOut || showCancelledCard || showOwnEvent || alreadyPurchased || unavailable) {
+      setPledgeEstimate(null);
+      return;
+    }
+    let ignore = false;
+    fetchQuote(role, event.id, buyQty)
+      .then((q) => { if (!ignore) setPledgeEstimate(q.totalText); })
+      .catch(() => { if (!ignore) setPledgeEstimate(null); });
+    return () => { ignore = true; };
+  }, [event, event?.id, event?.hypeDrivenPricing, event?.activeTicketCount, buyQty, role, showOptOut, showCancelledCard, showOwnEvent, alreadyPurchased, unavailable]);
+
   if (!event) {
     return (
       <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -28,16 +50,10 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
       </div>
     );
   }
+
   const activeStatus = getActiveStatus(event);
-  // Tickets still available (computed by the backend; equals capacity minus active tickets).
   const available = event.spotsLeft;
-  const alreadyPurchased = !!purchasedEventIds?.has(event.id);
-  const unavailable = event.status === 'cancelled';
-  const showCancelledCard = !!fromPast;
-  const showOptOut = !!fromProfile;
-  const showWhosGoing = !!fromOrganiser;
-  // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
-  const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
+  const liveTicketPrice = event.hypeDrivenPricing ? (event.currentDynamicPrice ?? event.price) : event.price;
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -96,6 +112,10 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <p style={{ color: 'var(--muted-foreground)' }}>{event.description}</p>
           </div>
 
+          {event.hypeDrivenPricing && !showWhosGoing && (
+            <HypePricingPanel event={event} estimatedTotal={pledgeEstimate} qty={buyQty} />
+          )}
+
           {/* Hype meter */}
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <div className="mb-4 flex items-baseline justify-between">
@@ -135,9 +155,19 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
           <div className="rounded-2xl glass p-6 transition-all duration-300">
             <h3 className="mb-3">How it works</h3>
             <ol className="space-y-3 text-sm" style={{ color: 'var(--muted-foreground)' }}>
-              <li><strong>Buy early</strong> — the early_bird status is cheaper.</li>
-              <li><strong>Reach the hype threshold</strong> — the event is confirmed.</li>
-              <li><strong>Miss the hype threshold?</strong> Active tickets are automatically refunded in full.</li>
+              {event.hypeDrivenPricing ? (
+                <>
+                  <li><strong>Live pricing</strong> — ticket price moves along the bonding curve as pledges come in.</li>
+                  <li><strong>Give-aways drop the price</strong> — released tickets lower the curve for the next buyer.</li>
+                  <li><strong>Reach the hype threshold</strong> — the event is confirmed once enough tickets are pledged.</li>
+                </>
+              ) : (
+                <>
+                  <li><strong>Buy early</strong> — the early_bird status is cheaper.</li>
+                  <li><strong>Reach the hype threshold</strong> — the event is confirmed.</li>
+                  <li><strong>Miss the hype threshold?</strong> Active tickets are automatically refunded in full.</li>
+                </>
+              )}
             </ol>
           </div>
         </div>
@@ -201,7 +231,8 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
           <WhosGoingCard event={event} go={go} role={role} />
         </aside>
         ) : showWhosGoing ? (
-        <aside className="lg:sticky lg:top-24 lg:self-start" key="whos-going">
+        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start" key="whos-going">
+          <EventSettingsPricingCard event={event} />
           <WhosGoingCard event={event} go={go} role={role} />
         </aside>
         ) : showOwnEvent ? (
@@ -238,10 +269,19 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
           <div className="rounded-2xl glass p-6 transition-all duration-300 shadow-xl" style={{ border: '1px solid rgba(255, 69, 0, 0.15)' }}>
             <div className="mb-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{statusStageLabel(event)}</div>
             <div className="flex items-baseline gap-2">
-              <span style={{ fontSize: 36, fontWeight: 800 }}>${event.price}</span>
+              <span style={{ fontSize: 36, fontWeight: 800 }}>${liveTicketPrice.toFixed(2)}</span>
               <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>per ticket</span>
             </div>
-            {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>}
+            {event.hypeDrivenPricing ? (
+              <div className="mt-1 text-xs" style={{ color: '#ff8a66' }}>Live bonding-curve price · updates as tickets move</div>
+            ) : event.status !== 'greenlit' ? (
+              <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>
+            ) : null}
+            {pledgeEstimate && buyQty > 0 && (
+              <div className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                Estimated total for {buyQty} ticket{buyQty === 1 ? '' : 's'}: <strong style={{ color: 'var(--foreground)' }}>{pledgeEstimate}</strong>
+              </div>
+            )}
 
             {!alreadyPurchased && !unavailable && (
               <div className="mt-4">

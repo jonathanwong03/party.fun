@@ -66,7 +66,9 @@ export function EventCard({
             <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
             <span className="flex items-center gap-1"><MapPin size={12} /> {event.location.split(',')[0]}</span>
           </div>
-          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>${event.price}</span>
+          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>
+            ${event.price.toFixed(2)}{event.hypeDrivenPricing ? '+' : ''}
+          </span>
         </div>
 
         <div className="space-y-1">

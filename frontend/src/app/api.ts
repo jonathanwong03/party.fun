@@ -26,6 +26,7 @@ export type Quote = {
   total: number;
   subtotalText: string;
   totalText: string;
+  pricingModel?: 'hype_driven' | 'static';
 };
 
 export type ProfileCounts = {
