@@ -81,6 +81,8 @@ alter table public."EVENT_SETTINGS"
   );
 ```
 
+**`get_events` / quote integration:** when `hypeDrivenPricing = true`, the backend bypasses `get_quote` and computes checkout quotes via `backend/utils/pricingCalculator.js` using `active_ticket_count`, `maxCapacity`, `basePrice`, and `maxPrice` from the `get_events` row. Ensure the `get_events` RPC (or view) selects these `EVENT_SETTINGS` columns.
+
 ### `PRICE_STATUSES` (many per EVENT — was `PRICE_TIERS`)
 The two price points an event sells through. One-to-many child of EVENT (can't be columns on EVENT).
 | Column | Type | Notes |
