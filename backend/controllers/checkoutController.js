@@ -1,5 +1,13 @@
-import { createPledge, quotePledge, getEvent } from '../services/eventService.js';
-import { notifyPledgeConfirmed, notifyEventGreenlit } from '../services/notificationService.js';
+import * as eventService from '../services/eventService.js';
+import * as notificationService from '../services/notificationService.js';
+
+export const dependencies = {
+  getEvent: eventService.getEvent,
+  quotePledge: eventService.quotePledge,
+  createPledge: eventService.createPledge,
+  notifyPledgeConfirmed: notificationService.notifyPledgeConfirmed,
+  notifyEventGreenlit: notificationService.notifyEventGreenlit,
+};
 
 const PLEDGE_MESSAGES = {
   not_found: 'Event not found.',
@@ -10,7 +18,7 @@ const PLEDGE_MESSAGES = {
 
 export async function getQuote(req, res) {
   // Quotes are public (used on the checkout screen before committing).
-  const quote = await quotePledge(req.supabase, req.params.eventId, req.query.qty);
+  const quote = await dependencies.quotePledge(req.supabase, req.params.eventId, req.query.qty);
   if (!quote) {
     res.status(404).json({ status: 'not_found', route: req.originalUrl, message: 'Event not found.' });
     return;
@@ -23,8 +31,8 @@ export async function getQuote(req, res) {
 }
 
 export async function postPledge(req, res) {
-  const eventBefore = await getEvent(req.supabase, req.params.eventId, req.user.id);
-  const result = await createPledge(req.supabase, req.user.id, req.params.eventId, req.body.qty);
+  const eventBefore = await dependencies.getEvent(req.supabase, req.params.eventId, req.user.id);
+  const result = await dependencies.createPledge(req.supabase, req.user.id, req.params.eventId, req.body.qty);
   if (result.error) {
     res.status(result.error === 'not_found' ? 404 : 409).json({
       status: result.error,
@@ -37,7 +45,7 @@ export async function postPledge(req, res) {
   const qty = Number(req.body.qty) || 1;
   const pricePerTicket = result.event?.price ?? 0;
   if (profile) {
-    notifyPledgeConfirmed({
+    void dependencies.notifyPledgeConfirmed({
       userId: req.user.id,
       email: profile.email,
       username: profile.handle || profile.fullName,
@@ -50,7 +58,7 @@ export async function postPledge(req, res) {
   }
 
   if (eventBefore?.status !== 'greenlit' && result.event?.status === 'greenlit') {
-    notifyEventGreenlit(req.params.eventId, result.event);
+    void dependencies.notifyEventGreenlit(req.params.eventId, result.event);
   }
 
   res.json({ status: 'ok', event: result.event, profile: result.profile });

@@ -3,6 +3,14 @@
  * Follows modern responsive email design matching the party.fun dark-theme aesthetic.
  */
 
+export function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 // Shared dark theme shell for email consistency
 const emailShell = (content) => `
 <!DOCTYPE html>
@@ -150,6 +158,8 @@ const emailShell = (content) => `
 `;
 
 export function pledgeConfirmedTemplate({ userName, eventTitle, qty, pricePerTicket, total, deadline }) {
+  const safeName = escapeHtml(userName);
+  const safeTitle = escapeHtml(eventTitle);
   const formattedTotal = Number(total).toFixed(2);
   const formattedPrice = Number(pricePerTicket).toFixed(2);
   const formattedDeadline = deadline ? new Date(deadline).toLocaleDateString('en-SG', {
@@ -158,14 +168,14 @@ export function pledgeConfirmedTemplate({ userName, eventTitle, qty, pricePerTic
 
   return emailShell(`
     <h1>Pledge Confirmed! 🚀</h1>
-    <p>Hi ${userName},</p>
-    <p>Your pledge to <strong>${eventTitle}</strong> has been successfully placed. We've reserved your spots, but your card will only be charged once the threshold is crossed and the event goes greenlit!</p>
+    <p>Hi ${safeName},</p>
+    <p>Your pledge to <strong>${safeTitle}</strong> is confirmed. Your payment of <strong>$${formattedTotal}</strong> has been <strong>captured</strong> and your tickets are locked in.</p>
     
     <div class="details-box">
       <div class="details-title">Pledge Details</div>
       <div class="details-row">
         <span class="details-label">Event</span>
-        <span class="details-value">${eventTitle}</span>
+        <span class="details-value">${safeTitle}</span>
       </div>
       <div class="details-row">
         <span class="details-label">Tickets</span>
@@ -177,12 +187,12 @@ export function pledgeConfirmedTemplate({ userName, eventTitle, qty, pricePerTic
       </div>
       <div class="divider"></div>
       <div class="details-row total-row">
-        <span class="details-label" style="color:#ffffff;">Total Locked</span>
+        <span class="details-label" style="color:#ffffff;">Total Captured</span>
         <span class="details-value total-value">$${formattedTotal}</span>
       </div>
     </div>
     
-    <p>If this event doesn't reach its backers threshold by <strong>${formattedDeadline}</strong>, it will fail and your pending pledge will be cancelled automatically at no cost to you.</p>
+    <p>If this event does not reach its hype threshold by <strong>${formattedDeadline}</strong>, it will not greenlight and your payment will be refunded automatically.</p>
     
     <div style="text-align: center; margin-top: 30px;">
       <a href="https://party.fun" class="btn">View My Pledges</a>

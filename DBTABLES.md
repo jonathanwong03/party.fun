@@ -105,6 +105,20 @@ The two price points an event sells through. One-to-many child of EVENT (can't b
 | usedAt | timestamptz \| null | |
 | createdAt | timestamptz | |
 
+### `notification_logs` (transactional email audit)
+| Column | Type | Notes |
+|---|---|---|
+| id | bigint (PK) | identity |
+| user_id | uuid \| null | FK → `USER.id` (recipient, when known) |
+| recipient_email | text | intended recipient (not staging override address) |
+| event_id | uuid \| null | FK → `EVENT.id` |
+| notification_type | text enum | `pledge_confirmed` \| `tickets_given_away` \| `event_greenlit` |
+| subject | text | email subject line |
+| status | text enum | `sent` \| `mock_sent` \| `failed` |
+| error_message | text \| null | set when `status = failed` |
+| sent_at | timestamptz \| null | set when `status` is `sent` or `mock_sent` |
+| created_at | timestamptz | default `now()` |
+
 ### Relations
 ```
 AUTH_USERS 1──1 USER       (USER.id = AUTH_USERS.id)
