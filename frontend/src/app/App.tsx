@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, adminCancelEvent, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
@@ -40,6 +40,7 @@ import { Attendees } from './pages/Attendees';
 import { Analytics } from './pages/Analytics';
 import { AllAttendees } from './pages/AllAttendees';
 import { CheckIn } from './pages/CheckIn';
+import { AdminManageEvents } from './pages/AdminManageEvents';
 
 type RouteState = {
   fromProfile?: boolean;
@@ -96,6 +97,8 @@ function pathForRoute(route: Route) {
       return '/attendees';
     case 'tickets':
       return '/tickets';
+    case 'manage-events':
+      return '/manage-events';
     case 'settings':
       return '/settings';
     case 'wallet':
@@ -171,6 +174,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/analytics') return { name: 'analytics' };
   if (pathname === '/attendees') return { name: 'attendees-all' };
   if (pathname === '/tickets') return { name: 'tickets' };
+  if (pathname === '/manage-events') return { name: 'manage-events' };
   if (pathname === '/settings') return { name: 'settings' };
   if (pathname === '/wallet') return { name: 'wallet' };
   if (pathname === '/hosted-events') return { name: 'hosted-events', tab: state?.tab };
@@ -265,6 +269,12 @@ function AppShell() {
     } catch { /* leave state as-is on failure */ }
   };
 
+  // Admin moderation cancel (mandatory reason); refetch so the list reflects the change.
+  const adminCancel = async (id: string, reason: string) => {
+    await adminCancelEvent(id, reason);
+    setEvents(await fetchEvents(role));
+  };
+
   // Hide a cancelled event from the organiser dashboard (optimistic remove, then persist).
   const hideEvent = async (id: string) => {
     setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, hostHidden: true } : e)));
@@ -357,7 +367,7 @@ function AppShell() {
         } else {
           setDrafts([]);
         }
-        if (role) refreshWallet(); else setWalletBalance(null);
+        if (role && role !== 'admin') refreshWallet(); else setWalletBalance(null);
       } catch (error) {
         if (ignore) return;
         setDataError(error instanceof Error ? error.message : 'Unable to load app data.');
@@ -488,13 +498,14 @@ function AppShell() {
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
-        <BrowserRoute path="/joined-events" element={<JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
+        <BrowserRoute path="/joined-events" element={role === 'admin' ? <Navigate to="/events" replace /> : <JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
         <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} /> : <Navigate to="/login" replace />} />
         <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/tickets" element={role === 'organiser' ? <CheckIn events={events} /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/manage-events" element={role === 'admin' ? <AdminManageEvents go={go} events={events} onCancel={adminCancel} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/wallet" element={role ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/login" replace />} />
-        <BrowserRoute path="/hosted-events" element={<OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/wallet" element={role && role !== 'admin' ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/hosted-events" element={role === 'organiser' ? <OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
         <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} />} />
@@ -558,6 +569,7 @@ function CheckoutRoute({
   const state = (location.state ?? {}) as RouteState;
 
   if (!role) return <Navigate to="/login" replace />;
+  if (role === 'admin') return <Navigate to="/events" replace />;
 
   return <Checkout id={eventId} role={role} go={go} events={events} qty={state.qty} onPledge={onPledge} />;
 }

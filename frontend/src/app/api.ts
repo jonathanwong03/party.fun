@@ -542,6 +542,10 @@ export type AnalyticsData = {
     spendByMonth: { month: string; amount: number }[];
     totals: { joined: number; upcoming: number; spent: number };
   };
+  platform?: {
+    totals: { events: number; revenue: number; attendees: number };
+    topOrganisers: { name: string; events: number; tickets: number }[];
+  } | null;
 };
 
 export function fetchAnalytics(): Promise<AnalyticsData> {
@@ -601,4 +605,31 @@ export function deleteDraftRequest(id: string): Promise<void> {
   return apiFetch<void>(`/api/hosted-events/drafts/${id}`, {
     method: "DELETE",
   });
+}
+
+// ── Admin ─────────────────────────────────────────────────────────────────────
+
+export type AdminLicense = { username: string; licenseId: string; issued: string; validity: string };
+
+export function fetchLicense(): Promise<AdminLicense> {
+  return apiFetch<AdminLicense>("/api/admin/license");
+}
+
+export function adminCancelEvent(eventId: string, reason: string): Promise<{ status: string }> {
+  return apiFetch<{ status: string }>(`/api/admin/events/${eventId}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+// Open the admin license certificate PDF in a new tab (auth via bearer → blob URL).
+export async function openLicensePdf(): Promise<void> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch("/api/admin/license/pdf", {
+    headers: session ? { Authorization: `Bearer ${session.access_token}` } : undefined,
+  });
+  if (!res.ok) throw new Error("Could not load license.");
+  const url = URL.createObjectURL(await res.blob());
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }

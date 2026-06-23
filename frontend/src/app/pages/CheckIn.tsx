@@ -4,10 +4,11 @@ import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { fetchEventTickets, checkInTicket, type EventTicket, type CheckInResult } from '../api';
-import type { EventItem } from '../components/types';
+import type { EventItem, Role } from '../components/types';
 
-export function CheckIn({ events }: { events: EventItem[] }) {
-  const mine = useMemo(() => events.filter((e) => e.mine), [events]);
+export function CheckIn({ role, events }: { role: Role | null; events: EventItem[] }) {
+  // Admins can check in any event; organisers only their own.
+  const mine = useMemo(() => (role === 'admin' ? events : events.filter((e) => e.mine)), [events, role]);
   const [eventId, setEventId] = useState<string>('');
   const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [loading, setLoading] = useState(false);
@@ -167,6 +168,20 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
     let scanner: any = null;
     let cancelled = false;
     const last = { code: '', t: 0 };
+    const SCANNING = 2; // Html5QrcodeScannerState.SCANNING
+
+    // Stop the camera safely — only when actually scanning, and never let a
+    // (sometimes synchronous) throw from html5-qrcode escape.
+    const teardown = () => {
+      if (!scanner) return;
+      try {
+        if (typeof scanner.getState === 'function' && scanner.getState() === SCANNING) {
+          Promise.resolve(scanner.stop()).then(() => { try { scanner.clear(); } catch { /* ignore */ } }).catch(() => {});
+        } else {
+          try { scanner.clear(); } catch { /* ignore */ }
+        }
+      } catch { /* not running — nothing to stop */ }
+    };
 
     (async () => {
       const { Html5Qrcode } = await import('html5-qrcode');
@@ -184,12 +199,13 @@ function QrScanner({ onScan }: { onScan: (text: string) => void }) {
           },
           () => {},
         );
+        if (cancelled) teardown(); // unmounted while the camera was starting
       } catch { /* camera unavailable / denied */ }
     })();
 
     return () => {
       cancelled = true;
-      if (scanner) { scanner.stop().then(() => scanner.clear()).catch(() => {}); }
+      teardown();
     };
   }, []);
 

@@ -52,11 +52,19 @@ export function Analytics({ role }: { role: Role | null; go: (r: Route) => void 
   return (
     <Shell>
       {/* Personal summary (everyone) */}
-      <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
-        <Stat icon={CalendarCheck} accent="#ff4d2e" label="Events joined" value={String(data.user.totals.joined)} />
-        <Stat icon={TrendingUp} accent="#4d8dff" label="Upcoming" value={String(data.user.totals.upcoming)} />
-        <Stat icon={DollarSign} accent="#29e07a" label="Total spent" value={`$${Number(data.user.totals.spent).toFixed(2)}`} />
-      </div>
+      {data.platform ? (
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <Stat icon={CalendarCheck} accent="#ff4d2e" label="Total events" value={String(data.platform.totals.events)} />
+          <Stat icon={Users} accent="#4d8dff" label="Total attendees" value={String(data.platform.totals.attendees)} />
+          <Stat icon={DollarSign} accent="#29e07a" label="Platform revenue" value={`$${Number(data.platform.totals.revenue).toFixed(2)}`} />
+        </div>
+      ) : (
+        <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-3">
+          <Stat icon={CalendarCheck} accent="#ff4d2e" label="Events joined" value={String(data.user.totals.joined)} />
+          <Stat icon={TrendingUp} accent="#4d8dff" label="Upcoming" value={String(data.user.totals.upcoming)} />
+          <Stat icon={DollarSign} accent="#29e07a" label="Total spent" value={`$${Number(data.user.totals.spent).toFixed(2)}`} />
+        </div>
+      )}
 
       {/* Pledges over time toggle */}
       <ChartCard
@@ -115,6 +123,27 @@ export function Analytics({ role }: { role: Role | null; go: (r: Route) => void 
         </ChartCard>
       </div>
 
+      {/* Admin platform section */}
+      {data.platform && (
+        <div className="mt-6">
+          <ChartCard title="Top organisers" subtitle="By confirmed tickets across their events">
+            {data.platform.topOrganisers.length === 0 ? <Empty text="No organisers yet." /> : (
+              <ResponsiveContainer width="100%" height={320}>
+                <BarChart data={data.platform.topOrganisers.map((o) => ({ ...o, name: o.name.length > 14 ? o.name.slice(0, 13) + '…' : o.name }))} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="name" tick={AXIS} tickLine={false} axisLine={false} />
+                  <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Bar dataKey="tickets" name="Tickets" fill="#ff4d2e" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="events" name="Events" fill="#4d8dff" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </ChartCard>
+        </div>
+      )}
+
       {/* Organiser-only section */}
       {data.organiser && (
         <>
@@ -172,8 +201,8 @@ export function Analytics({ role }: { role: Role | null; go: (r: Route) => void 
         </>
       )}
 
-      {/* Personal spend (everyone) */}
-      {data.user.spendByMonth.length > 0 && (
+      {/* Personal spend (non-admins) */}
+      {!data.platform && data.user.spendByMonth.length > 0 && (
         <div className="mt-10">
           <h2 className="mb-4" style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.02em' }}>Your spending</h2>
           <ChartCard title="Spend by month">

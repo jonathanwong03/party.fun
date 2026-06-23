@@ -10,6 +10,7 @@ import passwordResetRoutes from './routes/passwordResetRoutes.js';
 import walletRoutes from './routes/walletRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import ticketsRoutes from './routes/ticketsRoutes.js';
+import adminRoutes from './routes/adminRoutes.js';
 import { startDeadlineScheduler } from './services/deadlineScheduler.js';
 
 const app = express();
@@ -38,6 +39,7 @@ app.use('/api/password-reset', passwordResetRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/tickets', ticketsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

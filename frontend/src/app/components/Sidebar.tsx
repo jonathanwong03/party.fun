@@ -17,10 +17,11 @@ export function Sidebar({
   go: (r: Route) => void;
 }) {
   const isOrganiser = role === 'organiser';
+  const isAdmin = role === 'admin';
 
   const baseItems: Item[] = [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
-    { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
+    ...(isAdmin ? [] : [{ label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' } as Item]),
     { label: 'Analytics', icon: BarChart3, target: { name: 'analytics' }, active: route.name === 'analytics' },
   ];
 
@@ -31,12 +32,17 @@ export function Sidebar({
     { label: 'Tickets', icon: Ticket, target: { name: 'tickets' }, active: route.name === 'tickets' },
   ];
 
+  const adminOnly: Item[] = [
+    { label: 'Manage Events', icon: LayoutDashboard, target: { name: 'manage-events' }, active: route.name === 'manage-events' },
+    { label: 'Tickets', icon: Ticket, target: { name: 'tickets' }, active: route.name === 'tickets' },
+  ];
+
   const tail: Item[] = [
-    { label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' },
+    ...(isAdmin ? [] : [{ label: 'View Profile', icon: User, target: { name: 'profile' }, active: route.name === 'profile' } as Item]),
     { label: 'Settings', icon: Settings, target: { name: 'settings' }, active: route.name === 'settings' },
   ];
 
-  const items = [...baseItems, ...(isOrganiser ? organiserOnly : []), ...tail];
+  const items = [...baseItems, ...(isOrganiser ? organiserOnly : []), ...(isAdmin ? adminOnly : []), ...tail];
 
   const handleClick = (target: Route) => {
     go(target);

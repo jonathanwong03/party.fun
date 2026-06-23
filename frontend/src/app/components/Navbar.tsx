@@ -57,21 +57,24 @@ export function Navbar({
           {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
           {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
           {role === 'organiser' && navItem('Hosted Events', { name: 'hosted-events' }, route.name === 'hosted-events')}
+          {role === 'admin' && navItem('Manage Events', { name: 'manage-events' }, route.name === 'manage-events')}
         </nav>
 
         <div className="flex items-center gap-2 justify-self-end">
           {role ? (
             <>
-              <button
-                type="button"
-                aria-label="Wallet"
-                onClick={() => go({ name: 'wallet' })}
-                className="inline-flex items-center gap-1.5 rounded-full px-3 text-sm text-white transition hover:bg-white/10"
-                style={{ height: 36, background: 'rgba(255,255,255,0.06)', fontWeight: 600 }}
-              >
-                <WalletIcon size={15} color="#ffffff" />
-                {walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}
-              </button>
+              {role !== 'admin' && (
+                <button
+                  type="button"
+                  aria-label="Wallet"
+                  onClick={() => go({ name: 'wallet' })}
+                  className="inline-flex items-center gap-1.5 rounded-full px-3 text-sm text-white transition hover:bg-white/10"
+                  style={{ height: 36, background: 'rgba(255,255,255,0.06)', fontWeight: 600 }}
+                >
+                  <WalletIcon size={15} color="#ffffff" />
+                  {walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label="Settings"

@@ -101,7 +101,7 @@ export function passwordResetTemplate({ userName, role, code }) {
 export function accountCreatedTemplate({ userName, role }) {
   const accountType = role === 'organiser' ? 'Organiser' : 'Attendee';
   return emailShell(`
-    ${h1('Welcome to party.fun! 🎉')}
+    ${h1('Welcome to party.fun!')}
     ${greet(userName, role)}
     ${p(`Your <strong>${accountType}</strong> account has been created successfully. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
     ${detailsBox('Account Details', row('Username', userName) + row('Account type', accountType))}
@@ -115,7 +115,7 @@ export function pledgeConfirmedTemplate({ userName, role, eventTitle, qty, price
   const formattedDeadline = sgDateTime(deadline, 'the funding deadline');
 
   return emailShell(`
-    ${h1('Pledge Confirmed! 🚀')}
+    ${h1('Pledge Confirmed!')}
     ${greet(userName, role)}
     ${p(`Your pledge to <strong>${eventTitle}</strong> has been successfully placed. We've reserved your spots, but your card will only be charged once the threshold is crossed and the event goes greenlit!`)}
     ${detailsBox('Pledge Details',
@@ -137,7 +137,7 @@ export function bookingTicketTemplate({ userName, role, eventTitle, dateText, lo
     ? `Great news — <strong>${eventTitle}</strong> is greenlit and your spot is locked in! Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`
     : `Your pledge to <strong>${eventTitle}</strong> is confirmed. Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`;
   return emailShell(`
-    ${h1(greenlit ? 'You’re in — event greenlit 🎉' : 'Your ticket 🎟️')}
+    ${h1(greenlit ? 'You’re in — event greenlit' : 'Your ticket')}
     ${greet(userName, role)}
     ${p(lead)}
     ${p(`<span style="color:#ff4d2e;font-weight:700;">Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} in the attached PDF (<strong>tickets.pdf</strong>).</span> It has one printable ticket with its own QR code per person — show each QR at the door to check in. QR codes are only valid during the event.`)}
@@ -158,7 +158,7 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   const manageUrl = eventId ? `${APP_URL}/hosted-events/events/${eventId}/edit` : `${APP_URL}/hosted-events`;
 
   return emailShell(`
-    ${h1('Your event is live! 🚀')}
+    ${h1('Your event is live!')}
     ${greet(organiserName, 'organiser')}
     ${p(`Your event <strong>${eventTitle}</strong> has been created and is now open for pledges. It will greenlight automatically once it reaches its hype threshold.`)}
     ${detailsBox('Event Details',
@@ -170,10 +170,13 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   `);
 }
 
-export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason }) {
+export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason, reasonText }) {
   const formattedRefund = Number(refundAmount || 0).toFixed(2);
   const missed = reason === 'missed_threshold';
-  const intro = missed
+  const byAdmin = reason === 'admin';
+  const intro = byAdmin
+    ? `<strong>${eventTitle}</strong> has been cancelled by a party.fun administrator.`
+    : missed
     ? `Unfortunately, <strong>${eventTitle}</strong> did not reach its hype threshold by the deadline, so it has been cancelled.`
     : `The organiser has cancelled <strong>${eventTitle}</strong>.`;
   const card = method === 'card';
@@ -186,6 +189,7 @@ export function eventCancelledTemplate({ userName, role, method, eventTitle, ref
     ${h1('Event Cancelled')}
     ${greet(userName, role)}
     ${p(`${intro} ${refundLine} No action needed on your part.`)}
+    ${byAdmin && reasonText ? detailsBox('Reason for cancellation', p(reasonText).replace('margin:0 0 20px', 'margin:0')) : ''}
     ${detailsBox('Refund Details',
       row('Event', eventTitle) +
       divider +
@@ -193,6 +197,20 @@ export function eventCancelledTemplate({ userName, role, method, eventTitle, ref
     )}
     ${p("We're sorry this one didn't happen — there are plenty more parties to back.")}
     ${button('Browse Other Events', `${APP_URL}/events`, '#374151')}
+  `);
+}
+
+// Event edited (by the organiser or an admin) — sent to the organiser + every backer.
+export function eventUpdatedTemplate({ userName, role, eventTitle, changes = [], editedByAdmin }) {
+  const who = editedByAdmin ? 'A party.fun administrator' : 'The organiser';
+  const rows = changes.map((c) => row(c.label, `${c.from} → ${c.to}`)).join('');
+  return emailShell(`
+    ${h1('Event updated')}
+    ${greet(userName, role)}
+    ${p(`${who} updated <strong>${eventTitle}</strong>. Here's what changed:`)}
+    ${detailsBox('Changes', rows || row('Details', 'updated'))}
+    ${p('Your tickets remain valid. If the new details no longer work for you, you can manage your tickets from your profile.')}
+    ${button('View Event', `${APP_URL}/events`, '#374151')}
   `);
 }
 

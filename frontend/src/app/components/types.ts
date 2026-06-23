@@ -19,13 +19,14 @@ export type Route =
   | { name: 'analytics' }
   | { name: 'attendees-all' }
   | { name: 'tickets' }
+  | { name: 'manage-events' }
   | { name: 'settings' }
   | { name: 'wallet' }
   | { name: 'hosted-events'; tab?: 'created' | 'drafts' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };
 
-export type Role = 'user' | 'organiser';
+export type Role = 'user' | 'organiser' | 'admin';
 
 // Status and pricing status are one and the same concept now:
 //   early_bird = hype < 100%, greenlit = hype = 100% (event confirmed),

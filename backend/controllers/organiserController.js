@@ -10,8 +10,53 @@ import {
   deleteDraft as removeDraft,
   getHostedSummary,
 } from '../services/eventService.js';
-import { notifyEventCreated, notifyEventCancelled } from '../services/notificationService.js';
+import { notifyEventCreated, notifyEventCancelled, notifyEventUpdated } from '../services/notificationService.js';
 import { refundEventCardBookings } from '../services/stripeRefunds.js';
+import { adminClient } from '../services/supabaseAdmin.js';
+
+const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+
+// Snapshot the editable fields of an event (service-role read) so an edit can be diffed.
+async function loadEventSnapshot(admin, eventId) {
+  const [{ data: e }, { data: s }, { data: ps }] = await Promise.all([
+    admin.from('EVENT').select('title, description, location, startDate, endDate, imageUrl').eq('id', eventId).single(),
+    admin.from('EVENT_SETTINGS').select('hypeThreshold, maxCapacity, deadline').eq('eventId', eventId).single(),
+    admin.from('PRICE_STATUSES').select('statusName, price').eq('eventId', eventId),
+  ]);
+  const early = (ps ?? []).find((p) => p.statusName === 'early_bird');
+  const greenlit = (ps ?? []).find((p) => p.statusName === 'greenlit');
+  return { e: e ?? {}, s: s ?? {}, earlyPrice: early?.price, greenlitPrice: greenlit?.price };
+}
+
+// Build a human-readable list of what changed between a snapshot and the edit payload.
+function diffEvent(before, body) {
+  const out = [];
+  const sEq = (a, b) => String(a ?? '') === String(b ?? '');
+  const tEq = (a, b) => a && b && new Date(a).getTime() === new Date(b).getTime();
+  const be = before.e, bs = before.s;
+  if (!sEq(be.title, body.title)) out.push({ label: 'Title', from: be.title || '—', to: body.title || '—' });
+  if (!sEq(be.description, body.description)) out.push({ label: 'Description', from: '(previous)', to: '(updated)' });
+  if (!sEq(be.location, body.location)) out.push({ label: 'Location', from: be.location || '—', to: body.location || '—' });
+  if (body.startsAt && !tEq(be.startDate, body.startsAt)) out.push({ label: 'Start', from: fmtDateTime(be.startDate), to: fmtDateTime(body.startsAt) });
+  if (body.endsAt && !tEq(be.endDate, body.endsAt)) out.push({ label: 'End', from: fmtDateTime(be.endDate), to: fmtDateTime(body.endsAt) });
+  if (body.deadlineAt && bs.deadline && !tEq(bs.deadline, body.deadlineAt)) out.push({ label: 'Deadline', from: fmtDateTime(bs.deadline), to: fmtDateTime(body.deadlineAt) });
+  if (body.hypeThreshold != null && !sEq(bs.hypeThreshold, body.hypeThreshold)) out.push({ label: 'Hype threshold', from: `${bs.hypeThreshold}`, to: `${body.hypeThreshold}` });
+  if (body.maxCapacity != null && !sEq(bs.maxCapacity, body.maxCapacity)) out.push({ label: 'Capacity', from: `${bs.maxCapacity}`, to: `${body.maxCapacity}` });
+  const be2 = (body.statuses ?? []).find((s) => s.statusName === 'early_bird');
+  const bg2 = (body.statuses ?? []).find((s) => s.statusName === 'greenlit');
+  if (be2 && !sEq(before.earlyPrice, be2.price)) out.push({ label: 'Early bird price', from: `$${Number(before.earlyPrice ?? 0).toFixed(2)}`, to: `$${Number(be2.price).toFixed(2)}` });
+  if (bg2 && !sEq(before.greenlitPrice, bg2.price)) out.push({ label: 'Greenlit price', from: `$${Number(before.greenlitPrice ?? 0).toFixed(2)}`, to: `$${Number(bg2.price).toFixed(2)}` });
+  return out;
+}
+
+// Every distinct backer (live booking) of an event, with contact info (service-role read).
+async function gatherEventBackers(admin, eventId) {
+  const { data: bookings } = await admin.from('BOOKINGS').select('userId').eq('eventId', eventId).is('deletedAt', null);
+  const ids = [...new Set((bookings ?? []).map((b) => b.userId))];
+  if (!ids.length) return [];
+  const { data: users } = await admin.from('USER').select('email, username, role').in('id', ids);
+  return (users ?? []).filter((u) => u.email).map((u) => ({ email: u.email, username: u.username, role: u.role }));
+}
 
 // Human-readable messages for the authoritative validation codes the RPCs return.
 const EVENT_ERROR_MESSAGES = {
@@ -99,12 +144,29 @@ export async function postCreateEvent(req, res) {
 }
 
 export async function patchEvent(req, res) {
-  const result = await updateEvent(req.supabase, { ...req.body, id: req.params.eventId });
+  const eventId = req.params.eventId;
+  const admin = adminClient();
+  const before = await loadEventSnapshot(admin, eventId);
+
+  const result = await updateEvent(req.supabase, { ...req.body, id: eventId });
   if (result.error) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to update event.') });
     return;
   }
   res.json({ status: 'ok' });
+
+  // Fire-and-forget: notify the organiser + every backer of what changed (organiser or admin edit).
+  const changes = diffEvent(before, req.body);
+  if (changes.length) {
+    const [{ data: me }, { data: ev }] = await Promise.all([
+      admin.from('USER').select('role').eq('id', req.user.id).single(),
+      admin.from('EVENT').select('title, hostId').eq('id', eventId).single(),
+    ]);
+    const editedByAdmin = me?.role === 'admin';
+    const { data: host } = await admin.from('USER').select('email, username, role').eq('id', ev?.hostId).single();
+    const backers = await gatherEventBackers(admin, eventId);
+    notifyEventUpdated({ eventTitle: ev?.title ?? 'your event', changes, editedByAdmin, organiser: host?.email ? host : null, backers });
+  }
 }
 
 export async function deleteEvent(req, res) {

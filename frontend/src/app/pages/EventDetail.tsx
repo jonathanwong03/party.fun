@@ -35,7 +35,8 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   const unavailable = event.status === 'cancelled';
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
-  const showWhosGoing = !!fromOrganiser;
+  // Admins don't purchase — show them the read-only "who's going" panel, never the buy card.
+  const showWhosGoing = !!fromOrganiser || role === 'admin';
   // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
   const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
 

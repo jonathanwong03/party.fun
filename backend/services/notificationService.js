@@ -26,7 +26,7 @@ export function notifyAccountCreated({ email, username, role }) {
   fireAndForget('accountCreated', () =>
     send('accountCreated', {
       to: email,
-      subject: 'Welcome to party.fun 🎉',
+      subject: 'Welcome to party.fun',
       html: templates.accountCreatedTemplate({ userName: username, role }),
     }),
   );
@@ -37,7 +37,7 @@ export function notifyPledgeConfirmed({ email, username, role, eventTitle, qty, 
   fireAndForget('pledgeConfirmed', () =>
     send('pledgeConfirmed', {
       to: email,
-      subject: `Pledge Confirmed: ${eventTitle} 🚀`,
+      subject: `Pledge Confirmed: ${eventTitle}`,
       html: templates.pledgeConfirmedTemplate({
         userName: username,
         role,
@@ -63,7 +63,7 @@ export function notifyBookingTicket({ email, username, role, eventTitle, dateTex
     });
     await send('bookingTicket', {
       to: email,
-      subject: greenlit ? `You're in: ${eventTitle} 🎉` : `Your ticket: ${eventTitle} 🎟️`,
+      subject: greenlit ? `You're in: ${eventTitle}` : `Your ticket: ${eventTitle} 🎟️`,
       html: templates.bookingTicketTemplate({ userName: username, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken: bookingToken }),
       attachments: [
         { filename: 'tickets.pdf', content: pdfBuffer.toString('base64') },
@@ -104,9 +104,26 @@ export async function notifyPasswordReset({ email, username, role, code }) {
   });
 }
 
+// Event edited (organiser or admin): notify the organiser + every backer of the diff.
+export function notifyEventUpdated({ eventTitle, changes = [], editedByAdmin = false, organiser = null, backers = [] }) {
+  if (!changes.length) return;
+  fireAndForget('eventUpdated', async () => {
+    const recipients = [];
+    if (organiser?.email) recipients.push(organiser);
+    for (const b of backers) if (b?.email) recipients.push(b);
+    await Promise.all(recipients.map((r) =>
+      send('eventUpdated', {
+        to: r.email,
+        subject: `Event updated: ${eventTitle}`,
+        html: templates.eventUpdatedTemplate({ userName: r.username, role: r.role, eventTitle, changes, editedByAdmin }),
+      }),
+    ));
+  });
+}
+
 // #4 — event cancelled: full-refund email to every backer + a summary to the organiser.
-// `reason` is 'missed_threshold' or 'organiser'.
-export function notifyEventCancelled({ eventTitle, reason, backers = [], organiser = null }) {
+// `reason` is 'missed_threshold' | 'organiser' | 'admin' (with optional reasonText).
+export function notifyEventCancelled({ eventTitle, reason, reasonText, backers = [], organiser = null }) {
   fireAndForget('eventCancelled', async () => {
     await Promise.all(
       backers.map((b) =>
@@ -120,6 +137,7 @@ export function notifyEventCancelled({ eventTitle, reason, backers = [], organis
             eventTitle,
             refundAmount: b.refundAmount ?? 0,
             reason,
+            reasonText,
           }),
         }),
       ),
