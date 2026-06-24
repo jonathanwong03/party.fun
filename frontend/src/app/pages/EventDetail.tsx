@@ -368,6 +368,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
                 <img
                   src={a.avatarUrl}
                   alt={a.username}
+                  referrerPolicy="no-referrer"
                   className="size-14 rounded-full object-cover"
                   style={{ border: '2px solid #14141b' }}
                 />

@@ -71,6 +71,12 @@ function mapRow(row, userId) {
     })),
     mine: userId != null ? row.hostId === userId : undefined,
     hostHidden: row.hostHidden ?? false,
+    isCoOrganiser: !!row.isCoOrganiser,
+    canEdit: !!row.canEdit,
+    canCheckIn: !!row.canCheckIn,
+    canViewAttendees: !!row.canViewAttendees,
+    canCancel: !!row.canCancel,
+    canDelete: !!row.canDelete,
   };
 }
 
@@ -125,7 +131,7 @@ export async function getHostedSummary(sb, userId) {
   const [revRes, events] = await Promise.all([sb.rpc('get_hosted_revenue'), listEvents(sb, userId)]);
   if (revRes.error) throw new Error(revRes.error.message);
   const rev = revRes.data ?? { events: [], totalRevenue: 0 };
-  const mine = events.filter((e) => e.hostId === userId);
+  const mine = events.filter((e) => e.hostId === userId || e.isCoOrganiser);
   const revenueByEvent = {};
   for (const r of rev.events ?? []) revenueByEvent[r.eventId] = Number(r.revenue);
   return {
@@ -279,6 +285,30 @@ export async function hideEvent(sb, eventId) {
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   return { status: 'ok' };
+}
+
+export async function listCoOrganiserInvites(sb) {
+  const { data, error } = await sb.rpc('get_coorganiser_invites');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function inviteCoOrganiser(sb, eventId, identifier) {
+  const { data, error } = await sb.rpc('invite_coorganiser', {
+    p_event_id: eventId,
+    p_identifier: identifier,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function respondCoOrganiserInvite(sb, inviteId, action) {
+  const { data, error } = await sb.rpc('respond_coorganiser_invite', {
+    p_invite_id: inviteId,
+    p_action: action,
+  });
+  if (error) throw new Error(error.message);
+  return data;
 }
 
 function eventRpcArgs(e) {

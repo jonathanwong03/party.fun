@@ -40,8 +40,8 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
   const [statusFilter, setStatusFilter] = useState<'all' | EventItem['status']>('all');
 
   const isDrafts = tab === 'drafts';
-  // The dashboard is for events the organiser created themselves (mine), excluding ones they've hidden.
-  const created = events.filter((e) => e.mine && !e.hostHidden);
+  // The dashboard includes owned events plus accepted co-organised events.
+  const created = events.filter((e) => (e.mine || e.isCoOrganiser) && !e.hostHidden);
   const filteredCreated = statusFilter === 'all' ? created : created.filter((e) => e.status === statusFilter);
   const rows = isDrafts ? drafts : filteredCreated;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
@@ -155,7 +155,14 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                     <tr key={e.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
                       <td className="px-3 py-3">
                         <div style={{ fontWeight: 600 }}>{e.title}</div>
-                        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.organiser || (isDrafts ? 'Draft event' : '')}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                          <span>{e.organiser || (isDrafts ? 'Draft event' : '')}</span>
+                          {!isDrafts && e.isCoOrganiser && (
+                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c', fontWeight: 700 }}>
+                              Co-organiser
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date || '—'}</td>
                       <td className="px-3 py-4">
@@ -190,10 +197,10 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                           ) : (
                             <>
                               <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
-                              <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
-                              {e.status === 'cancelled' ? (
+                              {(e.canEdit ?? e.mine) && <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>}
+                              {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
                                 <IconBtn label="Remove" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
-                              ) : (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
+                              ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
                                 <IconBtn label="Cancel" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Ban size={14} /></IconBtn>
                               ) : null}
                             </>

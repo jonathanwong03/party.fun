@@ -32,10 +32,14 @@ export function Profile({
         <div className="text-sm" style={{ color: 'var(--muted-foreground)' }}>{email}</div>
 
         <div
-          className="mx-auto mt-6 grid size-24 place-items-center rounded-full"
+          className="mx-auto mt-6 grid size-24 place-items-center overflow-hidden rounded-full"
           style={{ background: 'linear-gradient(135deg,#ff4d2e,#ffcb3c)', fontWeight: 800, fontSize: 40, color: '#0b0b0f' }}
         >
-          {initial}
+          {user?.avatarUrl ? (
+            <img src={user.avatarUrl} alt={name} referrerPolicy="no-referrer" className="size-full object-cover" />
+          ) : (
+            initial
+          )}
         </div>
 
         <h1 className="mt-5" style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Hi, {name}!</h1>

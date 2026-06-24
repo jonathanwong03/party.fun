@@ -91,7 +91,7 @@ export function Navbar({
                 style={{ background: '#ff4d2e', fontWeight: 600 }}
               >
                 {user?.avatarUrl ? (
-                  <img src={user.avatarUrl} alt="Profile" className="size-full object-cover" />
+                  <img src={user.avatarUrl} alt="Profile" referrerPolicy="no-referrer" className="size-full object-cover" />
                 ) : (
                   initial
                 )}

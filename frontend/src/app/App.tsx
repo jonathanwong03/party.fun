@@ -12,7 +12,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
 import { type EventItem, type Role, type Route } from './components/types';
-import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, adminCancelEvent, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
+import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, adminCancelEvent, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, inviteCoOrganiserRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
@@ -41,6 +41,7 @@ import { Analytics } from './pages/Analytics';
 import { AllAttendees } from './pages/AllAttendees';
 import { CheckIn } from './pages/CheckIn';
 import { AdminManageEvents } from './pages/AdminManageEvents';
+import { PendingInvites } from './pages/PendingInvites';
 
 type RouteState = {
   fromProfile?: boolean;
@@ -97,6 +98,8 @@ function pathForRoute(route: Route) {
       return '/attendees';
     case 'tickets':
       return '/tickets';
+    case 'pending-invites':
+      return '/pending-invites';
     case 'manage-events':
       return '/manage-events';
     case 'settings':
@@ -174,6 +177,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/analytics') return { name: 'analytics' };
   if (pathname === '/attendees') return { name: 'attendees-all' };
   if (pathname === '/tickets') return { name: 'tickets' };
+  if (pathname === '/pending-invites') return { name: 'pending-invites' };
   if (pathname === '/manage-events') return { name: 'manage-events' };
   if (pathname === '/settings') return { name: 'settings' };
   if (pathname === '/wallet') return { name: 'wallet' };
@@ -287,6 +291,14 @@ function AppShell() {
       await updateEventRequest(updated);
       setEvents(await fetchEvents(role)); // reconcile with backend-computed values
     } catch { /* state already updated */ }
+  };
+
+  const refreshEvents = async () => {
+    setEvents(await fetchEvents(role));
+  };
+
+  const inviteCoOrganiser = async (eventId: string, identifier: string) => {
+    await inviteCoOrganiserRequest(eventId, identifier);
   };
 
   const [drafts, setDrafts] = useState<EventItem[]>([]);
@@ -416,7 +428,7 @@ function AppShell() {
 
   const activeRoute = routeFromPath(location.pathname, (location.state ?? null) as RouteState | null);
   const isAuthPage = isAuthPath(location.pathname);
-  const isOrganiserConsole = location.pathname.startsWith('/hosted-events');
+  const isOrganiserConsole = location.pathname.startsWith('/hosted-events') || location.pathname === '/pending-invites';
 
   const go = (nextRoute: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
@@ -502,13 +514,14 @@ function AppShell() {
         <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} /> : <Navigate to="/login" replace />} />
         <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/pending-invites" element={role === 'organiser' ? <PendingInvites go={go} onChanged={refreshEvents} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/manage-events" element={role === 'admin' ? <AdminManageEvents go={go} events={events} onCancel={adminCancel} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/wallet" element={role && role !== 'admin' ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/hosted-events" element={role === 'organiser' ? <OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
         <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} />} />
+        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} />} />
         <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
 
@@ -634,15 +647,17 @@ function EditEventRoute({
   events,
   onCancel,
   onUpdate,
+  onInvite,
 }: {
   activeRoute: Route;
   go: (r: Route) => void;
   events: EventItem[];
   onCancel: (id: string, reason: string) => void;
   onUpdate: (e: EventItem) => void;
+  onInvite: (eventId: string, identifier: string) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
-  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onCancel={onCancel} onUpdate={onUpdate} />;
+  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onCancel={onCancel} onUpdate={onUpdate} onInvite={onInvite} />;
 }
 
 function ResumeDraftRoute({

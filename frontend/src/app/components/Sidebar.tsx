@@ -1,4 +1,4 @@
-import { X, CalendarRange, Bookmark, User, Settings, LayoutDashboard, CalendarPlus, BarChart3, Users, Ticket } from 'lucide-react';
+import { X, CalendarRange, Bookmark, User, Settings, LayoutDashboard, CalendarPlus, BarChart3, Users, Ticket, UserPlus } from 'lucide-react';
 import type { Role, Route } from './types';
 
 type Item = { label: string; icon: typeof X; target: Route; active: boolean };
@@ -27,6 +27,7 @@ export function Sidebar({
 
   const organiserOnly: Item[] = [
     { label: 'Hosted Events', icon: LayoutDashboard, target: { name: 'hosted-events' }, active: route.name === 'hosted-events' },
+    { label: 'Pending Invites', icon: UserPlus, target: { name: 'pending-invites' }, active: route.name === 'pending-invites' },
     { label: 'Create Event', icon: CalendarPlus, target: { name: 'create-event' }, active: route.name === 'create-event' },
     { label: 'Attendees', icon: Users, target: { name: 'attendees-all' }, active: route.name === 'attendees-all' },
     { label: 'Tickets', icon: Ticket, target: { name: 'tickets' }, active: route.name === 'tickets' },

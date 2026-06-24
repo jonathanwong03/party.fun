@@ -7,8 +7,8 @@ import { fetchEventTickets, checkInTicket, type EventTicket, type CheckInResult 
 import type { EventItem, Role } from '../components/types';
 
 export function CheckIn({ role, events }: { role: Role | null; events: EventItem[] }) {
-  // Admins can check in any event; organisers only their own.
-  const mine = useMemo(() => (role === 'admin' ? events : events.filter((e) => e.mine)), [events, role]);
+  // Admins can check in any event; organisers can check in owned + accepted co-organised events.
+  const mine = useMemo(() => (role === 'admin' ? events : events.filter((e) => e.canCheckIn ?? e.mine)), [events, role]);
   const [eventId, setEventId] = useState<string>('');
   const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [loading, setLoading] = useState(false);

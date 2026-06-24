@@ -19,6 +19,7 @@ export type Route =
   | { name: 'analytics' }
   | { name: 'attendees-all' }
   | { name: 'tickets' }
+  | { name: 'pending-invites' }
   | { name: 'manage-events' }
   | { name: 'settings' }
   | { name: 'wallet' }
@@ -60,6 +61,12 @@ export type EventItem = {
   featured?: boolean;
   // Organiser hid this (cancelled) event from their own dashboard.
   hostHidden?: boolean;
+  isCoOrganiser?: boolean;
+  canEdit?: boolean;
+  canCheckIn?: boolean;
+  canViewAttendees?: boolean;
+  canCancel?: boolean;
+  canDelete?: boolean;
   endTime?: string;
   endDate?: string;
   // Raw ISO datetimes (for the countdown + edit-form validation); optional because

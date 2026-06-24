@@ -170,6 +170,24 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   `);
 }
 
+export function coOrganiserInviteTemplate({ userName, inviterName, eventTitle, eventId }) {
+  const inviteUrl = `${APP_URL}/pending-invites`;
+  const eventUrl = eventId ? `${APP_URL}/events/${eventId}` : `${APP_URL}/events`;
+
+  return emailShell(`
+    ${h1('Co-organiser invite')}
+    ${greet(userName || 'there', 'organiser')}
+    ${p(`<strong>${inviterName || 'An organiser'}</strong> invited you to help manage <strong>${eventTitle}</strong> on party.fun.`)}
+    ${detailsBox('What co-organisers can do',
+      row('Allowed', 'Edit event details, view attendees, and check in tickets') +
+      row('Not allowed', 'Cancel, hide, or delete the event'),
+    )}
+    ${p('Accept or decline the invite inside party.fun. This email is only a notification.')}
+    ${button('Review Invite', inviteUrl)}
+    ${button('View Event', eventUrl, '#374151')}
+  `);
+}
+
 export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason, reasonText }) {
   const formattedRefund = Number(refundAmount || 0).toFixed(2);
   const missed = reason === 'missed_threshold';
@@ -203,7 +221,7 @@ export function eventCancelledTemplate({ userName, role, method, eventTitle, ref
 // Event edited (by the organiser or an admin) — sent to the organiser + every backer.
 export function eventUpdatedTemplate({ userName, role, eventTitle, changes = [], editedByAdmin }) {
   const who = editedByAdmin ? 'A party.fun administrator' : 'The organiser';
-  const rows = changes.map((c) => row(c.label, `${c.from} → ${c.to}`)).join('');
+  const rows = changes.map((c) => row(c.label, `${c.from} -> ${c.to}`)).join('');
   return emailShell(`
     ${h1('Event updated')}
     ${greet(userName, role)}
@@ -271,7 +289,7 @@ export function pledgeCancelledTemplate({ userName, eventTitle, qty, refundAmoun
 export function eventGreenlitTemplate({ userName, eventTitle, start_time, location }) {
   const formattedDate = sgDateTime(start_time, 'soon');
   return emailShell(`
-    ${h1(`It's a Go! 🎉 ${eventTitle} is Greenlit!`)}
+    ${h1(`It's a Go! ${eventTitle} is Greenlit!`)}
     ${p(`Hi ${userName},`)}
     ${p(`Great news — <strong>${eventTitle}</strong> has reached its hype threshold and is officially <strong>GREENLIT</strong>! Your pledge is locked in.`)}
     ${detailsBox('Event Schedule & Location',

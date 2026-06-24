@@ -155,7 +155,7 @@ export function Settings({
         </div>
         <div className="flex items-center gap-5">
           {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt="Your avatar" className="size-20 rounded-full object-cover" style={{ border: '2px solid var(--border)' }} />
+            <img src={user.avatarUrl} alt="Your avatar" referrerPolicy="no-referrer" className="size-20 rounded-full object-cover" style={{ border: '2px solid var(--border)' }} />
           ) : (
             <div className="grid size-20 place-items-center rounded-full text-white" style={{ background: '#ff4d2e', fontSize: 32, fontWeight: 600 }}>
               {(currentName || '?').charAt(0).toUpperCase()}

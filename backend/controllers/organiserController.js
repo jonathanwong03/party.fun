@@ -9,8 +9,11 @@ import {
   saveDraft,
   deleteDraft as removeDraft,
   getHostedSummary,
+  listCoOrganiserInvites,
+  inviteCoOrganiser,
+  respondCoOrganiserInvite,
 } from '../services/eventService.js';
-import { notifyEventCreated, notifyEventCancelled, notifyEventUpdated } from '../services/notificationService.js';
+import { notifyCoOrganiserInvite, notifyEventCreated, notifyEventCancelled, notifyEventUpdated } from '../services/notificationService.js';
 import { refundEventCardBookings } from '../services/stripeRefunds.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 
@@ -68,6 +71,12 @@ const EVENT_ERROR_MESSAGES = {
   not_found: 'Event not found.',
   reason_required: 'A cancellation reason is required.',
   event_started: "You can't cancel an event that has already started.",
+  not_owner: 'Only the event owner can manage co-organisers.',
+  invitee_not_found: 'No organiser account found for that email or username.',
+  invite_self: "You can't invite yourself as a co-organiser.",
+  invalid_action: 'Invalid invite action.',
+  not_invitee: 'This invite does not belong to your account.',
+  not_pending: 'This invite has already been responded to.',
 };
 const eventErrorMessage = (code, fallback) => EVENT_ERROR_MESSAGES[code] ?? fallback;
 
@@ -79,6 +88,58 @@ export const getEditEvent = createPlaceholderHandler('edit-event');
 
 export async function getSummary(req, res) {
   res.json(await getHostedSummary(req.supabase, req.user.id));
+}
+
+export async function getCoOrganiserInvites(req, res) {
+  try {
+    res.json(await listCoOrganiserInvites(req.supabase));
+  } catch (error) {
+    res.status(400).json({ status: 'error', message: error.message });
+  }
+}
+
+export async function postCoOrganiserInvite(req, res) {
+  const identifier = String(req.body?.identifier ?? '').trim();
+  if (!identifier) {
+    res.status(400).json({ status: 'identifier_required', message: 'Enter an organiser email or username.' });
+    return;
+  }
+
+  const result = await inviteCoOrganiser(req.supabase, req.params.eventId, identifier);
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to invite co-organiser.') });
+    return;
+  }
+
+  if (result?.inviteeEmail) {
+    notifyCoOrganiserInvite({
+      email: result.inviteeEmail,
+      username: result.inviteeUsername,
+      inviterName: result.ownerUsername,
+      eventTitle: result.eventTitle,
+      eventId: result.eventId,
+    });
+  }
+
+  res.status(201).json(result);
+}
+
+export async function acceptCoOrganiserInvite(req, res) {
+  const result = await respondCoOrganiserInvite(req.supabase, req.params.inviteId, 'accept');
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to accept invite.') });
+    return;
+  }
+  res.json(result);
+}
+
+export async function declineCoOrganiserInvite(req, res) {
+  const result = await respondCoOrganiserInvite(req.supabase, req.params.inviteId, 'decline');
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to decline invite.') });
+    return;
+  }
+  res.json(result);
 }
 
 // Aggregated attendee list across all of the organiser's events.

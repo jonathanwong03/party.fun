@@ -49,6 +49,22 @@ export type HostedSummary = {
   confirmed: number;
 };
 
+export type CoOrganiserInvite = {
+  id: string;
+  eventId: string;
+  eventTitle: string;
+  ownerId: string;
+  ownerUsername: string;
+  ownerEmail: string | null;
+  inviteeId: string;
+  inviteeUsername: string;
+  inviteeEmail: string | null;
+  status: 'pending' | 'accepted' | 'declined' | 'revoked';
+  invitedAt: string;
+  respondedAt: string | null;
+  direction: 'incoming' | 'outgoing';
+};
+
 export type MutationResponse = {
   status: "ok";
   event: EventItem | null;
@@ -581,6 +597,29 @@ export function checkInTicket(qr: string): Promise<CheckInResult> {
   return apiFetch<CheckInResult>("/api/hosted-events/check-in", {
     method: "POST",
     body: JSON.stringify({ qr }),
+  });
+}
+
+export function fetchCoOrganiserInvites(): Promise<CoOrganiserInvite[]> {
+  return apiFetch<CoOrganiserInvite[]>("/api/hosted-events/coorganiser-invites");
+}
+
+export function inviteCoOrganiserRequest(eventId: string, identifier: string): Promise<CoOrganiserInvite> {
+  return apiFetch<CoOrganiserInvite>(`/api/hosted-events/events/${eventId}/coorganisers/invite`, {
+    method: "POST",
+    body: JSON.stringify({ identifier }),
+  });
+}
+
+export function acceptCoOrganiserInviteRequest(inviteId: string): Promise<{ status: "ok"; eventId: string }> {
+  return apiFetch<{ status: "ok"; eventId: string }>(`/api/hosted-events/coorganiser-invites/${inviteId}/accept`, {
+    method: "POST",
+  });
+}
+
+export function declineCoOrganiserInviteRequest(inviteId: string): Promise<{ status: "ok"; eventId: string }> {
+  return apiFetch<{ status: "ok"; eventId: string }>(`/api/hosted-events/coorganiser-invites/${inviteId}/decline`, {
+    method: "POST",
   });
 }
 

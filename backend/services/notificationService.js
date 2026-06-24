@@ -63,7 +63,7 @@ export function notifyBookingTicket({ email, username, role, eventTitle, dateTex
     });
     await send('bookingTicket', {
       to: email,
-      subject: greenlit ? `You're in: ${eventTitle}` : `Your ticket: ${eventTitle} 🎟️`,
+      subject: greenlit ? `You're in: ${eventTitle}` : `Your ticket: ${eventTitle}`,
       html: templates.bookingTicketTemplate({ userName: username, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken: bookingToken }),
       attachments: [
         { filename: 'tickets.pdf', content: pdfBuffer.toString('base64') },
@@ -90,6 +90,16 @@ export function notifyEventCreated({ email, organiserName, eventTitle, eventId, 
       to: email,
       subject: `Your event is live: ${eventTitle}`,
       html: templates.eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeThreshold, deadline }),
+    }),
+  );
+}
+
+export function notifyCoOrganiserInvite({ email, username, inviterName, eventTitle, eventId }) {
+  fireAndForget('coOrganiserInvite', () =>
+    send('coOrganiserInvite', {
+      to: email,
+      subject: `Co-organiser invite: ${eventTitle}`,
+      html: templates.coOrganiserInviteTemplate({ userName: username, inviterName, eventTitle, eventId }),
     }),
   );
 }

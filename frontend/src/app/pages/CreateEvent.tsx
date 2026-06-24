@@ -15,7 +15,7 @@ import { TimePicker } from '../components/TimePicker';
 import { required, dateError, timeError, deadlineError, priceError, scheduleError, deadlineEventError, futureDateTimeError } from '../components/validation';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 
-export function CreateEvent({ route, go, editId, events, onPublish, onCancel, onUpdate, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onCancel?: (id: string, reason: string) => void; onUpdate?: (e: EventItem) => void; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
+export function CreateEvent({ route, go, editId, events, onPublish, onCancel, onUpdate, onInvite, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onCancel?: (id: string, reason: string) => void; onUpdate?: (e: EventItem) => void; onInvite?: (eventId: string, identifier: string) => Promise<void>; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? [];
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const draftSource = draftId ? (drafts ?? []).find((d) => d.id === draftId) : undefined;
@@ -54,6 +54,10 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
   const [image, setImage] = useState<string>(source?.image ?? '');
   const [imageBusy, setImageBusy] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [inviteIdentifier, setInviteIdentifier] = useState('');
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState<string | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
   const imageRef = useRef<HTMLInputElement>(null);
 
   const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -73,6 +77,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
 
   const status: EventStatus = existing?.status ?? 'early_bird';
   const locked = isEdit && status === 'greenlit';
+  const canCancelEvent = existing?.canCancel ?? existing?.mine ?? false;
+  const canInviteCoOrganisers = isEdit && !!existing?.mine;
 
   // Price-format errors computed up front so the order check only runs once both are valid.
   const ebPErr = priceError(ebPrice);
@@ -211,6 +217,27 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
     go({ name: 'hosted-events' });
   };
 
+  const handleInvite = async () => {
+    if (!existing || !onInvite) return;
+    const identifier = inviteIdentifier.trim();
+    if (!identifier) {
+      setInviteError('Enter an organiser email or username.');
+      return;
+    }
+    setInviteBusy(true);
+    setInviteMessage(null);
+    setInviteError(null);
+    try {
+      await onInvite(existing.id, identifier);
+      setInviteIdentifier('');
+      setInviteMessage('Invite sent. They can accept it from Pending Invites.');
+    } catch (err) {
+      setInviteError(err instanceof Error ? err.message : 'Unable to invite co-organiser.');
+    } finally {
+      setInviteBusy(false);
+    }
+  };
+
   return (
     <div>
       <main className="flex-1 px-6 py-8">
@@ -285,6 +312,33 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
                 </Field>
               </Section>
 
+              {canInviteCoOrganisers && (
+                <Section title="Co-organisers">
+                  <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                    Invite another organiser account to edit details, view attendees, and check in tickets. They cannot cancel, hide, or delete this event.
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Input
+                      value={inviteIdentifier}
+                      onChange={(e) => setInviteIdentifier(e.target.value)}
+                      placeholder="Organiser email or username"
+                      style={fieldStyle}
+                    />
+                    <Button
+                      type="button"
+                      disabled={inviteBusy}
+                      onClick={handleInvite}
+                      className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
+                      style={{ borderRadius: 10, height: 42 }}
+                    >
+                      {inviteBusy ? 'Sending...' : 'Invite'}
+                    </Button>
+                  </div>
+                  {inviteMessage && <p className="text-xs" style={{ color: '#a6f3c8' }}>{inviteMessage}</p>}
+                  {inviteError && <p className="text-xs" style={{ color: '#ff9a82' }}>{inviteError}</p>}
+                </Section>
+              )}
+
               <Section title="Schedule">
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Field label="Start date" error={errOf('date') || errOf('startFuture')}><DatePicker value={date} onChange={setDate} error={!!(errOf('date') || errOf('startFuture'))} /></Field>
@@ -327,9 +381,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
                     <Button variant="outline" className="border-white/15 bg-transparent hover:bg-white/5" style={{ borderRadius: 10, height: 44 }} onClick={() => go({ name: 'hosted-events' })}>
                       Cancel
                     </Button>
-                    <Button onClick={() => { setCancelReason(''); setDeleting(true); }} className="ml-auto bg-[#ff3354] text-white hover:bg-[#ff4865]" style={{ borderRadius: 10, height: 44 }}>
-                      Cancel Event
-                    </Button>
+                    {canCancelEvent && (
+                      <Button onClick={() => { setCancelReason(''); setDeleting(true); }} className="ml-auto bg-[#ff3354] text-white hover:bg-[#ff4865]" style={{ borderRadius: 10, height: 44 }}>
+                        Cancel Event
+                      </Button>
+                    )}
                   </>
                 ) : (
                   <>
@@ -355,7 +411,7 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
                       {date || 'Date'} · {venue || 'Venue'}
                     </div>
-                    <HypeMeter pct={isEdit ? (existing?.hypePercentage ?? 0) : 0} status={status} statusIndex={0} size="sm" />
+                    <HypeMeter pct={isEdit ? (existing?.hypePercentage ?? 0) : 0} status={status} statusIndex={isEdit && existing ? getActiveStatus(existing) : 0} size="sm" />
                     <div className="flex items-baseline justify-between">
                       <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>From</span>
                       <span style={{ fontWeight: 700 }}>${ebPrice}</span>
