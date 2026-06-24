@@ -97,7 +97,6 @@ async function apiFetch<T>(
   if (session) {
     headers.set("Authorization", `Bearer ${session.access_token}`);
   }
-  }
   if (options.body && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
   }
