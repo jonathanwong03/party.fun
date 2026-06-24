@@ -326,12 +326,12 @@ function AppShell() {
       if (session) {
         const { data: profile } = await supabase
           .from('USER')
-          .select('id, username, email, role, avatarUrl, socialLink, contact, onboarded')
+          .select('id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId')
           .eq('id', session.user.id)
           .single();
         if (profile && profile.onboarded) {
           setRole(profile.role as Role);
-          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact });
+          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact, university: profile.university, memberType: profile.memberType, orgId: profile.orgId });
         } else if (profile && !profile.onboarded && location.pathname !== '/auth/callback') {
           // A signed-in OAuth user who never picked a role → resume finish-setup.
           navigate('/signup/finish', { replace: true });

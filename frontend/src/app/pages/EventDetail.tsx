@@ -87,7 +87,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <MapPin size={13} /> Location
               </div>
-              <div className="mt-1 font-bold text-white">{event.location.split(',')[0]}</div>
+              <div className="mt-1 font-bold text-white">{event.address ? `${event.location}, ${event.address}` : event.location}</div>
             </div>
           </div>
 
@@ -360,7 +360,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
 
       <div className="mb-5 flex items-center">
         {shown.length === 0 ? (
-          <span className="text-sm" style={{ color: '#8a8a99' }}>No one has locked in yet.</span>
+          <span className="text-sm" style={{ color: '#8a8a99' }}>No tickets locked in yet.</span>
         ) : (
           shown.map((a, i) => (
             <div key={a.username} className="group relative" style={{ marginLeft: i === 0 ? 0 : -12 }}>
@@ -403,7 +403,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
       </div>
 
       <p className="mb-4 text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
-        {event.activeTicketCount} students have locked in. {event.spotsLeft} spots remaining
+        {event.activeTicketCount} tickets locked in. {event.spotsLeft} spots remaining
       </p>
 
       <Button

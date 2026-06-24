@@ -26,8 +26,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
   const [title, setTitle] = useState(source?.title ?? '');
   const [organiser, setOrganiser] = useState(source?.organiser ?? '');
   const [description, setDescription] = useState(source?.description ?? '');
-  const [venue, setVenue] = useState(source?.location.split(',')[0] ?? '');
-  const [address, setAddress] = useState(source?.location ?? '');
+  const [venue, setVenue] = useState(source?.location ?? '');
+  const [address, setAddress] = useState(source?.address ?? '');
   // Prefill the pickers in DD/MM/YYYY + H:MM AM/PM so the validators apply uniformly.
   // Seed/published events carry raw ISO (startsAt/endsAt/deadlineAt); drafts only the display strings.
   const [date, setDate] = useState(isoToDateInput(source?.startsAt) || source?.date || '');
@@ -127,7 +127,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       startsAt: inputToIso(date, start),
       endsAt: inputToIso(endDate, end),
       deadlineAt: inputToIso(deadlineDate, deadlineTime),
-      location: `${venue}, ${address}`,
+      location: venue,
+      address,
       description,
       image,
       price: num(ebPrice),
@@ -160,7 +161,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       time: start,
       endTime: end,
       endDate,
-      location: `${venue}, ${address}`,
+      location: venue,
+      address,
       description,
       image,
       price: num(ebPrice),
@@ -198,7 +200,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       title,
       organiser,
       description,
-      location: `${venue}, ${address}`,
+      location: venue,
+      address,
       date,
       time: start,
       endTime: end,
@@ -221,7 +224,11 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
     if (!existing || !onInvite) return;
     const identifier = inviteIdentifier.trim();
     if (!identifier) {
-      setInviteError('Enter an organiser email or username.');
+      setInviteError("Enter the organiser's email address.");
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier)) {
+      setInviteError('Enter a valid email address.');
       return;
     }
     setInviteBusy(true);
@@ -315,13 +322,14 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
               {canInviteCoOrganisers && (
                 <Section title="Co-organisers">
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
-                    Invite another organiser account to edit details, view attendees, and check in tickets. They cannot cancel, hide, or delete this event.
+                    Invite another organiser by their <strong>email address</strong> to edit details, view attendees, and check in tickets. They cannot cancel, hide, or delete this event.
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row">
                     <Input
+                      type="email"
                       value={inviteIdentifier}
                       onChange={(e) => setInviteIdentifier(e.target.value)}
-                      placeholder="Organiser email or username"
+                      placeholder="Organiser's email"
                       style={fieldStyle}
                     />
                     <Button

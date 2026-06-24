@@ -18,6 +18,9 @@ export function Profile({
   const telegram = user?.telegram?.trim();
   const phone = user?.phone?.trim();
   const telegramHandle = telegram ? (telegram.startsWith('@') ? telegram : `@${telegram}`) : null;
+  const university = user?.university?.trim();
+  const idLabel = user?.memberType === 'student' ? 'Matriculation ID' : 'Staff ID';
+  const orgId = user?.orgId?.trim();
 
   return (
     <div className="mx-auto max-w-xl px-6 py-10">
@@ -43,8 +46,10 @@ export function Profile({
         </div>
 
         <h1 className="mt-5" style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Hi, {name}!</h1>
-        {(telegramHandle || phone) && (
+        {(university || orgId || telegramHandle || phone) && (
           <div className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+            {university && <div>University: {university}</div>}
+            {orgId && <div>{idLabel}: {orgId}</div>}
             {telegramHandle && <div>Telegram: {telegramHandle}</div>}
             {phone && <div>Phone Number: {phone}</div>}
           </div>

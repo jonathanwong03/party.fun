@@ -44,6 +44,7 @@ export type EventItem = {
   date: string;
   time: string;
   location: string;
+  address?: string;
   description: string;
   image: string;
   price: number;

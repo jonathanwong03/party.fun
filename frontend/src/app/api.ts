@@ -73,6 +73,9 @@ export type MutationResponse = {
   reference?: string;
 };
 
+export type MemberType = 'student' | 'instructor' | 'professor';
+export type University = 'NUS' | 'NTU' | 'SMU' | 'SUTD' | 'SIT' | 'SUSS';
+
 export type AuthUser = {
   id: string;
   username: string;
@@ -81,6 +84,9 @@ export type AuthUser = {
   avatarUrl?: string | null;
   telegram?: string | null;
   phone?: string | null;
+  university?: string | null;
+  memberType?: MemberType | null;
+  orgId?: string | null;
 };
 
 export type Attendee = {
@@ -148,7 +154,7 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
   if (!session) return null;
   const { data: profile, error } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId")
     .eq("id", session.user.id)
     .single();
   if (error || !profile) return null;
@@ -160,22 +166,37 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
     avatarUrl: profile.avatarUrl,
     telegram: profile.socialLink,
     phone: profile.contact,
+    university: profile.university,
+    memberType: profile.memberType,
+    orgId: profile.orgId,
     onboarded: profile.onboarded,
   };
 }
 
 // Finish an OAuth sign-up: set the chosen role + username exactly once. Returns the
 // refreshed profile, or throws a friendly error.
-export async function completeOauthSignupRequest(role: Role, username: string): Promise<AuthUser> {
+export async function completeOauthSignupRequest(
+  role: Role,
+  username: string,
+  org?: { university: string; memberType: MemberType; orgId: string },
+): Promise<AuthUser> {
   const { data, error } = await supabase.rpc("complete_oauth_signup", {
     p_role: role,
     p_username: username.trim(),
+    p_university: org?.university ?? null,
+    p_member_type: org?.memberType ?? null,
+    p_org_id: org?.orgId?.trim() ?? null,
   });
   if (error) throw new Error(error.message);
   const result = data as { status?: string; error?: string };
   if (result?.error === "username_taken") throw new Error("That username is taken.");
+  if (result?.error === "org_id_taken") throw new Error("That matriculation / staff ID is already registered.");
   if (result?.error === "username_required") throw new Error("Please choose a username.");
   if (result?.error === "invalid_role") throw new Error("Please choose an account type.");
+  if (result?.error === "invalid_university") throw new Error("Please choose your university.");
+  if (result?.error === "invalid_member_type") throw new Error("Please choose Student, Instructor or Professor.");
+  if (result?.error === "invalid_matric") throw new Error("Matriculation ID must be a letter, 8 digits, then a letter (e.g. A12345678B).");
+  if (result?.error === "invalid_staff_id") throw new Error("Staff ID must be exactly 9 digits.");
   if (result?.error === "already_onboarded") throw new Error("This account is already set up. Please log in.");
   if (result?.error) throw new Error("Could not finish setting up your account.");
   const user = await fetchCurrentUser();
@@ -210,7 +231,7 @@ export async function loginRequest(
 
   const { data: profile, error: profileError } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, university, memberType, orgId")
     .eq("id", data.user.id)
     .single();
 
@@ -224,6 +245,9 @@ export async function loginRequest(
     avatarUrl: profile.avatarUrl,
     telegram: profile.socialLink,
     phone: profile.contact,
+    university: profile.university,
+    memberType: profile.memberType,
+    orgId: profile.orgId,
   };
 }
 
@@ -235,6 +259,9 @@ export async function registerRequest(input: {
   avatarUrl?: string;
   telegram?: string;
   phone?: string;
+  university?: string;
+  memberType?: MemberType;
+  orgId?: string;
 }): Promise<AuthUser> {
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
@@ -247,6 +274,9 @@ export async function registerRequest(input: {
         avatarUrl: input.avatarUrl ?? null,
         telegram: input.telegram ?? null,
         phone: input.phone ?? null,
+        university: input.university ?? null,
+        memberType: input.memberType ?? null,
+        orgId: input.orgId?.trim() ?? null,
       },
     },
   });
@@ -260,6 +290,9 @@ export async function registerRequest(input: {
     avatarUrl: input.avatarUrl,
     telegram: input.telegram ?? null,
     phone: input.phone ?? null,
+    university: input.university ?? null,
+    memberType: input.memberType ?? null,
+    orgId: input.orgId ?? null,
   };
 }
 
