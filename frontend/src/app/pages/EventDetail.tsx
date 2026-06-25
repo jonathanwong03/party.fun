@@ -4,6 +4,7 @@ import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
+import { HowToGetThere } from '../components/HowToGetThere';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
@@ -88,6 +89,9 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                 <MapPin size={13} /> Location
               </div>
               <div className="mt-1 font-bold text-white">{event.address ? `${event.location}, ${event.address}` : event.location}</div>
+              {(event.address || event.location) && (
+                <HowToGetThere destination={event.address ? `${event.location}, ${event.address}` : event.location} />
+              )}
             </div>
           </div>
 
