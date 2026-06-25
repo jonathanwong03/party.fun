@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft, AtSign, Award, Download } from 'lucide-react';
+import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft, AtSign, Award, Download, GraduationCap, Lock } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Switch } from '../components/ui/switch';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { PRESET_AVATARS } from '../components/media';
+import { UNIVERSITIES, universityLabel } from '../components/universities';
 import type { Route } from '../components/types';
-import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, fetchLicense, openLicensePdf, type AdminLicense, type AuthUser } from '../api';
+import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, changeUniversityRequest, fetchLicense, openLicensePdf, type AdminLicense, type AuthUser } from '../api';
+
+// Sentinel for the "I'm not enrolled into a university" option (stored as NULL).
+const NOT_ENROLLED = 'none';
 
 export function Settings({
   user,
@@ -15,6 +20,7 @@ export function Settings({
   onChangeUsername,
   onChangeAvatar,
   onChangeContact,
+  onChangeUniversity,
   onDeleteAccount,
   theme,
   onToggleTheme,
@@ -24,6 +30,7 @@ export function Settings({
   onChangeUsername: (name: string) => void;
   onChangeAvatar: (url: string | null) => void;
   onChangeContact: (telegram: string | null, phone: string | null) => void;
+  onChangeUniversity: (university: string | null) => void;
   onDeleteAccount: () => Promise<void>;
   theme: 'dark' | 'light';
   onToggleTheme: () => void;
@@ -112,6 +119,32 @@ export function Settings({
       setContactError(err instanceof Error ? err.message : 'Unable to save contact details.');
     } finally {
       setContactBusy(false);
+    }
+  };
+
+  // University (one-time change, attendees only)
+  const canChangeUniversity = user?.role === 'user';
+  const universityUsed = !!user?.universityChanged;
+  const currentUni = user?.university ?? null; // null = "not enrolled"
+  const [uniChoice, setUniChoice] = useState<string>(currentUni ?? NOT_ENROLLED);
+  const [uniModal, setUniModal] = useState(false);
+  const [uniError, setUniError] = useState<string | null>(null);
+  const [uniSaved, setUniSaved] = useState(false);
+  const [uniBusy, setUniBusy] = useState(false);
+  const uniTarget = uniChoice === NOT_ENROLLED ? null : uniChoice;
+  const uniDirty = uniTarget !== currentUni;
+
+  const applyUniversity = async () => {
+    setUniError(null);
+    setUniBusy(true);
+    try {
+      await changeUniversityRequest(uniTarget);
+      onChangeUniversity(uniTarget);
+      setUniSaved(true);
+    } catch (err) {
+      setUniError(err instanceof Error ? err.message : 'Unable to change university.');
+    } finally {
+      setUniBusy(false);
     }
   };
 
@@ -318,6 +351,50 @@ export function Settings({
       </section>
       )}
 
+      {/* University (attendees only, one-time change) */}
+      {canChangeUniversity && (
+      <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <div className="mb-4 flex items-center gap-2">
+          <GraduationCap size={18} />
+          <h3>University</h3>
+        </div>
+        <p className="mb-4 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+          Determines which university-restricted events you can join. You can change this <strong>once only</strong>.
+        </p>
+
+        {universityUsed ? (
+          <div className="flex items-center gap-2 rounded-xl border p-4 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+            <Lock size={15} style={{ color: 'var(--muted-foreground)' }} />
+            <span>
+              <strong>{currentUni ? universityLabel(currentUni) : 'Not enrolled into a university'}</strong>
+              <span style={{ color: 'var(--muted-foreground)' }}> — you've used your one-time change.</span>
+            </span>
+          </div>
+        ) : (
+          <>
+            <Select value={uniChoice} onValueChange={(v) => { setUniChoice(v); setUniSaved(false); setUniError(null); }}>
+              <SelectTrigger style={{ background: 'var(--surface-2)', height: 44 }}><SelectValue placeholder="Select your university" /></SelectTrigger>
+              <SelectContent>
+                {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
+                <SelectItem value={NOT_ENROLLED}>I'm not enrolled into a university</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={() => setUniModal(true)}
+              disabled={!uniDirty || uniBusy}
+              className="mt-4 bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50"
+              style={{ borderRadius: 12, height: 44 }}
+            >
+              {uniBusy ? 'Saving…' : 'Change university'}
+            </Button>
+          </>
+        )}
+
+        {uniError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{uniError}</p>}
+        {uniSaved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>University updated.</p>}
+      </section>
+      )}
+
       {/* Appearance */}
       <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="mb-4 flex items-center gap-2">
@@ -368,6 +445,19 @@ export function Settings({
           confirmWord="CONFIRM"
           onCancel={() => setUsernameModal(false)}
           onConfirm={() => { setUsernameModal(false); applyUsername(); }}
+        />
+      )}
+
+      {uniModal && (
+        <DeleteEventModal
+          title="Change university?"
+          leadIn="You're about to set your university to"
+          eventName={uniTarget ? universityLabel(uniTarget) : 'Not enrolled into a university'}
+          warning="You can only change your university once. After this you won't be able to change it again."
+          actionLabel="Confirm change"
+          confirmWord="CONFIRM"
+          onCancel={() => setUniModal(false)}
+          onConfirm={() => { setUniModal(false); applyUniversity(); }}
         />
       )}
 

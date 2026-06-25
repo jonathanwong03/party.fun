@@ -1,11 +1,10 @@
-import { Calendar, MapPin } from 'lucide-react';
+import { Calendar } from 'lucide-react';
 import { Button } from './ui/button';
 import { HypeMeter } from './HypeMeter';
 import { StatusBadge } from './StatusBadge';
 import { getActiveStatus, type EventItem } from './types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from './media';
-import { formatEventLocation } from './eventDisplay';
 import { universityLabel } from './universities';
 
 export function EventCard({
@@ -20,7 +19,6 @@ export function EventCard({
   alreadyPurchased?: boolean;
 }) {
   const statusIndex = getActiveStatus(event);
-  const fullLocation = formatEventLocation(event);
   const hostUniversity = universityLabel(event.hostUniversity);
 
   return (
@@ -67,10 +65,7 @@ export function EventCard({
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-center justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
-            <span className="flex min-w-0 items-center gap-1"><MapPin size={12} /> <span className="truncate">{fullLocation}</span></span>
-          </div>
+          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap"><Calendar size={12} /> {event.date}</span>
           <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>${event.price}</span>
         </div>
 

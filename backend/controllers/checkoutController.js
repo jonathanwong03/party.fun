@@ -32,6 +32,7 @@ const PLEDGE_MESSAGES = {
   not_enough_tickets: 'Not enough tickets are available.',
   insufficient_funds: 'Not enough wallet balance — top up or pay by card.',
   no_card: 'Link a card before paying by card.',
+  university_restricted: 'This event is open to members of a specific university only.',
 };
 
 export async function getQuote(req, res) {
@@ -98,7 +99,7 @@ export async function postPledge(req, res) {
     if (method === 'card' && paymentIntentId) {
       try { await stripe().refunds.create({ payment_intent: paymentIntentId }); } catch { /* logged by Stripe dashboard */ }
     }
-    const status = result.error === 'not_found' ? 404 : result.error === 'insufficient_funds' ? 402 : 409;
+    const status = result.error === 'not_found' ? 404 : result.error === 'insufficient_funds' ? 402 : result.error === 'university_restricted' ? 403 : 409;
     res.status(status).json({
       status: result.error,
       message: PLEDGE_MESSAGES[result.error] ?? 'Unable to complete pledge.',

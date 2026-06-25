@@ -34,8 +34,10 @@ import {
 } from "../components/validation";
 import { DEFAULT_EVENT_IMAGE } from "../components/media";
 import { AddressPicker } from "../components/AddressPicker";
+import { Checkbox } from "../components/ui/checkbox";
+import { universityLabel } from "../components/universities";
 
-export function CreateEvent({ route, go, editId, events, onPublish, onCancel, onUpdate, onInvite, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; onPublish?: (e: EventItem) => void; onCancel?: (id: string, reason: string) => void; onUpdate?: (e: EventItem) => void; onInvite?: (eventId: string, identifier: string) => Promise<void>; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
+export function CreateEvent({ route, go, editId, events, hostUniversity, organiserName, onPublish, onCancel, onUpdate, onInvite, draftId, drafts, onSaveDraft, onDeleteDraft }: { route: Route; go: (r: Route) => void; editId?: string; events?: EventItem[]; hostUniversity?: string | null; organiserName?: string | null; onPublish?: (e: EventItem) => void; onCancel?: (id: string, reason: string) => void; onUpdate?: (e: EventItem) => void; onInvite?: (eventId: string, identifier: string) => Promise<void>; draftId?: string; drafts?: EventItem[]; onSaveDraft?: (e: EventItem) => void; onDeleteDraft?: (id: string) => void }) {
   const list = events ?? [];
   const existing = editId ? list.find((e) => e.id === editId) : undefined;
   const draftSource = draftId
@@ -46,10 +48,15 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
   const source = existing ?? draftSource;
 
   const [title, setTitle] = useState(source?.title ?? '');
-  const [organiser, setOrganiser] = useState(source?.organiser ?? '');
   const [description, setDescription] = useState(source?.description ?? '');
+  // The organiser shown on the event is just the host's username (no separate field).
+  const organiser = existing?.organiser ?? organiserName ?? '';
   const [venue, setVenue] = useState(source?.location ?? '');
   const [address, setAddress] = useState(source?.address ?? '');
+  // Restrict attendees to the host's own university. Resolved code: existing event's restriction,
+  // else the signed-in organiser's university (new events).
+  const restrictUni = (existing?.hostUniversity || hostUniversity || '').trim();
+  const [restrictToUniversity, setRestrictToUniversity] = useState(!!source?.restrictedUniversity);
   // A saved address was already validated, so editing isn't blocked; new events
   // stay invalid until a Singapore place (with a 6-digit postal code) is picked.
   const [addressValid, setAddressValid] = useState(!!source?.address);
@@ -135,7 +142,6 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
 
   const errs = {
     title: required(title),
-    organiser: required(organiser),
     description: required(description),
     date: dateError(date),
     start: timeError(start),
@@ -202,6 +208,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       spotsLeft: maxCapacity,
       status: "early_bird",
       deadline,
+      restrictToUniversity,
+      restrictedUniversity: restrictToUniversity ? restrictUni : "",
       statuses: [
         {
           statusName: "early_bird",
@@ -248,6 +256,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       spotsLeft: maxCapacity,
       status: "early_bird",
       deadline,
+      restrictToUniversity,
+      restrictedUniversity: restrictToUniversity ? restrictUni : "",
       statuses: [
         {
           statusName: "early_bird",
@@ -310,6 +320,8 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
       maxCapacity,
       hypeThreshold: ebQty,
       deadline,
+      restrictToUniversity,
+      restrictedUniversity: restrictToUniversity ? restrictUni : "",
       spotsLeft: Math.max(0, maxCapacity - existing.activeTicketCount),
       statuses,
     };
@@ -417,14 +429,6 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
                     onChange={(e) => setTitle(e.target.value)}
                     placeholder="Event title"
                     style={errStyle(errOf("title"))}
-                  />
-                </Field>
-                <Field label="Organiser" error={errOf("organiser")}>
-                  <Input
-                    value={organiser}
-                    onChange={(e) => setOrganiser(e.target.value)}
-                    placeholder="Organisation name"
-                    style={errStyle(errOf("organiser"))}
                   />
                 </Field>
                 <Field label="Description" error={errOf("description")}>
@@ -598,6 +602,21 @@ export function CreateEvent({ route, go, editId, events, onPublish, onCancel, on
                     />
                   </Field>{" "}
                 </div>
+                {restrictUni && (
+                  <label className="mt-2 flex cursor-pointer items-start gap-3 rounded-xl border p-4" style={{ borderColor: "var(--border)", background: "var(--surface-2)" }}>
+                    <Checkbox
+                      checked={restrictToUniversity}
+                      onCheckedChange={(v) => setRestrictToUniversity(v === true)}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      <span className="text-sm" style={{ fontWeight: 600 }}>Only allow {universityLabel(restrictUni)} members to attend</span>
+                      <span className="mt-0.5 block text-xs" style={{ color: "var(--muted-foreground)" }}>
+                        Only users who selected {universityLabel(restrictUni)} on their account can buy tickets.
+                      </span>
+                    </span>
+                  </label>
+                )}
               </Section>
 
               <Section title="Pricing statuses">

@@ -165,11 +165,16 @@ async function resolveFullAddress(
 ): Promise<string> {
   if (formattedAddress && hasStreetLevelAddress(formattedAddress)) return formattedAddress;
 
+  // A place searched purely by postal code has the 6-digit code as its `name`.
+  // Treat that as "no venue name" so the result is just "{street}, Singapore {postal}".
+  const rawName = place.name?.trim() ?? "";
+  const placeName = /^\d{6}$/.test(rawName) ? "" : rawName;
+
   const street = [component(place.address_components, "street_number"), component(place.address_components, "route")]
     .filter(Boolean)
     .join(" ");
   const postal = postalCode ? `Singapore ${postalCode}` : component(place.address_components, "country");
-  const localParts = [place.name, street, postal].filter((part, index, arr) => {
+  const localParts = [placeName, street, postal].filter((part, index, arr) => {
     const clean = String(part ?? "").trim();
     return clean && arr.findIndex((candidate) => String(candidate ?? "").trim().toLowerCase() === clean.toLowerCase()) === index;
   });
@@ -182,9 +187,8 @@ async function resolveFullAddress(
       const response = await geocoder.geocode({ location });
       const streetResult = response.results.find((result) => hasStreetLevelAddress(result.formatted_address));
       if (streetResult?.formatted_address) {
-        const name = place.name?.trim();
-        if (name && !streetResult.formatted_address.toLowerCase().includes(name.toLowerCase())) {
-          return `${name}, ${streetResult.formatted_address}`;
+        if (placeName && !streetResult.formatted_address.toLowerCase().includes(placeName.toLowerCase())) {
+          return `${placeName}, ${streetResult.formatted_address}`;
         }
         return streetResult.formatted_address;
       }

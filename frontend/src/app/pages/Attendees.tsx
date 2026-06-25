@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ChevronLeft, Mail, AtSign, Phone } from 'lucide-react';
+import { ChevronLeft, Mail } from 'lucide-react';
 import { type EventItem, type Route } from '../components/types';
 import { fetchAttendees, fetchAttendeeDetails, type Attendee, type AttendeeDetail } from '../api';
 
@@ -99,8 +99,8 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
                   <td className="px-4 py-3" style={{ color: 'var(--muted-foreground)' }}>
                     {a.socialLink || a.contact ? (
                       <div className="flex flex-col gap-1">
-                        {a.socialLink && <span className="inline-flex items-center gap-1.5"><AtSign size={13} /> {a.socialLink}</span>}
-                        {a.contact && <span className="inline-flex items-center gap-1.5"><Phone size={13} /> {a.contact}</span>}
+                        {a.socialLink && <span><span style={{ color: 'var(--foreground)', fontWeight: 600 }}>Telegram:</span> {a.socialLink}</span>}
+                        {a.contact && <span><span style={{ color: 'var(--foreground)', fontWeight: 600 }}>Phone:</span> {a.contact}</span>}
                       </div>
                     ) : '—'}
                   </td>

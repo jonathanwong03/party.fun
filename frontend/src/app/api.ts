@@ -87,6 +87,8 @@ export type AuthUser = {
   university?: string | null;
   memberType?: MemberType | null;
   orgId?: string | null;
+  // True once the user has used their one-time university change in Settings.
+  universityChanged?: boolean;
 };
 
 export type Attendee = {
@@ -154,7 +156,7 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
   if (!session) return null;
   const { data: profile, error } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId, universityChanged")
     .eq("id", session.user.id)
     .single();
   if (error || !profile) return null;
@@ -169,6 +171,7 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
     university: profile.university,
     memberType: profile.memberType,
     orgId: profile.orgId,
+    universityChanged: profile.universityChanged,
     onboarded: profile.onboarded,
   };
 }
@@ -179,11 +182,12 @@ export async function completeOauthSignupRequest(
   role: Role,
   username: string,
   org?: { university: string; memberType: MemberType; orgId: string },
+  userUniversity?: string | null,
 ): Promise<AuthUser> {
   const { data, error } = await supabase.rpc("complete_oauth_signup", {
     p_role: role,
     p_username: username.trim(),
-    p_university: org?.university ?? null,
+    p_university: org?.university ?? userUniversity ?? null,
     p_member_type: org?.memberType ?? null,
     p_org_id: org?.orgId?.trim() ?? null,
   });
@@ -231,7 +235,7 @@ export async function loginRequest(
 
   const { data: profile, error: profileError } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact, university, memberType, orgId")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, university, memberType, orgId, universityChanged")
     .eq("id", data.user.id)
     .single();
 
@@ -248,6 +252,7 @@ export async function loginRequest(
     university: profile.university,
     memberType: profile.memberType,
     orgId: profile.orgId,
+    universityChanged: profile.universityChanged,
   };
 }
 
@@ -330,6 +335,18 @@ export async function updateContactRequest(
     })
     .eq("id", userId);
   if (error) throw new Error(error.message);
+}
+
+// One-time university change (covers switching schools or going from "not enrolled" → a choice).
+// `university` is a code (e.g. 'SMU') or null for "not enrolled". Throws if already used.
+export async function changeUniversityRequest(university: string | null): Promise<void> {
+  const { data, error } = await supabase.rpc("change_my_university", { p_university: university });
+  if (error) throw new Error(error.message);
+  const result = data as { status?: string; error?: string };
+  if (result?.error === "already_changed") throw new Error("You've already used your one-time university change.");
+  if (result?.error === "invalid_university") throw new Error("Please choose a valid university.");
+  if (result?.error === "not_authenticated") throw new Error("Please log in again.");
+  if (result?.error) throw new Error("Could not update your university.");
 }
 
 // Permanently delete the signed-in user's account (blocked server-side if they host events).

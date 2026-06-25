@@ -10,6 +10,9 @@ import { memberIdError } from './RegisterOrganiser';
 import { UNIVERSITIES, universityLabel } from '../components/universities';
 import type { Role, Route } from '../components/types';
 
+// Sentinel for the "I'm not enrolled into a university" option (stored as NULL).
+const NOT_ENROLLED = 'none';
+
 // Shown to a brand-new Google user: pick a role + confirm a username, exactly once.
 // Organisers must also supply their university + matriculation/staff ID.
 export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin: (user: AuthUser) => void }) {
@@ -45,11 +48,14 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
       if (!memberType) { setError('Please choose Student, Instructor or Professor.'); return; }
       const idErr = memberIdError(memberType, orgId);
       if (idErr) { setError(`${idLabel}: ${idErr}`); return; }
+    } else if (!university) {
+      setError('Please choose your university (or "I\'m not enrolled").'); return;
     }
     setSubmitting(true);
     try {
       const org = role === 'organiser' ? { university, memberType: memberType as MemberType, orgId: orgId.trim() } : undefined;
-      const user = await completeOauthSignupRequest(role, username, org);
+      const userUniversity = role === 'user' ? (university === NOT_ENROLLED ? null : university) : undefined;
+      const user = await completeOauthSignupRequest(role, username, org, userUniversity);
       try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
       onLogin(user);
     } catch (err) {
@@ -70,6 +76,20 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
           <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Username</Label>
           <Input value={username} autoComplete="off" placeholder="Choose a username" onChange={(e) => setUsername(e.target.value)} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }} />
         </div>
+
+        {role === 'user' && (
+          <div>
+            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Which university are you from?</Label>
+            <Select value={university} onValueChange={setUniversity}>
+              <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select your university" /></SelectTrigger>
+              <SelectContent>
+                {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
+                <SelectItem value={NOT_ENROLLED}>I'm not enrolled into a university</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Used to access events restricted to a university's members. You can change this once later.</p>
+          </div>
+        )}
 
         {role === 'organiser' && (
           <>

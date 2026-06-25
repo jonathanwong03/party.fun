@@ -240,6 +240,7 @@ function AppShell() {
   const updateUsername = (name: string) => setUser((u) => (u ? { ...u, username: name } : u));
   const updateAvatar = (url: string | null) => setUser((u) => (u ? { ...u, avatarUrl: url } : u));
   const updateContact = (telegram: string | null, phone: string | null) => setUser((u) => (u ? { ...u, telegram, phone } : u));
+  const updateUniversity = (university: string | null) => setUser((u) => (u ? { ...u, university, universityChanged: true } : u));
   const [events, setEvents] = useState<EventItem[]>([]);
   const [profileTickets, setProfileTickets] = useState<ProfileTicket[]>([]);
   const [profileCounts, setProfileCounts] = useState<ProfileCounts>(EMPTY_COUNTS);
@@ -326,12 +327,12 @@ function AppShell() {
       if (session) {
         const { data: profile } = await supabase
           .from('USER')
-          .select('id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId')
+          .select('id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId, universityChanged')
           .eq('id', session.user.id)
           .single();
         if (profile && profile.onboarded) {
           setRole(profile.role as Role);
-          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact, university: profile.university, memberType: profile.memberType, orgId: profile.orgId });
+          setUser({ id: profile.id, username: profile.username, email: profile.email, role: profile.role as Role, avatarUrl: profile.avatarUrl, telegram: profile.socialLink, phone: profile.contact, university: profile.university, memberType: profile.memberType, orgId: profile.orgId, universityChanged: profile.universityChanged });
         } else if (profile && !profile.onboarded && location.pathname !== '/auth/callback') {
           // A signed-in OAuth user who never picked a role → resume finish-setup.
           navigate('/signup/finish', { replace: true });
@@ -516,12 +517,12 @@ function AppShell() {
         <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/pending-invites" element={role === 'organiser' ? <PendingInvites go={go} onChanged={refreshEvents} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/manage-events" element={role === 'admin' ? <AdminManageEvents go={go} events={events} onCancel={adminCancel} /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
+        <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onChangeUniversity={updateUniversity} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
         <BrowserRoute path="/wallet" element={role && role !== 'admin' ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/hosted-events" element={role === 'organiser' ? <OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} onPublish={addEvent} onSaveDraft={addDraft} />} />
-        <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} />} />
+        <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onPublish={addEvent} onSaveDraft={addDraft} />} />
+        <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
+        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} />} />
         <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
 
@@ -645,6 +646,8 @@ function EditEventRoute({
   activeRoute,
   go,
   events,
+  hostUniversity,
+  organiserName,
   onCancel,
   onUpdate,
   onInvite,
@@ -652,18 +655,22 @@ function EditEventRoute({
   activeRoute: Route;
   go: (r: Route) => void;
   events: EventItem[];
+  hostUniversity?: string | null;
+  organiserName?: string | null;
   onCancel: (id: string, reason: string) => void;
   onUpdate: (e: EventItem) => void;
   onInvite: (eventId: string, identifier: string) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
-  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} onCancel={onCancel} onUpdate={onUpdate} onInvite={onInvite} />;
+  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} hostUniversity={hostUniversity} organiserName={organiserName} onCancel={onCancel} onUpdate={onUpdate} onInvite={onInvite} />;
 }
 
 function ResumeDraftRoute({
   activeRoute,
   go,
   events,
+  hostUniversity,
+  organiserName,
   drafts,
   onPublish,
   onSaveDraft,
@@ -672,6 +679,8 @@ function ResumeDraftRoute({
   activeRoute: Route;
   go: (r: Route) => void;
   events: EventItem[];
+  hostUniversity?: string | null;
+  organiserName?: string | null;
   drafts: EventItem[];
   onPublish: (e: EventItem) => void;
   onSaveDraft: (e: EventItem) => void;
@@ -683,6 +692,8 @@ function ResumeDraftRoute({
       route={activeRoute}
       go={go}
       events={events}
+      hostUniversity={hostUniversity}
+      organiserName={organiserName}
       draftId={draftId}
       drafts={drafts}
       onPublish={onPublish}

@@ -42,6 +42,12 @@ export type EventItem = {
   title: string;
   organiser: string;
   hostUniversity?: string;
+  // University-restricted events: code (e.g. 'SMU') the attendee must belong to, '' / undefined = open.
+  restrictedUniversity?: string;
+  // Backend-computed per viewer: false when the signed-in user's university doesn't match the restriction.
+  canAttendUniversity?: boolean;
+  // Form-only flag sent to the create/update RPC to restrict to the host's own university.
+  restrictToUniversity?: boolean;
   date: string;
   time: string;
   location: string;

@@ -151,26 +151,30 @@ Before the demo, paste and run the full SQL script in `backend/scripts/demo_seed
 
 The script is rerunnable. It removes the previous demo data (identified by a fixed set of demo IDs, plus any legacy `[DEMO]`-titled rows) and recreates it, so non-demo data is left alone. When you have finished testing, run `backend/scripts/demo_cleanup.sql` in the Supabase SQL editor to remove every demo event and its data.
 
-All demo events use clean display names (for example, **Rooftop Mixer**). The table below maps each event to what it's for.
+All demo events use student-themed display names (for example, **Inter-Uni Welcome Bash**). The table below maps each event to what it's for.
 
 | Event | Host | Use it to demo |
 |---|---|---|
-| Block Party | partyfundemo | Co-host invite (pending → accept as organiser@smu) |
-| Rooftop Mixer | partyfundemo | **Editing** an owned event |
-| Empty Workshop | partyfundemo | **Deleting/cancelling** an owned event |
-| Greenlit Bash | partyfundemo | Ticket **check-in** (success) |
-| Arcade Night | partyfundemo | **Buying** tickets (as user@smu) |
-| Silent Disco | partyfundemo | **Giving away all** tickets, no refund (user@smu) |
-| Rooftop Snacks | partyfundemo | Pre-seeded "all given away" in user@smu's Cancelled tab |
-| Poolside Reset | partyfundemo | **Refund on cancellation** |
-| Study Break Social | organiser@smu | partyfundemo is already an accepted **co-organiser** |
-| Concourse Jam | organiser@smu | **Editing** an owned event |
-| Empty CCA Briefing | organiser@smu | **Deleting/cancelling** an owned event |
-| Door Drill | organiser@smu | Check-in (already-used error) |
-| Picnic Beats | organiser@smu | **Buying** tickets (as user2) |
-| Makers Night | organiser@smu | **Giving away all** tickets, no refund (user2) |
-| Wellness Social | organiser@smu | Pre-seeded "all given away" in user2's Cancelled tab |
-| No More Spots | organiser@smu | **Failed purchase** (full capacity) |
+| Inter-Uni Welcome Bash | partyfundemo | Co-host invite (pending → accept as organiser@smu) |
+| Founders & VC Networking Night | partyfundemo | **Editing** an owned event |
+| Resume & LinkedIn Clinic | partyfundemo | **Deleting/cancelling** an owned event |
+| Neon Rave: Semester Send-Off | partyfundemo | Ticket **check-in** (success) |
+| Retro Arcade & Esports Night | partyfundemo | **Buying** tickets (as user@smu) |
+| Rooftop Silent Disco | partyfundemo | **Giving away all** tickets, no refund (user@smu) |
+| Late-Night Supper Crawl | partyfundemo | Pre-seeded "all given away" in user@smu's Cancelled tab |
+| Wine Appreciation & Wind-Down | partyfundemo | **Refund on cancellation** |
+| Exam Study Break Social | organiser@smu | partyfundemo is already an accepted **co-organiser** |
+| Open Mic & Live Band Jam | organiser@smu | **Editing** an owned event |
+| Investment Club Info Session | organiser@smu | **Deleting/cancelling** an owned event |
+| Global Exposure: Exchange Fair | organiser@smu | Check-in (already-used error) |
+| Sunset Picnic & Chill Beats | organiser@smu | **Buying** tickets (as user2) |
+| Hackathon Makers Night | organiser@smu | **Giving away all** tickets, no refund (user2) |
+| Yoga & Mindfulness Sunset | organiser@smu | Pre-seeded "all given away" in user2's Cancelled tab |
+| Grad Ball: Black-Tie Gala | organiser@smu | **Failed purchase** (full capacity) |
+| SMU Founders' Circle (SMU only) | organiser@smu | **University-restricted**: user@smu (SMU) can join, user2 (NTU) is blocked |
+| SMU Alumni Mixer (SMU only) | organiser@smu | **University-restricted** (alumni): user@smu (SMU) can join, user2 (NTU) is blocked |
+
+> Demo attendee universities are seeded as `user@smu.edu.sg` → **SMU** and `user2@smu.edu.sg` → **NTU**, and both organisers are **SMU**.
 
 After seeding, start both servers:
 
@@ -190,7 +194,7 @@ Open `http://localhost:5173`.
 
 1. Log out or open the site in a fresh browser session.
 2. Go to All Events.
-3. Open any demo event (for example, `Rooftop Mixer`).
+3. Open any demo event (for example, `Founders & VC Networking Night`).
 4. Point out that guests can view events and the hype meter, but must log in before buying tickets.
 
 ### 2. User purchase flow
@@ -199,7 +203,7 @@ Use `user@smu.edu.sg`.
 
 1. Log in as `user@smu.edu.sg`.
 2. Go to All Events.
-3. Open `Arcade Night`.
+3. Open `Retro Arcade & Esports Night`.
 4. Buy or pledge 1 ticket.
 5. Confirm that the event now appears in Joined Events.
 6. Return to All Events and open the same event again.
@@ -208,7 +212,7 @@ Use `user@smu.edu.sg`.
 Use `user2@smu.edu.sg` for the second purchase scenario:
 
 1. Log in as `user2@smu.edu.sg`.
-2. Open `Picnic Beats`.
+2. Open `Sunset Picnic & Chill Beats`.
 3. Buy or pledge 1 ticket.
 4. Confirm it appears in Joined Events.
 
@@ -217,7 +221,7 @@ Use `user2@smu.edu.sg` for the second purchase scenario:
 Use `user@smu.edu.sg`.
 
 1. Go to Joined Events.
-2. Open `Silent Disco`.
+2. Open `Rooftop Silent Disco`.
 3. Use the give-away control to give away every active ticket.
 4. Confirm the app warns that giving away tickets is final and not refunded.
 5. Return to Joined Events.
@@ -226,14 +230,14 @@ Use `user@smu.edu.sg`.
 Use `user2@smu.edu.sg` for the second give-away scenario:
 
 1. Go to Joined Events.
-2. Open `Makers Night`.
+2. Open `Hackathon Makers Night`.
 3. Give away every active ticket.
 4. Confirm it moves to Cancelled.
 
 You can also show pre-seeded cancelled history:
 
-- `user@smu.edu.sg`: `Rooftop Snacks`
-- `user2@smu.edu.sg`: `Wellness Social`
+- `user@smu.edu.sg`: `Late-Night Supper Crawl`
+- `user2@smu.edu.sg`: `Yoga & Mindfulness Sunset`
 
 ### 4. Organiser creates a new event
 
@@ -257,27 +261,27 @@ My Pop-up Event
 Use `partyfundemo@gmail.com`.
 
 1. Open Hosted Events.
-2. Edit `Rooftop Mixer`.
+2. Edit `Founders & VC Networking Night`.
 3. Change the title, location, description, or prices.
 4. Save changes.
 5. Open the event detail page and confirm the changes are visible.
 
 Use `organiser@smu.edu.sg` for the second edit example:
 
-- `Concourse Jam`
+- `Open Mic & Live Band Jam`
 
 ### 6. Organiser deletes or cancels an owned event
 
 Use `partyfundemo@gmail.com`.
 
 1. Open Hosted Events.
-2. Find `Empty Workshop`.
+2. Find `Resume & LinkedIn Clinic`.
 3. Use the destructive action shown by the app.
 4. Confirm the modal and complete the action.
 
 Use `organiser@smu.edu.sg` for the second example:
 
-- `Empty CCA Briefing`
+- `Investment Club Info Session`
 
 These events are intentionally empty so the demo does not disrupt seeded ticket scenarios.
 
@@ -289,9 +293,9 @@ Use `organiser@smu.edu.sg`.
 
 1. Log in as `organiser@smu.edu.sg`.
 2. Open Pending Invites.
-3. Accept the invite for `Block Party`.
+3. Accept the invite for `Inter-Uni Welcome Bash`.
 4. Go to Hosted Events.
-5. Confirm `Block Party` appears with a Co-organiser label.
+5. Confirm `Inter-Uni Welcome Bash` appears with a Co-organiser label.
 6. Edit the event details and save.
 7. Confirm Cancel/Delete/Remove controls are not shown for this co-organised event.
 
@@ -299,12 +303,12 @@ Use `partyfundemo@gmail.com` to show an already accepted co-organiser event:
 
 1. Log in as `partyfundemo@gmail.com`.
 2. Go to Hosted Events.
-3. Confirm `Study Break Social` appears with a Co-organiser label.
+3. Confirm `Exam Study Break Social` appears with a Co-organiser label.
 4. Confirm it can be edited, but cannot be cancelled or deleted by the co-organiser.
 
 Declined invite example:
 
-- `Poolside Reset` has a declined invite seeded for `organiser@smu.edu.sg`.
+- `Wine Appreciation & Wind-Down` has a declined invite seeded for `organiser@smu.edu.sg`.
 - It should not appear as a manageable co-organised event for that account.
 
 ### 8. Owner invites another organiser
@@ -312,7 +316,7 @@ Declined invite example:
 Use `partyfundemo@gmail.com`.
 
 1. Open Hosted Events.
-2. Edit any owned event, for example `Rooftop Mixer`.
+2. Edit any owned event, for example `Founders & VC Networking Night`.
 3. In the Co-organisers section, enter `organiser@smu.edu.sg`.
 4. Send the invite.
 5. Log in as `organiser@smu.edu.sg`.
@@ -325,7 +329,7 @@ Only organiser accounts can be invited. User accounts such as `user@smu.edu.sg` 
 Use `partyfundemo@gmail.com`.
 
 1. Go to Tickets.
-2. Select `Greenlit Bash`.
+2. Select `Neon Rave: Semester Send-Off`.
 3. Manually enter this ticket code:
 
 ```text
@@ -339,7 +343,7 @@ PF-DEMO-PFD-04-01
 Use `organiser@smu.edu.sg` for an already-used ticket example:
 
 1. Go to Tickets.
-2. Select `Door Drill`.
+2. Select `Global Exposure: Exchange Fair`.
 3. Manually enter:
 
 ```text
@@ -348,7 +352,17 @@ PF-DEMO-SMU-04-01
 
 4. Confirm the app shows that the ticket was already checked in.
 
-After `organiser@smu.edu.sg` accepts the co-organiser invite for `Block Party`, they can also check in tickets for that event.
+After `organiser@smu.edu.sg` accepts the co-organiser invite for `Inter-Uni Welcome Bash`, they can also check in tickets for that event.
+
+**Check in by scanning a QR code** (instead of typing the code):
+
+1. Still on Tickets, select the event (e.g. `Neon Rave: Semester Send-Off`).
+2. Click **Scan with camera** and allow camera access.
+3. Point the camera at the attendee's ticket QR — each ticket in the emailed ticket PDF carries one,
+   and the booking QR checks in all of that booking's remaining tickets. The app checks in
+   automatically on a successful read.
+4. For a quick self-contained demo without the PDF, generate a QR image from a seeded code such as
+   `PF-DEMO-PFD-04-01` (any online QR generator) and scan that. Manual code entry remains as a fallback.
 
 ### 10. Attendee/contact visibility
 
@@ -365,7 +379,7 @@ Use an organiser account.
 Use `user@smu.edu.sg`.
 
 1. Go to All Events.
-2. Open `No More Spots`.
+2. Open `Grad Ball: Black-Tie Gala`.
 3. Try to buy a ticket.
 4. Confirm the app blocks the purchase because there are not enough tickets available.
 
@@ -374,13 +388,26 @@ Use `user@smu.edu.sg`.
 Use `partyfundemo@gmail.com`.
 
 1. Open Hosted Events.
-2. Find `Poolside Reset`.
+2. Find `Wine Appreciation & Wind-Down`.
 3. Cancel the event with a reason.
 4. Explain that wallet-paid active tickets are refunded to the buyer's wallet by the database RPC.
 5. Log in as `user@smu.edu.sg`.
 6. Check Wallet / Joined Events to confirm the cancellation/refund behavior.
 
-### 13. Admin moderation, if showing admin mode
+### 13. University-restricted events
+
+Eligibility is the university each account picked at registration (seeded: `user@smu.edu.sg` → SMU,
+`user2@smu.edu.sg` → NTU). An event restricted to a university only admits its members.
+
+1. Log in as `user@smu.edu.sg` (SMU).
+2. Open `SMU Founders' Circle (SMU only)` and `SMU Alumni Mixer (SMU only)` and confirm you **can** pledge/buy both.
+3. Log in as `user2@smu.edu.sg` (NTU).
+4. Open either SMU-restricted event and confirm the buy card is **blocked** (red "SMU members only").
+5. (Organiser side) As an organiser, Create/Edit an event and tick **"Only allow {your university}
+   members to attend"** in the Location section — it restricts the event to your own university.
+6. (Optional) In Settings, a user can change their university **once**; after that the control locks.
+
+### 14. Admin moderation, if showing admin mode
 
 Use an admin account if one has been seeded with `backend/scripts/seedAdmins.js`.
 
@@ -401,9 +428,10 @@ For the cleanest presentation, use this sequence:
 6. Organiser delete/cancel empty event
 7. Co-organiser accept invite
 8. Co-organiser edit/check-in but cannot cancel/delete
-9. Ticket check-in and already-used ticket
+9. Ticket check-in and already-used ticket (manual code + QR camera scan)
 10. Failed purchase due to full capacity
 11. Refund on organiser cancellation
+12. University-restricted events (member can join, non-member blocked)
 
 ## Current behavior
 

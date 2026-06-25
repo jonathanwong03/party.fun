@@ -44,15 +44,19 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
   const fullLocation = formatEventLocation(event);
   const hostUniversity = universityLabel(event.hostUniversity);
+  // University-restricted events: block the buy card when the signed-in viewer isn't a member.
+  // Show the short code (e.g. "SMU members only") so the notice fits.
+  const restrictedUniCode = event.restrictedUniversity ?? '';
+  const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
       <button
-        onClick={() => go({ name: 'landing' })}
+        onClick={() => go(fromOrganiser ? { name: 'hosted-events' } : { name: 'landing' })}
         className="mb-4 inline-flex items-center gap-1 text-sm transition hover:text-foreground"
         style={{ color: 'var(--muted-foreground)' }}
       >
-        <ChevronLeft size={14} /> Back to events
+        <ChevronLeft size={14} /> {fromOrganiser ? 'Back to hosted events' : 'Back to events'}
       </button>
 
       {/* banner */}
@@ -67,6 +71,11 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             </h1>
             <p className="mt-2 text-white/85" style={{ fontSize: 17, fontWeight: 700 }}>Hosted by {event.organiser}</p>
             {hostUniversity && <p className="mt-1 text-white/80" style={{ fontSize: 16, fontWeight: 600 }}>{hostUniversity}</p>}
+            {restrictedUniCode && (
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: '#ff6b85', fontWeight: 700 }}>
+                <Shield size={12} /> {restrictedUniCode} members only
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -93,7 +102,9 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <MapPin size={13} /> Location
               </div>
-              <div className="mt-1 font-bold text-white">{fullLocation}</div>
+              {event.location && <div className="mt-1 font-bold text-white">{event.location}</div>}
+              {event.address && <div className={`${event.location ? '' : 'mt-1 '}font-bold text-white`}>{event.address}</div>}
+              {!event.location && !event.address && <div className="mt-1 font-bold text-white">{fullLocation}</div>}
               {fullLocation && (
                 <HowToGetThere destination={fullLocation} />
               )}
@@ -260,7 +271,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             </div>
             {event.status !== 'greenlit' && <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>}
 
-            {!alreadyPurchased && !unavailable && (
+            {!alreadyPurchased && !unavailable && !universityBlocked && (
               <div className="mt-4">
                 <div className="flex items-center justify-between">
                   <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Quantity</span>
@@ -291,6 +302,14 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                 style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
               >
                 Event unavailable
+              </Button>
+            ) : universityBlocked ? (
+              <Button
+                disabled
+                className="w-full disabled:opacity-100"
+                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 15, fontWeight: 700 }}
+              >
+                {restrictedUniCode} members only
               </Button>
             ) : (
               <Button

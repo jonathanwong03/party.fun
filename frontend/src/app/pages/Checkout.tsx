@@ -15,11 +15,18 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   const [method, setMethod] = useState<'wallet' | 'card'>('wallet');
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  // Don't surface "Link a card" / "Not enough balance" until the wallet has actually loaded,
+  // otherwise the default-empty state flashes for ~0.5s before fetchWallet resolves.
+  const [walletLoaded, setWalletLoaded] = useState(false);
 
   useEffect(() => {
     let ignore = false;
+    setWalletLoaded(false);
     fetchQuote(role, id, qty).then((q) => { if (!ignore) setQuote(q); }).catch(() => { if (!ignore) setQuote(null); });
-    fetchWallet().then((w) => { if (!ignore) setWallet(w); }).catch(() => { if (!ignore) setWallet(null); });
+    fetchWallet()
+      .then((w) => { if (!ignore) setWallet(w); })
+      .catch(() => { if (!ignore) setWallet(null); })
+      .finally(() => { if (!ignore) setWalletLoaded(true); });
     return () => { ignore = true; };
   }, [role, id, qty]);
 
@@ -35,7 +42,9 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   const balance = wallet?.balance ?? 0;
   const hasCard = !!wallet?.card;
   const walletShort = balance < total;
-  const canPay = method === 'wallet' ? !walletShort : hasCard;
+  // University-restricted event the signed-in user can't attend — block the pledge (server enforces too).
+  const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
+  const canPay = !universityBlocked && (method === 'wallet' ? !walletShort : hasCard);
 
   const handleConfirm = async () => {
     setSubmitError(null);
@@ -71,10 +80,10 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 onClick={() => setMethod('wallet')}
                 icon={<WalletIcon size={18} />}
                 title="In-app wallet"
-                subtitle={`Balance: $${balance.toFixed(2)}`}
-                warn={walletShort ? 'Not enough balance' : null}
+                subtitle={walletLoaded ? `Balance: $${balance.toFixed(2)}` : 'Checking…'}
+                warn={walletLoaded && walletShort ? 'Not enough balance' : null}
               />
-              {method === 'wallet' && walletShort && (
+              {method === 'wallet' && walletLoaded && walletShort && (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
                   Your wallet is short by ${(total - balance).toFixed(2)}.{' '}
                   <button onClick={() => go({ name: 'wallet' })} className="underline" style={{ fontWeight: 700 }}>Top up</button> or pay by card.
@@ -86,10 +95,10 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 onClick={() => setMethod('card')}
                 icon={<CreditCard size={18} />}
                 title="Debit / credit card"
-                subtitle={hasCard ? `${wallet!.card!.brand ?? 'Card'} •••• ${wallet!.card!.last4}` : 'No card linked'}
-                warn={!hasCard ? 'Link a card' : null}
+                subtitle={hasCard ? `${wallet!.card!.brand ?? 'Card'} •••• ${wallet!.card!.last4}` : walletLoaded ? 'No card linked' : 'Checking…'}
+                warn={walletLoaded && !hasCard ? 'Link a card' : null}
               />
-              {method === 'card' && !hasCard && (
+              {method === 'card' && walletLoaded && !hasCard && (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,203,60,0.10)', border: '1px solid rgba(255,203,60,0.35)', color: '#ffd968' }}>
                   You haven't linked a card.{' '}
                   <button onClick={() => go({ name: 'wallet' })} className="underline" style={{ fontWeight: 700 }}>Link a card</button> in your wallet first.
@@ -128,8 +137,14 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.totalText : '—'}</span>
               </div>
 
+              {universityBlocked && (
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.4)', color: '#ff6b85' }}>
+                  This event is open to {event.restrictedUniversity} members only.
+                </div>
+              )}
+
               <Button onClick={handleConfirm} disabled={submitting || !canPay || !quote} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647] disabled:opacity-50" style={{ borderRadius: 12, height: 48 }}>
-                {submitting ? 'Processing…' : method === 'wallet' ? 'Pay with wallet' : 'Pay with card'}
+                {submitting ? 'Processing…' : universityBlocked ? `${event.restrictedUniversity} members only` : method === 'wallet' ? 'Pay with wallet' : 'Pay with card'}
               </Button>
 
               {submitError && (
