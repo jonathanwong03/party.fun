@@ -1,4 +1,4 @@
-import { Home, Search, Ticket, User } from 'lucide-react';
+import { Home, Search, Ticket, User, LayoutDashboard, Settings as SettingsIcon } from 'lucide-react';
 import type { Role, Route } from './types';
 
 export function MobileNav({
@@ -10,7 +10,12 @@ export function MobileNav({
   route: Route;
   go: (r: Route) => void;
 }) {
-  const items = [
+  const items = role === 'admin' ? [
+    { icon: Home, label: 'Events', target: { name: 'landing' } as Route, active: route.name === 'landing' },
+    { icon: LayoutDashboard, label: 'Manage', target: { name: 'manage-events' } as Route, active: route.name === 'manage-events' },
+    { icon: Ticket, label: 'Check-in', target: { name: 'tickets' } as Route, active: route.name === 'tickets' },
+    { icon: SettingsIcon, label: 'Settings', target: { name: 'settings' } as Route, active: route.name === 'settings' },
+  ] : [
     { icon: Home, label: 'Home', target: { name: 'landing' } as Route, active: route.name === 'landing' },
     { icon: Search, label: 'Search', target: { name: 'landing' } as Route, active: false },
     { icon: Ticket, label: 'My Tickets', target: { name: 'joined-events' } as Route, active: route.name === 'joined-events' },

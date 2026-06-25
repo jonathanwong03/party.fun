@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useRef } from 'react';
-import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign, ChevronDown } from 'lucide-react';
+import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { getActiveStatus, type EventItem, type Route } from '../components/types';
@@ -40,8 +40,8 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
   const [statusFilter, setStatusFilter] = useState<'all' | EventItem['status']>('all');
 
   const isDrafts = tab === 'drafts';
-  // The dashboard is for events the organiser created themselves (mine), excluding ones they've hidden.
-  const created = events.filter((e) => e.mine && !e.hostHidden);
+  // The dashboard includes owned events plus accepted co-organised events.
+  const created = events.filter((e) => (e.mine || e.isCoOrganiser) && !e.hostHidden);
   const filteredCreated = statusFilter === 'all' ? created : created.filter((e) => e.status === statusFilter);
   const rows = isDrafts ? drafts : filteredCreated;
   const target = [...events, ...drafts].find((e) => e.id === deleting);
@@ -109,7 +109,16 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
           {/* Status filter (created events only) */}
           {!isDrafts && (
             <div className="mb-5">
-              <FilterDropdown value={statusFilter} onChange={setStatusFilter} />
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as 'all' | EventItem['status'])}>
+                <SelectTrigger className="w-full md:w-52" style={{ background: 'var(--surface-2)' }}>
+                  <SelectValue placeholder="Filter" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_FILTERS.map((f) => (
+                    <SelectItem key={f.key} value={f.key}>{f.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           )}
 
@@ -146,7 +155,14 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                     <tr key={e.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
                       <td className="px-3 py-3">
                         <div style={{ fontWeight: 600 }}>{e.title}</div>
-                        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.organiser || (isDrafts ? 'Draft event' : '')}</div>
+                        <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                          <span>{e.organiser || (isDrafts ? 'Draft event' : '')}</span>
+                          {!isDrafts && e.isCoOrganiser && (
+                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c', fontWeight: 700 }}>
+                              Co-organiser
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-3 py-4" style={{ color: 'var(--muted-foreground)' }}>{e.date || '—'}</td>
                       <td className="px-3 py-4">
@@ -181,10 +197,10 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                           ) : (
                             <>
                               <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
-                              <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>
-                              {e.status === 'cancelled' ? (
+                              {(e.canEdit ?? e.mine) && <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>}
+                              {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
                                 <IconBtn label="Remove" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
-                              ) : (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
+                              ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
                                 <IconBtn label="Cancel" danger onClick={() => { setReason(''); setDeleting(e.id); }}><Ban size={14} /></IconBtn>
                               ) : null}
                             </>
@@ -271,45 +287,5 @@ function IconBtn({ children, onClick, label, danger }: { children: React.ReactNo
     >
       {children}
     </button>
-  );
-}
-
-// Status filter as a dropdown (styled to match the app's pickers).
-function FilterDropdown({ value, onChange }: { value: 'all' | EventItem['status']; onChange: (v: 'all' | EventItem['status']) => void }) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-  const current = STATUS_FILTERS.find((f) => f.key === value) ?? STATUS_FILTERS[0];
-  useEffect(() => {
-    const onDoc = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
-  }, []);
-  return (
-    <div ref={ref} className="relative" style={{ width: 210 }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between rounded-lg border px-3 text-sm transition hover:bg-white/5"
-        style={{ height: 40, background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
-      >
-        <span style={{ fontWeight: 600 }}>{current.label}</span>
-        <ChevronDown size={16} style={{ color: 'var(--muted-foreground)' }} />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-2 w-full overflow-hidden rounded-lg border shadow-lg" style={{ background: 'var(--surface)', borderColor: 'var(--border-strong)' }}>
-          {STATUS_FILTERS.map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => { onChange(f.key); setOpen(false); }}
-              className="block w-full px-3 py-2 text-left text-sm transition hover:bg-white/5"
-              style={{ color: f.key === value ? '#ff4d2e' : 'var(--foreground)', fontWeight: f.key === value ? 700 : 500 }}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
   );
 }

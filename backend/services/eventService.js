@@ -34,6 +34,7 @@ function mapRow(row, userId) {
     hostId: row.hostId,
     title: row.title ?? '',
     organiser: row.organiser_name ?? 'Unknown',
+    hostUniversity: row.host_university ?? '',
     date: row.startDate ? sgDate(row.startDate, { weekday: 'short', month: 'short', day: 'numeric' }) : '',
     time: row.startDate ? sgDate(row.startDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
     endTime: row.endDate ? sgDate(row.endDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
@@ -47,6 +48,7 @@ function mapRow(row, userId) {
     endLong: row.endDate ? sgLong(row.endDate) : '',
     endClock: row.endDate ? sgClock(row.endDate) : '',
     location: row.location ?? '',
+    address: row.address ?? '',
     description: row.description ?? '',
     image: row.imageUrl ?? '',
     price: current?.price ?? 0,
@@ -76,6 +78,12 @@ function mapRow(row, userId) {
     hypeDrivenPricing: Boolean(row.hypeDrivenPricing ?? row.hype_driven_pricing),
     basePrice: row.basePrice ?? row.base_price ?? null,
     maxPrice: row.maxPrice ?? row.max_price ?? null,
+    isCoOrganiser: !!row.isCoOrganiser,
+    canEdit: !!row.canEdit,
+    canCheckIn: !!row.canCheckIn,
+    canViewAttendees: !!row.canViewAttendees,
+    canCancel: !!row.canCancel,
+    canDelete: !!row.canDelete,
   };
 }
 
@@ -202,7 +210,7 @@ export async function getHostedSummary(sb, userId) {
   const [revRes, events] = await Promise.all([sb.rpc('get_hosted_revenue'), listEvents(sb, userId)]);
   if (revRes.error) throw new Error(revRes.error.message);
   const rev = revRes.data ?? { events: [], totalRevenue: 0 };
-  const mine = events.filter((e) => e.hostId === userId);
+  const mine = events.filter((e) => e.hostId === userId || e.isCoOrganiser);
   const revenueByEvent = {};
   for (const r of rev.events ?? []) revenueByEvent[r.eventId] = Number(r.revenue);
   return {
@@ -216,9 +224,23 @@ export async function getHostedSummary(sb, userId) {
 
 // Public attendee list: name, username, avatarUrl of users with active tickets.
 export async function getEventAttendees(sb, eventId) {
-  const { data, error } = await sb.rpc('get_event_attendees', { p_event_id: eventId });
+  const [{ data, error }, event] = await Promise.all([
+    sb.rpc('get_event_attendees', { p_event_id: eventId }),
+    getEvent(sb, eventId, null),
+  ]);
   if (error) throw new Error(error.message);
-  return data ?? [];
+  const real = data ?? [];
+  const target = Math.max(real.length, Number(event?.activeTicketCount ?? 0));
+  if (real.length >= target) return real;
+  const synthetic = Array.from({ length: target - real.length }, (_, index) => {
+    const n = real.length + index + 1;
+    return {
+      name: `Guest ${n}`,
+      username: `Guest ${n}`,
+      avatarUrl: null,
+    };
+  });
+  return real.concat(synthetic);
 }
 
 // Host-only attendee list with contact details. The RPC raises (errcode 42501)
@@ -253,8 +275,9 @@ export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wa
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
-  // Surface the persisted booking reference + charged amount for the confirmation page.
-  return { ...result, reference: data?.reference, amount: data?.amount };
+  // Surface the booking reference + charged amount for the confirmation page, plus the
+  // booking id/QR token and whether this pledge just greenlit the event (for emails).
+  return { ...result, reference: data?.reference, amount: data?.amount, bookingId: data?.bookingId, qrToken: data?.qrToken, greenlitNow: data?.greenlitNow };
 }
 
 async function eventIdForBooking(sb, bookingId) {
@@ -357,6 +380,30 @@ export async function hideEvent(sb, eventId) {
   return { status: 'ok' };
 }
 
+export async function listCoOrganiserInvites(sb) {
+  const { data, error } = await sb.rpc('get_coorganiser_invites');
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+export async function inviteCoOrganiser(sb, eventId, identifier) {
+  const { data, error } = await sb.rpc('invite_coorganiser', {
+    p_event_id: eventId,
+    p_identifier: identifier,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
+export async function respondCoOrganiserInvite(sb, inviteId, action) {
+  const { data, error } = await sb.rpc('respond_coorganiser_invite', {
+    p_invite_id: inviteId,
+    p_action: action,
+  });
+  if (error) throw new Error(error.message);
+  return data;
+}
+
 function eventRpcArgs(e) {
   const statuses = Array.isArray(e.statuses) ? e.statuses : [];
   const eb = statuses.find((s) => s.statusName === 'early_bird');
@@ -365,6 +412,7 @@ function eventRpcArgs(e) {
     p_title: e.title,
     p_description: e.description,
     p_location: e.location,
+    p_address: e.address ?? '',
     p_start_date: e.startsAt,
     p_end_date: e.endsAt,
     p_image_url: e.image ?? '',

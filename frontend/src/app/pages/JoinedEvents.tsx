@@ -8,6 +8,7 @@ import { getActiveStatus, type Route, type EventItem } from '../components/types
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import type { ProfileTicket, ProfileCounts } from '../api';
+import { formatEventLocation } from '../components/eventDisplay';
 
 type Tab = 'upcoming' | 'past' | 'cancelled';
 type Row = ProfileTicket & { event: EventItem };
@@ -88,7 +89,7 @@ export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (r
                   </div>
                   <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                     <span className="flex items-center gap-1"><Calendar size={12} /> {booking.event.date}</span>
-                    <span className="flex items-center gap-1"><MapPin size={12} /> {booking.event.location.split(',')[0]}</span>
+                    <span className="flex items-center gap-1"><MapPin size={12} /> {formatEventLocation(booking.event)}</span>
                     {!isCancelled && <span>Tickets pledged: {booking.activeTicketCount}</span>}
                   </div>
                   <div className="mt-3 max-w-md">

@@ -130,10 +130,280 @@ npm run build
 
 ## Demo accounts
 
-- User: `user@smu.edu.sg` / `user123`
-- Organiser: `organiser@smu.edu.sg` / `organiser123`
+Use these accounts for the scripted demo:
+
+| Purpose | Email | Password |
+|---|---|---|
+| Primary organiser | `partyfundemo@gmail.com` | use the password set in Supabase Auth |
+| Secondary organiser / co-organiser | `organiser@smu.edu.sg` | `organiser123` |
+| Primary user | `user@smu.edu.sg` | `user123` |
+| Secondary user | `user2@smu.edu.sg` | use the password set in Supabase Auth |
 
 These are real Supabase Auth accounts. Sessions persist, so refreshing keeps the user signed in. New signups create an `auth.users` row, and a Postgres trigger (`handle_new_user`) inserts the matching `USER` profile row.
+
+## Full demo runbook
+
+This section is the recommended end-to-end walkthrough for a live demo. It assumes the Supabase migration in `backend/migrations/20260623_coorganisers.sql` has already been applied.
+
+### 0. Reset the demo data
+
+Before the demo, paste and run the full SQL script in `backend/scripts/demo_seed.sql` in the Supabase SQL editor.
+
+The script is rerunnable. It removes the previous demo data (identified by a fixed set of demo IDs, plus any legacy `[DEMO]`-titled rows) and recreates it, so non-demo data is left alone. When you have finished testing, run `backend/scripts/demo_cleanup.sql` in the Supabase SQL editor to remove every demo event and its data.
+
+All demo events use clean display names (for example, **Rooftop Mixer**). The table below maps each event to what it's for.
+
+| Event | Host | Use it to demo |
+|---|---|---|
+| Block Party | partyfundemo | Co-host invite (pending → accept as organiser@smu) |
+| Rooftop Mixer | partyfundemo | **Editing** an owned event |
+| Empty Workshop | partyfundemo | **Deleting/cancelling** an owned event |
+| Greenlit Bash | partyfundemo | Ticket **check-in** (success) |
+| Arcade Night | partyfundemo | **Buying** tickets (as user@smu) |
+| Silent Disco | partyfundemo | **Giving away all** tickets, no refund (user@smu) |
+| Rooftop Snacks | partyfundemo | Pre-seeded "all given away" in user@smu's Cancelled tab |
+| Poolside Reset | partyfundemo | **Refund on cancellation** |
+| Study Break Social | organiser@smu | partyfundemo is already an accepted **co-organiser** |
+| Concourse Jam | organiser@smu | **Editing** an owned event |
+| Empty CCA Briefing | organiser@smu | **Deleting/cancelling** an owned event |
+| Door Drill | organiser@smu | Check-in (already-used error) |
+| Picnic Beats | organiser@smu | **Buying** tickets (as user2) |
+| Makers Night | organiser@smu | **Giving away all** tickets, no refund (user2) |
+| Wellness Social | organiser@smu | Pre-seeded "all given away" in user2's Cancelled tab |
+| No More Spots | organiser@smu | **Failed purchase** (full capacity) |
+
+After seeding, start both servers:
+
+```powershell
+cd "C:\smu heap\party.fun\backend"
+npm run dev
+```
+
+```powershell
+cd "C:\smu heap\party.fun\frontend"
+npm run dev
+```
+
+Open `http://localhost:5173`.
+
+### 1. Guest browsing
+
+1. Log out or open the site in a fresh browser session.
+2. Go to All Events.
+3. Open any demo event (for example, `Rooftop Mixer`).
+4. Point out that guests can view events and the hype meter, but must log in before buying tickets.
+
+### 2. User purchase flow
+
+Use `user@smu.edu.sg`.
+
+1. Log in as `user@smu.edu.sg`.
+2. Go to All Events.
+3. Open `Arcade Night`.
+4. Buy or pledge 1 ticket.
+5. Confirm that the event now appears in Joined Events.
+6. Return to All Events and open the same event again.
+7. Confirm the UI blocks another purchase while the user still has active tickets for that event.
+
+Use `user2@smu.edu.sg` for the second purchase scenario:
+
+1. Log in as `user2@smu.edu.sg`.
+2. Open `Picnic Beats`.
+3. Buy or pledge 1 ticket.
+4. Confirm it appears in Joined Events.
+
+### 3. Give away all tickets, no refund
+
+Use `user@smu.edu.sg`.
+
+1. Go to Joined Events.
+2. Open `Silent Disco`.
+3. Use the give-away control to give away every active ticket.
+4. Confirm the app warns that giving away tickets is final and not refunded.
+5. Return to Joined Events.
+6. Confirm the event moved from Upcoming to Cancelled.
+
+Use `user2@smu.edu.sg` for the second give-away scenario:
+
+1. Go to Joined Events.
+2. Open `Makers Night`.
+3. Give away every active ticket.
+4. Confirm it moves to Cancelled.
+
+You can also show pre-seeded cancelled history:
+
+- `user@smu.edu.sg`: `Rooftop Snacks`
+- `user2@smu.edu.sg`: `Wellness Social`
+
+### 4. Organiser creates a new event
+
+Use `partyfundemo@gmail.com` or `organiser@smu.edu.sg`.
+
+1. Log in as an organiser.
+2. Open Hosted Events.
+3. Click Create New Event.
+4. Fill in title, organiser name, description, schedule, location, Early Birds price/quantity, Greenlit price/quantity, and deadline.
+5. Publish the event.
+6. Confirm the event appears in Hosted Events and All Events.
+
+Recommended title for the demo-created event:
+
+```text
+My Pop-up Event
+```
+
+### 5. Organiser edits an owned event
+
+Use `partyfundemo@gmail.com`.
+
+1. Open Hosted Events.
+2. Edit `Rooftop Mixer`.
+3. Change the title, location, description, or prices.
+4. Save changes.
+5. Open the event detail page and confirm the changes are visible.
+
+Use `organiser@smu.edu.sg` for the second edit example:
+
+- `Concourse Jam`
+
+### 6. Organiser deletes or cancels an owned event
+
+Use `partyfundemo@gmail.com`.
+
+1. Open Hosted Events.
+2. Find `Empty Workshop`.
+3. Use the destructive action shown by the app.
+4. Confirm the modal and complete the action.
+
+Use `organiser@smu.edu.sg` for the second example:
+
+- `Empty CCA Briefing`
+
+These events are intentionally empty so the demo does not disrupt seeded ticket scenarios.
+
+### 7. Co-organiser invitation flow
+
+Co-organisers are not a separate role. They are normal organiser accounts that have been invited to manage one event they did not create.
+
+Use `organiser@smu.edu.sg`.
+
+1. Log in as `organiser@smu.edu.sg`.
+2. Open Pending Invites.
+3. Accept the invite for `Block Party`.
+4. Go to Hosted Events.
+5. Confirm `Block Party` appears with a Co-organiser label.
+6. Edit the event details and save.
+7. Confirm Cancel/Delete/Remove controls are not shown for this co-organised event.
+
+Use `partyfundemo@gmail.com` to show an already accepted co-organiser event:
+
+1. Log in as `partyfundemo@gmail.com`.
+2. Go to Hosted Events.
+3. Confirm `Study Break Social` appears with a Co-organiser label.
+4. Confirm it can be edited, but cannot be cancelled or deleted by the co-organiser.
+
+Declined invite example:
+
+- `Poolside Reset` has a declined invite seeded for `organiser@smu.edu.sg`.
+- It should not appear as a manageable co-organised event for that account.
+
+### 8. Owner invites another organiser
+
+Use `partyfundemo@gmail.com`.
+
+1. Open Hosted Events.
+2. Edit any owned event, for example `Rooftop Mixer`.
+3. In the Co-organisers section, enter `organiser@smu.edu.sg`.
+4. Send the invite.
+5. Log in as `organiser@smu.edu.sg`.
+6. Open Pending Invites and accept or decline the new invite.
+
+Only organiser accounts can be invited. User accounts such as `user@smu.edu.sg` and `user2@smu.edu.sg` should be rejected.
+
+### 9. Ticket check-in
+
+Use `partyfundemo@gmail.com`.
+
+1. Go to Tickets.
+2. Select `Greenlit Bash`.
+3. Manually enter this ticket code:
+
+```text
+PF-DEMO-PFD-04-01
+```
+
+4. Confirm the ticket changes to checked in.
+5. Enter the same code again.
+6. Confirm the app shows an already checked-in style error.
+
+Use `organiser@smu.edu.sg` for an already-used ticket example:
+
+1. Go to Tickets.
+2. Select `Door Drill`.
+3. Manually enter:
+
+```text
+PF-DEMO-SMU-04-01
+```
+
+4. Confirm the app shows that the ticket was already checked in.
+
+After `organiser@smu.edu.sg` accepts the co-organiser invite for `Block Party`, they can also check in tickets for that event.
+
+### 10. Attendee/contact visibility
+
+Use an organiser account.
+
+1. Open Attendees from the sidebar.
+2. Confirm the list includes attendees from owned events.
+3. After accepting a co-organiser invite, confirm attendees from the co-organised event also appear.
+4. Open a co-organised event detail page and view Who's Going / attendees.
+5. Confirm organiser-level attendee details are available to accepted co-organisers.
+
+### 11. Failed purchase due to full capacity
+
+Use `user@smu.edu.sg`.
+
+1. Go to All Events.
+2. Open `No More Spots`.
+3. Try to buy a ticket.
+4. Confirm the app blocks the purchase because there are not enough tickets available.
+
+### 12. Refund on organiser cancellation
+
+Use `partyfundemo@gmail.com`.
+
+1. Open Hosted Events.
+2. Find `Poolside Reset`.
+3. Cancel the event with a reason.
+4. Explain that wallet-paid active tickets are refunded to the buyer's wallet by the database RPC.
+5. Log in as `user@smu.edu.sg`.
+6. Check Wallet / Joined Events to confirm the cancellation/refund behavior.
+
+### 13. Admin moderation, if showing admin mode
+
+Use an admin account if one has been seeded with `backend/scripts/seedAdmins.js`.
+
+1. Log in as admin.
+2. Go to Manage Events.
+3. Cancel any demo event with a moderation reason.
+4. Confirm the event records the cancellation as admin-driven and backers are refunded.
+
+### Recommended demo order
+
+For the cleanest presentation, use this sequence:
+
+1. Guest browsing
+2. User purchase
+3. Give away all tickets
+4. Organiser create event
+5. Organiser edit event
+6. Organiser delete/cancel empty event
+7. Co-organiser accept invite
+8. Co-organiser edit/check-in but cannot cancel/delete
+9. Ticket check-in and already-used ticket
+10. Failed purchase due to full capacity
+11. Refund on organiser cancellation
 
 ## Current behavior
 
@@ -188,9 +458,5 @@ The backend exposes the data layer. Each request must include the Supabase acces
 
 Login and registration are **not** backend routes — they go straight to Supabase Auth from the frontend. A request with no/invalid token to a protected route returns `401`.
 
-## Current limitations
 
-- No real Stripe payments or refunds (capture is simulated at pledge time)
-- Event deadline processing and automatic refunds are not scheduled
-- Authorization depends on the Supabase RLS policies; they should be audited to confirm coverage of every table
-- Organiser drafts are still frontend-local (not persisted)
+
