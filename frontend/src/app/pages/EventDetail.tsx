@@ -1,13 +1,16 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus } from 'lucide-react';
+import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus, Mail } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { DeleteEventModal } from '../components/DeleteEventModal';
+import { HowToGetThere } from '../components/HowToGetThere';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, type Attendee } from '../api';
+import { formatEventLocation } from '../components/eventDisplay';
+import { universityLabel } from '../components/universities';
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
@@ -35,9 +38,12 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   const unavailable = event.status === 'cancelled';
   const showCancelledCard = !!fromPast;
   const showOptOut = !!fromProfile;
-  const showWhosGoing = !!fromOrganiser;
+  // Admins don't purchase — show them the read-only "who's going" panel, never the buy card.
+  const showWhosGoing = !!fromOrganiser || role === 'admin';
   // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
   const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
+  const fullLocation = formatEventLocation(event);
+  const hostUniversity = universityLabel(event.hostUniversity);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -59,7 +65,8 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <h1 className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
-            <p className="mt-1 text-white/70 text-sm">Hosted by {event.organiser}</p>
+            <p className="mt-2 text-white/85" style={{ fontSize: 17, fontWeight: 700 }}>Hosted by {event.organiser}</p>
+            {hostUniversity && <p className="mt-1 text-white/80" style={{ fontSize: 16, fontWeight: 600 }}>{hostUniversity}</p>}
           </div>
         </div>
       </div>
@@ -86,7 +93,10 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <MapPin size={13} /> Location
               </div>
-              <div className="mt-1 font-bold text-white">{event.location.split(',')[0]}</div>
+              <div className="mt-1 font-bold text-white">{fullLocation}</div>
+              {fullLocation && (
+                <HowToGetThere destination={fullLocation} />
+              )}
             </div>
           </div>
 
@@ -180,6 +190,13 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
               Your payment was captured when you pledged. If the event misses its hype threshold, active tickets are refunded automatically.
             </p>
+
+            <div className="mt-4 rounded-lg p-3" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: '#ffb4a3' }}>
+                <Mail size={14} className="mt-0.5 shrink-0" />
+                <span>🎟️ Your tickets were emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.</span>
+              </div>
+            </div>
 
             <div className="my-5 h-px" style={{ background: 'var(--border)' }} />
 
@@ -352,7 +369,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
 
       <div className="mb-5 flex items-center">
         {shown.length === 0 ? (
-          <span className="text-sm" style={{ color: '#8a8a99' }}>No one has locked in yet.</span>
+          <span className="text-sm" style={{ color: '#8a8a99' }}>No tickets locked in yet.</span>
         ) : (
           shown.map((a, i) => (
             <div key={a.username} className="group relative" style={{ marginLeft: i === 0 ? 0 : -12 }}>
@@ -360,6 +377,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
                 <img
                   src={a.avatarUrl}
                   alt={a.username}
+                  referrerPolicy="no-referrer"
                   className="size-14 rounded-full object-cover"
                   style={{ border: '2px solid #14141b' }}
                 />
@@ -394,7 +412,7 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
       </div>
 
       <p className="mb-4 text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
-        {event.activeTicketCount} students have locked in. {event.spotsLeft} spots remaining
+        {event.activeTicketCount} tickets locked in. {event.spotsLeft} spots remaining
       </p>
 
       <Button
