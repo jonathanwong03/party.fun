@@ -2,6 +2,7 @@ import { CheckCircle2, Calendar, MapPin, Ticket, ArrowRight } from 'lucide-react
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
 import { getActiveStatus, type EventItem, type Role, type Route } from '../components/types';
+import { formatEventLocation } from '../components/eventDisplay';
 
 export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string; role: Role; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
@@ -37,7 +38,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
         </div>
         <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
           <Meta icon={Calendar} label="Date" value={`${event.date} · ${event.time}`} />
-          <Meta icon={MapPin} label="Location" value={event.location.split(',')[0]} />
+          <Meta icon={MapPin} label="Location" value={formatEventLocation(event)} />
           <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
             <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
               <Ticket size={12} /> Tickets

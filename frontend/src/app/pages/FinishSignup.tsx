@@ -6,7 +6,8 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { AuthShell } from '../components/AuthShell';
 import { fetchCurrentUser, completeOauthSignupRequest, sendWelcomeEmailRequest, type AuthUser, type MemberType } from '../api';
-import { UNIVERSITIES, memberIdError } from './RegisterOrganiser';
+import { memberIdError } from './RegisterOrganiser';
+import { UNIVERSITIES, universityLabel } from '../components/universities';
 import type { Role, Route } from '../components/types';
 
 // Shown to a brand-new Google user: pick a role + confirm a username, exactly once.
@@ -77,7 +78,7 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
               <Select value={university} onValueChange={setUniversity}>
                 <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select your university" /></SelectTrigger>
                 <SelectContent>
-                  {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{u.name}</SelectItem>)}
+                  {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>

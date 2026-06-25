@@ -61,7 +61,7 @@ export function AddressPicker({
   );
   const autocompleteRef = useRef<google.maps.places.Autocomplete | null>(null);
 
-  const onPlaceChanged = useCallback(() => {
+  const onPlaceChanged = useCallback(async () => {
     const place = autocompleteRef.current?.getPlace();
     if (!place?.geometry?.location) {
       onValidChange?.(false);
@@ -81,8 +81,9 @@ export function AddressPicker({
     const valid = SG_POSTAL.test(postalCode);
 
     setMarker(location);
-    onChange(formattedAddress);
-    const selection = { formattedAddress, postalCode, ...location };
+    const fullAddress = await resolveFullAddress(place, location, formattedAddress, postalCode);
+    onChange(fullAddress);
+    const selection = { formattedAddress: fullAddress, postalCode, ...location };
     onSelect?.(selection);
     onValidChange?.(valid, valid ? selection : undefined);
   }, [onChange, onSelect, onValidChange]);
@@ -143,4 +144,54 @@ export function AddressPicker({
       )}
     </div>
   );
+}
+
+function component(
+  components: google.maps.GeocoderAddressComponent[] | undefined,
+  type: string,
+): string {
+  return components?.find((c) => c.types.includes(type))?.long_name ?? "";
+}
+
+function hasStreetLevelAddress(text: string): boolean {
+  return /\b(?:street|st|road|rd|avenue|ave|drive|dr|lane|ln|way|walk|crescent|cres|boulevard|blvd|jalan)\b/i.test(text);
+}
+
+async function resolveFullAddress(
+  place: google.maps.places.PlaceResult,
+  location: { lat: number; lng: number },
+  formattedAddress: string,
+  postalCode: string,
+): Promise<string> {
+  if (formattedAddress && hasStreetLevelAddress(formattedAddress)) return formattedAddress;
+
+  const street = [component(place.address_components, "street_number"), component(place.address_components, "route")]
+    .filter(Boolean)
+    .join(" ");
+  const postal = postalCode ? `Singapore ${postalCode}` : component(place.address_components, "country");
+  const localParts = [place.name, street, postal].filter((part, index, arr) => {
+    const clean = String(part ?? "").trim();
+    return clean && arr.findIndex((candidate) => String(candidate ?? "").trim().toLowerCase() === clean.toLowerCase()) === index;
+  });
+  const composed = localParts.join(", ");
+  if (composed && hasStreetLevelAddress(composed)) return composed;
+
+  if (window.google?.maps?.Geocoder) {
+    try {
+      const geocoder = new window.google.maps.Geocoder();
+      const response = await geocoder.geocode({ location });
+      const streetResult = response.results.find((result) => hasStreetLevelAddress(result.formatted_address));
+      if (streetResult?.formatted_address) {
+        const name = place.name?.trim();
+        if (name && !streetResult.formatted_address.toLowerCase().includes(name.toLowerCase())) {
+          return `${name}, ${streetResult.formatted_address}`;
+        }
+        return streetResult.formatted_address;
+      }
+    } catch {
+      // Keep the local fallback when reverse geocoding is unavailable.
+    }
+  }
+
+  return composed || formattedAddress;
 }

@@ -4,6 +4,7 @@ import { EventCard } from '../components/EventCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { eventBadgeKey, type EventItem, type Route } from '../components/types';
+import { UNIVERSITIES, universityLabel } from '../components/universities';
 
 
 export function Landing({
@@ -23,27 +24,29 @@ export function Landing({
   const [q, setQ] = useState('');
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
+  const [university, setUniversity] = useState('all');
 
   // Organiser-owned, globally cancelled, and completed events do not belong in discovery.
   const available = useMemo(
     () => events.filter((e) => !e.mine && e.status !== 'cancelled' && e.status !== 'completed'),
     [events],
   );
-  // "Most hyped" is chosen by the backend (highest uncapped fill ratio among open,
-  // non-owned events) and flagged as `featured`; fall back to the first available.
-  const featured = available.find((e) => e.featured) ?? (available.length ? available[0] : undefined);
-  const rest = available.filter((e) => e.id !== featured?.id);
-
-  const filtered = useMemo(() => {
-    return rest.filter((e) => {
-      if (q && !`${e.title} ${e.organiser}`.toLowerCase().includes(q.toLowerCase())) return false;
+  const filteredAvailable = useMemo(() => {
+    return available.filter((e) => {
+      if (q && !`${e.title} ${e.organiser} ${universityLabel(e.hostUniversity)}`.toLowerCase().includes(q.toLowerCase())) return false;
       if (price === 'lt15' && e.price >= 15) return false;
       if (price === '15-25' && (e.price < 15 || e.price > 25)) return false;
       if (price === 'gt25' && e.price <= 25) return false;
       if (hype !== 'all' && eventBadgeKey(e) !== hype) return false;
+      if (university !== 'all' && e.hostUniversity !== university) return false;
       return true;
     });
-  }, [q, hype, price, rest]);
+  }, [available, hype, price, q, university]);
+
+  // "Most hyped" is chosen by the backend (highest uncapped fill ratio among open,
+  // non-owned events) and flagged as `featured`; fall back to the first available.
+  const featured = filteredAvailable.find((e) => e.featured) ?? (filteredAvailable.length ? filteredAvailable[0] : undefined);
+  const filtered = filteredAvailable.filter((e) => e.id !== featured?.id);
 
   if (loading) {
     return (
@@ -112,6 +115,17 @@ export function Landing({
             <SelectItem value="lt15">Under $15</SelectItem>
             <SelectItem value="15-25">$15 – $25</SelectItem>
             <SelectItem value="gt25">Over $25</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={university} onValueChange={setUniversity}>
+          <SelectTrigger className="w-full md:w-72" style={{ background: 'var(--surface)' }}>
+            <SelectValue placeholder="University" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All universities</SelectItem>
+            {UNIVERSITIES.map((u) => (
+              <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>
+            ))}
           </SelectContent>
         </Select>
         <Select value={hype} onValueChange={setHype}>

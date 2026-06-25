@@ -48,14 +48,20 @@ export function HowToGetThere({ destination }: { destination: string }) {
         </DialogHeader>
 
         {mapSrc ? (
-          <iframe
-            title="Venue location"
-            src={mapSrc}
-            className="h-64 w-full rounded-xl border-0"
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            allowFullScreen
-          />
+          <div>
+            <iframe
+              key={dest}
+              title="Venue location"
+              src={mapSrc}
+              className="h-64 w-full rounded-xl border-0"
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              allowFullScreen
+            />
+            <p className="mt-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+              If the embedded map is blocked by Google API restrictions, use the direction buttons below.
+            </p>
+          </div>
         ) : (
           <div
             className="grid h-64 w-full place-items-center rounded-xl text-sm"

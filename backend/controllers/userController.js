@@ -1,5 +1,6 @@
 import { getProfile as readProfile, giveAwayTickets, deleteBooking as removeBooking } from '../services/eventService.js';
 import { notifyTicketsGivenAway, notifyBookingTicket } from '../services/notificationService.js';
+import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -9,7 +10,7 @@ async function reissueBookingTicket(sb, userId, bookingId) {
   const { data: b } = await sb.from('BOOKINGS').select('qrToken, reference, eventId').eq('id', bookingId).single();
   if (!b) return;
   const [{ data: ev }, { data: tix }, { data: me }] = await Promise.all([
-    sb.from('EVENT').select('title, location, startDate').eq('id', b.eventId).single(),
+    sb.from('EVENT').select('title, location, address, startDate').eq('id', b.eventId).single(),
     sb.from('TICKETS').select('qrCode, status').eq('bookingId', bookingId),
     sb.from('USER').select('email, username, role').eq('id', userId).single(),
   ]);
@@ -17,7 +18,7 @@ async function reissueBookingTicket(sb, userId, bookingId) {
   if (!me?.email || !ev || !codes.length) return;
   notifyBookingTicket({
     email: me.email, username: me.username, role: me.role,
-    eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: ev.location,
+    eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: formatVenueAddress(ev.location, ev.address),
     reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes,
   });
 }

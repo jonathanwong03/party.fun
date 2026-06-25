@@ -9,6 +9,8 @@ import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Rout
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, type Attendee } from '../api';
+import { formatEventLocation } from '../components/eventDisplay';
+import { universityLabel } from '../components/universities';
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
@@ -40,6 +42,8 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   const showWhosGoing = !!fromOrganiser || role === 'admin';
   // You can't pledge to an event you created yourself — show a notice instead of the Pledge/Buy card.
   const showOwnEvent = !!role && !!event.mine && !showCancelledCard && !showOptOut && !showWhosGoing;
+  const fullLocation = formatEventLocation(event);
+  const hostUniversity = universityLabel(event.hostUniversity);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -61,7 +65,8 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <h1 className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
-            <p className="mt-1 text-white/70 text-sm">Hosted by {event.organiser}</p>
+            <p className="mt-2 text-white/85" style={{ fontSize: 17, fontWeight: 700 }}>Hosted by {event.organiser}</p>
+            {hostUniversity && <p className="mt-1 text-white/80" style={{ fontSize: 16, fontWeight: 600 }}>{hostUniversity}</p>}
           </div>
         </div>
       </div>
@@ -88,9 +93,9 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <MapPin size={13} /> Location
               </div>
-              <div className="mt-1 font-bold text-white">{event.address ? `${event.location}, ${event.address}` : event.location}</div>
-              {(event.address || event.location) && (
-                <HowToGetThere destination={event.address ? `${event.location}, ${event.address}` : event.location} />
+              <div className="mt-1 font-bold text-white">{fullLocation}</div>
+              {fullLocation && (
+                <HowToGetThere destination={fullLocation} />
               )}
             </div>
           </div>

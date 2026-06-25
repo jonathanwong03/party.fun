@@ -32,6 +32,7 @@ function mapRow(row, userId) {
     hostId: row.hostId,
     title: row.title ?? '',
     organiser: row.organiser_name ?? 'Unknown',
+    hostUniversity: row.host_university ?? '',
     date: row.startDate ? sgDate(row.startDate, { weekday: 'short', month: 'short', day: 'numeric' }) : '',
     time: row.startDate ? sgDate(row.startDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
     endTime: row.endDate ? sgDate(row.endDate, { hour: 'numeric', minute: '2-digit', hour12: true }) : '',
@@ -146,9 +147,23 @@ export async function getHostedSummary(sb, userId) {
 
 // Public attendee list: name, username, avatarUrl of users with active tickets.
 export async function getEventAttendees(sb, eventId) {
-  const { data, error } = await sb.rpc('get_event_attendees', { p_event_id: eventId });
+  const [{ data, error }, event] = await Promise.all([
+    sb.rpc('get_event_attendees', { p_event_id: eventId }),
+    getEvent(sb, eventId, null),
+  ]);
   if (error) throw new Error(error.message);
-  return data ?? [];
+  const real = data ?? [];
+  const target = Math.max(real.length, Number(event?.activeTicketCount ?? 0));
+  if (real.length >= target) return real;
+  const synthetic = Array.from({ length: target - real.length }, (_, index) => {
+    const n = real.length + index + 1;
+    return {
+      name: `Guest ${n}`,
+      username: `Guest ${n}`,
+      avatarUrl: null,
+    };
+  });
+  return real.concat(synthetic);
 }
 
 // Host-only attendee list with contact details. The RPC raises (errcode 42501)

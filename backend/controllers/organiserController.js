@@ -22,7 +22,7 @@ const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { week
 // Snapshot the editable fields of an event (service-role read) so an edit can be diffed.
 async function loadEventSnapshot(admin, eventId) {
   const [{ data: e }, { data: s }, { data: ps }] = await Promise.all([
-    admin.from('EVENT').select('title, description, location, startDate, endDate, imageUrl').eq('id', eventId).single(),
+    admin.from('EVENT').select('title, description, location, address, startDate, endDate, imageUrl').eq('id', eventId).single(),
     admin.from('EVENT_SETTINGS').select('hypeThreshold, maxCapacity, deadline').eq('eventId', eventId).single(),
     admin.from('PRICE_STATUSES').select('statusName, price').eq('eventId', eventId),
   ]);
@@ -35,11 +35,13 @@ async function loadEventSnapshot(admin, eventId) {
 function diffEvent(before, body) {
   const out = [];
   const sEq = (a, b) => String(a ?? '') === String(b ?? '');
-  const tEq = (a, b) => a && b && new Date(a).getTime() === new Date(b).getTime();
+  const tEq = (a, b) => a && b && Math.floor(new Date(a).getTime() / 60000) === Math.floor(new Date(b).getTime() / 60000);
   const be = before.e, bs = before.s;
   if (!sEq(be.title, body.title)) out.push({ label: 'Title', from: be.title || '—', to: body.title || '—' });
   if (!sEq(be.description, body.description)) out.push({ label: 'Description', from: '(previous)', to: '(updated)' });
-  if (!sEq(be.location, body.location)) out.push({ label: 'Location', from: be.location || '—', to: body.location || '—' });
+  if (!sEq(be.location, body.location)) out.push({ label: 'Venue', from: be.location || '—', to: body.location || '—' });
+  if (!sEq(be.address, body.address)) out.push({ label: 'Address', from: be.address || 'none', to: body.address || 'none' });
+  if (!sEq(be.imageUrl, body.image)) out.push({ label: 'Image', from: be.imageUrl ? '(previous image)' : 'none', to: body.image ? '(updated image)' : 'none' });
   if (body.startsAt && !tEq(be.startDate, body.startsAt)) out.push({ label: 'Start', from: fmtDateTime(be.startDate), to: fmtDateTime(body.startsAt) });
   if (body.endsAt && !tEq(be.endDate, body.endsAt)) out.push({ label: 'End', from: fmtDateTime(be.endDate), to: fmtDateTime(body.endsAt) });
   if (body.deadlineAt && bs.deadline && !tEq(bs.deadline, body.deadlineAt)) out.push({ label: 'Deadline', from: fmtDateTime(bs.deadline), to: fmtDateTime(body.deadlineAt) });

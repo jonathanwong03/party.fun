@@ -1,5 +1,6 @@
 import { buildTicketsPdf } from '../services/ticketPdf.js';
 import { adminClient } from '../services/supabaseAdmin.js';
+import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -10,12 +11,12 @@ export async function getTicketsPdf(req, res) {
   const { data: b } = await req.supabase.from('BOOKINGS').select('reference, eventId').eq('id', bookingId).single();
   if (!b) { res.status(404).json({ status: 'not_found', message: 'Booking not found.' }); return; }
   const [{ data: ev }, { data: tix }] = await Promise.all([
-    req.supabase.from('EVENT').select('title, location, startDate').eq('id', b.eventId).single(),
+    req.supabase.from('EVENT').select('title, location, address, startDate').eq('id', b.eventId).single(),
     req.supabase.from('TICKETS').select('qrCode, status').eq('bookingId', bookingId),
   ]);
   const tickets = (tix ?? []).filter((t) => t.status === 'active').map((t) => ({ qrCode: t.qrCode }));
   const pdf = await buildTicketsPdf({
-    event: { title: ev?.title ?? 'Event', dateText: fmtDate(ev?.startDate), location: ev?.location, reference: b.reference },
+    event: { title: ev?.title ?? 'Event', dateText: fmtDate(ev?.startDate), location: formatVenueAddress(ev?.location, ev?.address), reference: b.reference },
     tickets,
   });
   res.setHeader('Content-Type', 'application/pdf');
@@ -31,12 +32,12 @@ export async function getTicketsPdfByToken(req, res) {
   const { data: b } = await admin.from('BOOKINGS').select('id, reference, eventId').eq('qrToken', token).is('deletedAt', null).single();
   if (!b) { res.status(404).json({ status: 'not_found', message: 'Tickets not found.' }); return; }
   const [{ data: ev }, { data: tix }] = await Promise.all([
-    admin.from('EVENT').select('title, location, startDate').eq('id', b.eventId).single(),
+    admin.from('EVENT').select('title, location, address, startDate').eq('id', b.eventId).single(),
     admin.from('TICKETS').select('qrCode, status').eq('bookingId', b.id),
   ]);
   const tickets = (tix ?? []).filter((t) => t.status === 'active').map((t) => ({ qrCode: t.qrCode }));
   const pdf = await buildTicketsPdf({
-    event: { title: ev?.title ?? 'Event', dateText: fmtDate(ev?.startDate), location: ev?.location, reference: b.reference },
+    event: { title: ev?.title ?? 'Event', dateText: fmtDate(ev?.startDate), location: formatVenueAddress(ev?.location, ev?.address), reference: b.reference },
     tickets,
   });
   res.setHeader('Content-Type', 'application/pdf');

@@ -74,7 +74,7 @@ export type MutationResponse = {
 };
 
 export type MemberType = 'student' | 'instructor' | 'professor';
-export type University = 'NUS' | 'NTU' | 'SMU' | 'SUTD' | 'SIT' | 'SUSS';
+export type University = 'NUS' | 'NTU' | 'SMU' | 'SUSS' | 'SUTD' | 'SIM' | 'SIT';
 
 export type AuthUser = {
   id: string;

@@ -2,6 +2,7 @@ import { createPledge, quotePledge } from '../services/eventService.js';
 import { notifyBookingTicket } from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -9,7 +10,7 @@ const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday:
 // Uses the service-role client because it reads across all backers' rows.
 async function fanOutGreenlitTickets(eventId) {
   const admin = adminClient();
-  const { data: ev } = await admin.from('EVENT').select('title, location, startDate').eq('id', eventId).single();
+  const { data: ev } = await admin.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single();
   if (!ev) return;
   const dateText = fmtDate(ev.startDate);
   const { data: bookings } = await admin.from('BOOKINGS').select('id, userId, reference, qrToken').eq('eventId', eventId).is('deletedAt', null);
@@ -19,7 +20,7 @@ async function fanOutGreenlitTickets(eventId) {
     if (!codes.length) continue;
     const { data: u } = await admin.from('USER').select('email, username, role').eq('id', b.userId).single();
     if (!u?.email) continue;
-    notifyBookingTicket({ email: u.email, username: u.username, role: u.role, eventTitle: ev.title, dateText, location: ev.location, reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes, greenlit: true });
+    notifyBookingTicket({ email: u.email, username: u.username, role: u.role, eventTitle: ev.title, dateText, location: formatVenueAddress(ev.location, ev.address), reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes, greenlit: true });
   }
 }
 
@@ -107,14 +108,14 @@ export async function postPledge(req, res) {
   // Fire-and-forget: email the buyer their booking ticket (booking QR + per-ticket PDF).
   const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
   const [{ data: ev }, { data: tix }] = await Promise.all([
-    req.supabase.from('EVENT').select('title, location, startDate').eq('id', eventId).single(),
+    req.supabase.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single(),
     req.supabase.from('TICKETS').select('qrCode, status, bookingId').eq('bookingId', result.bookingId),
   ]);
   const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
   if (me?.email && ev && codes.length && result.qrToken) {
     notifyBookingTicket({
       email: me.email, username: me.username, role: me.role,
-      eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: ev.location,
+      eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: formatVenueAddress(ev.location, ev.address),
       reference: result.reference, bookingToken: result.qrToken, ticketCodes: codes,
     });
   }

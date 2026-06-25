@@ -8,15 +8,7 @@ import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
 import { registerRequest, sendWelcomeEmailRequest, type MemberType } from '../api';
 import type { Route } from '../components/types';
-
-export const UNIVERSITIES: { code: string; name: string }[] = [
-  { code: 'NUS', name: 'National University of Singapore (NUS)' },
-  { code: 'NTU', name: 'Nanyang Technological University (NTU)' },
-  { code: 'SMU', name: 'Singapore Management University (SMU)' },
-  { code: 'SUTD', name: 'Singapore University of Technology and Design (SUTD)' },
-  { code: 'SIT', name: 'Singapore Institute of Technology (SIT)' },
-  { code: 'SUSS', name: 'Singapore University of Social Sciences (SUSS)' },
-];
+import { UNIVERSITIES, universityLabel } from '../components/universities';
 
 const MATRIC_RE = /^[A-Za-z]\d{8}[A-Za-z]$/;
 const STAFF_RE = /^\d{9}$/;
@@ -109,7 +101,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
               <SelectValue placeholder="Select your university" />
             </SelectTrigger>
             <SelectContent>
-              {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{u.name}</SelectItem>)}
+              {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
             </SelectContent>
           </Select>
           {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.university}</p>}

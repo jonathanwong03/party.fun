@@ -41,6 +41,7 @@ export type EventItem = {
   hostId?: string;
   title: string;
   organiser: string;
+  hostUniversity?: string;
   date: string;
   time: string;
   location: string;
