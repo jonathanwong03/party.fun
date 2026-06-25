@@ -77,3 +77,12 @@
   animation: flicker 0.9s ease-in-out infinite;
   transform-origin: bottom center;
 }
+
+/* Google Places autocomplete dropdown — match the app's body font
+   (Google renders `.pac-container` on <body>, outside the React tree). */
+.pac-container,
+.pac-item,
+.pac-item-query,
+.pac-matched {
+  font-family: 'Outfit', ui-sans-serif, system-ui, sans-serif;
+}

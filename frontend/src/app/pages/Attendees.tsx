@@ -12,7 +12,7 @@ function colorFor(seed: string) {
 
 function Avatar({ name, url, size = 40 }: { name: string; url?: string | null; size?: number }) {
   if (url) {
-    return <img src={url} alt={name} className="rounded-full object-cover" style={{ width: size, height: size }} />;
+    return <img src={url} alt={name} referrerPolicy="no-referrer" className="rounded-full object-cover" style={{ width: size, height: size }} />;
   }
   const initial = (name || '?').trim().charAt(0).toUpperCase();
   return (
@@ -27,7 +27,7 @@ function Avatar({ name, url, size = 40 }: { name: string; url?: string | null; s
 
 export function Attendees({ id, go, events }: { id: string; go: (r: Route) => void; events: EventItem[] }) {
   const event = events.find((e) => e.id === id);
-  const isHost = !!event?.mine;
+  const canViewDetails = !!(event?.canViewAttendees ?? event?.mine);
   const [basic, setBasic] = useState<Attendee[] | null>(null);
   const [detailed, setDetailed] = useState<AttendeeDetail[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -37,21 +37,21 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
     let ignore = false;
     setLoading(true);
     setError(null);
-    const load = isHost
+    const load = canViewDetails
       ? fetchAttendeeDetails(id).then((d) => { if (!ignore) setDetailed(d); })
       : fetchAttendees(id).then((d) => { if (!ignore) setBasic(d); });
     load
       .catch((e) => { if (!ignore) setError(e instanceof Error ? e.message : 'Unable to load attendees.'); })
       .finally(() => { if (!ignore) setLoading(false); });
     return () => { ignore = true; };
-  }, [id, isHost]);
+  }, [id, canViewDetails]);
 
   const count = detailed?.length ?? basic?.length ?? 0;
 
   return (
     <div className="mx-auto max-w-3xl px-6 py-8">
       <button
-        onClick={() => go({ name: 'event', id, ...(isHost ? { fromOrganiser: true } : {}) })}
+        onClick={() => go({ name: 'event', id, ...(canViewDetails ? { fromOrganiser: true } : {}) })}
         className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
         style={{ color: 'var(--muted-foreground)' }}
       >
@@ -62,7 +62,7 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
         <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>Who's going</h1>
         <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
           {event ? event.title : 'Event'} · {count} {count === 1 ? 'person' : 'people'}
-          {isHost && <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c' }}>Host view</span>}
+          {canViewDetails && <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c' }}>Organiser view</span>}
         </p>
       </div>
 
@@ -72,7 +72,7 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
         <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>{error}</div>
       ) : count === 0 ? (
         <div className="py-16 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>No one has locked in yet.</div>
-      ) : isHost ? (
+      ) : canViewDetails ? (
         <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
           <table className="w-full text-sm">
             <thead>
