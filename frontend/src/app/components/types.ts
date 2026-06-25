@@ -16,13 +16,18 @@ export type Route =
   | { name: 'register-organiser' }
   | { name: 'profile' }
   | { name: 'joined-events' }
+  | { name: 'analytics' }
+  | { name: 'attendees-all' }
+  | { name: 'tickets' }
+  | { name: 'pending-invites' }
+  | { name: 'manage-events' }
   | { name: 'settings' }
   | { name: 'wallet' }
   | { name: 'hosted-events'; tab?: 'created' | 'drafts' }
   | { name: 'create-event'; draftId?: string }
   | { name: 'edit-event'; id: string };
 
-export type Role = 'user' | 'organiser';
+export type Role = 'user' | 'organiser' | 'admin';
 
 // Status and pricing status are one and the same concept now:
 //   early_bird = hype < 100%, greenlit = hype = 100% (event confirmed),
@@ -36,9 +41,11 @@ export type EventItem = {
   hostId?: string;
   title: string;
   organiser: string;
+  hostUniversity?: string;
   date: string;
   time: string;
   location: string;
+  address?: string;
   description: string;
   image: string;
   price: number;
@@ -56,6 +63,12 @@ export type EventItem = {
   featured?: boolean;
   // Organiser hid this (cancelled) event from their own dashboard.
   hostHidden?: boolean;
+  isCoOrganiser?: boolean;
+  canEdit?: boolean;
+  canCheckIn?: boolean;
+  canViewAttendees?: boolean;
+  canCancel?: boolean;
+  canDelete?: boolean;
   endTime?: string;
   endDate?: string;
   // Raw ISO datetimes (for the countdown + edit-form validation); optional because

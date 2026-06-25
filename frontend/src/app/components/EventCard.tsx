@@ -5,6 +5,8 @@ import { StatusBadge } from './StatusBadge';
 import { getActiveStatus, type EventItem } from './types';
 import { ImageWithFallback } from './figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from './media';
+import { formatEventLocation } from './eventDisplay';
+import { universityLabel } from './universities';
 
 export function EventCard({
   event,
@@ -18,6 +20,8 @@ export function EventCard({
   alreadyPurchased?: boolean;
 }) {
   const statusIndex = getActiveStatus(event);
+  const fullLocation = formatEventLocation(event);
+  const hostUniversity = universityLabel(event.hostUniversity);
 
   return (
     <div
@@ -56,15 +60,16 @@ export function EventCard({
           <h3 className="line-clamp-2 text-white" style={{ fontSize: featured ? 22 : 16, fontWeight: 700, lineHeight: 1.2 }}>
             {event.title}
           </h3>
-          <p className="text-xs text-white/60 mt-0.5">{event.organiser}</p>
+          <p className="mt-1 text-sm text-white/75" style={{ fontWeight: 600 }}>Hosted by {event.organiser}</p>
+          {hostUniversity && <p className="mt-0.5 line-clamp-1 text-xs text-white/70">{hostUniversity}</p>}
         </div>
       </div>
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-center justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>
-          <div className="flex items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3">
             <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
-            <span className="flex items-center gap-1"><MapPin size={12} /> {event.location.split(',')[0]}</span>
+            <span className="flex min-w-0 items-center gap-1"><MapPin size={12} /> <span className="truncate">{fullLocation}</span></span>
           </div>
           <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>${event.price}</span>
         </div>

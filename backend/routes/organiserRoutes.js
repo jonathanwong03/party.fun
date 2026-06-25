@@ -9,6 +9,13 @@ import {
   patchEvent,
   postCreateEvent,
   getSummary,
+  getAllAttendees,
+  getEventTickets,
+  postCheckIn,
+  getCoOrganiserInvites,
+  postCoOrganiserInvite,
+  acceptCoOrganiserInvite,
+  declineCoOrganiserInvite,
   getDrafts,
   postDraft,
   deleteDraftHandler,
@@ -19,6 +26,13 @@ const router = express.Router();
 
 router.get('/', getHostedEvents);
 router.get('/summary', requireAuth, getSummary);
+router.get('/attendees', requireAuth, getAllAttendees);
+router.get('/coorganiser-invites', requireAuth, getCoOrganiserInvites);
+router.post('/coorganiser-invites/:inviteId/accept', requireAuth, acceptCoOrganiserInvite);
+router.post('/coorganiser-invites/:inviteId/decline', requireAuth, declineCoOrganiserInvite);
+router.get('/events/:eventId/tickets', requireAuth, getEventTickets);
+router.post('/events/:eventId/coorganisers/invite', requireAuth, postCoOrganiserInvite);
+router.post('/check-in', requireAuth, postCheckIn);
 router.get('/events/new', getCreateEvent);
 router.post('/events', requireAuth, postCreateEvent);
 router.get('/events/:eventId/edit', getEditEvent);

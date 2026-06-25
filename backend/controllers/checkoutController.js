@@ -1,6 +1,37 @@
 import * as eventService from '../services/eventService.js';
 import * as notificationService from '../services/notificationService.js';
+import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+import { formatVenueAddress } from '../utils/eventDisplay.js';
+
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+
+async function fanOutGreenlitTickets(eventId) {
+  const admin = adminClient();
+  const { data: ev } = await admin.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single();
+  if (!ev) return;
+  const dateText = fmtDate(ev.startDate);
+  const { data: bookings } = await admin.from('BOOKINGS').select('id, userId, reference, qrToken').eq('eventId', eventId).is('deletedAt', null);
+  for (const b of bookings ?? []) {
+    const { data: tix } = await admin.from('TICKETS').select('qrCode, status').eq('bookingId', b.id);
+    const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
+    if (!codes.length) continue;
+    const { data: u } = await admin.from('USER').select('email, username, role').eq('id', b.userId).single();
+    if (!u?.email) continue;
+    notificationService.notifyBookingTicket({
+      email: u.email,
+      username: u.username,
+      role: u.role,
+      eventTitle: ev.title,
+      dateText,
+      location: formatVenueAddress(ev.location, ev.address),
+      reference: b.reference,
+      bookingToken: b.qrToken,
+      ticketCodes: codes,
+      greenlit: true,
+    });
+  }
+}
 
 export const dependencies = {
   getEvent: eventService.getEvent,
@@ -8,6 +39,7 @@ export const dependencies = {
   createPledge: eventService.createPledge,
   notifyPledgeConfirmed: notificationService.notifyPledgeConfirmed,
   notifyEventGreenlit: notificationService.notifyEventGreenlit,
+  notifyBookingTicket: notificationService.notifyBookingTicket,
 };
 
 const PLEDGE_MESSAGES = {
@@ -21,7 +53,6 @@ const PLEDGE_MESSAGES = {
 };
 
 export async function getQuote(req, res) {
-  // Quotes are public (used on the checkout screen before committing).
   const quote = await dependencies.quotePledge(req.supabase, req.params.eventId, req.query.qty);
   if (!quote) {
     res.status(404).json({ status: 'not_found', route: req.originalUrl, message: 'Event not found.' });
@@ -42,7 +73,6 @@ export async function postPledge(req, res) {
 
   const eventBefore = await dependencies.getEvent(req.supabase, eventId, req.user.id);
 
-  // Card path: charge the saved card via Stripe BEFORE creating the booking.
   if (method === 'card') {
     if (!stripeEnabled()) {
       res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured.' });
@@ -82,7 +112,6 @@ export async function postPledge(req, res) {
 
   const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId);
   if (result.error) {
-    // Card was charged but booking failed (e.g. sold out) → refund immediately.
     if (method === 'card' && paymentIntentId) {
       try { await stripe().refunds.create({ payment_intent: paymentIntentId }); } catch { /* logged by Stripe dashboard */ }
     }
@@ -107,6 +136,30 @@ export async function postPledge(req, res) {
       qty,
       pricePerTicket,
     });
+  }
+
+  const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
+  const [{ data: ev }, { data: tix }] = await Promise.all([
+    req.supabase.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single(),
+    req.supabase.from('TICKETS').select('qrCode, status, bookingId').eq('bookingId', result.bookingId),
+  ]);
+  const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
+  if (me?.email && ev && codes.length && result.qrToken) {
+    void dependencies.notifyBookingTicket({
+      email: me.email,
+      username: me.username,
+      role: me.role,
+      eventTitle: ev.title,
+      dateText: fmtDate(ev.startDate),
+      location: formatVenueAddress(ev.location, ev.address),
+      reference: result.reference,
+      bookingToken: result.qrToken,
+      ticketCodes: codes,
+    });
+  }
+
+  if (result.greenlitNow) {
+    Promise.resolve().then(() => fanOutGreenlitTickets(eventId)).catch((e) => console.error('[Checkout] greenlit fan-out failed:', e?.message || e));
   }
 
   if (eventBefore?.status !== 'greenlit' && result.event?.status === 'greenlit') {

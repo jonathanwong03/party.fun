@@ -108,7 +108,7 @@ export function passwordResetTemplate({ userName, role, code }) {
 export function accountCreatedTemplate({ userName, role }) {
   const accountType = role === 'organiser' ? 'Organiser' : 'Attendee';
   return emailShell(`
-    ${h1('Welcome to party.fun! 🎉')}
+    ${h1('Welcome to party.fun!')}
     ${greet(userName, role)}
     ${p(`Your <strong>${accountType}</strong> account has been created successfully. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
     ${detailsBox('Account Details', row('Username', userName) + row('Account type', accountType))}
@@ -139,12 +139,35 @@ export function pledgeConfirmedTemplate({ userName, role, eventTitle, qty, price
   `);
 }
 
+// Booking ticket: the printable PDF (one per-ticket QR per page) is attached to
+// this email. Each attendee shows their own ticket's QR at the door.
+export function bookingTicketTemplate({ userName, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken }) {
+  const lead = greenlit
+    ? `Great news — <strong>${eventTitle}</strong> is greenlit and your spot is locked in! Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`
+    : `Your pledge to <strong>${eventTitle}</strong> is confirmed. Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} attached.`;
+  return emailShell(`
+    ${h1(greenlit ? 'You’re in — event greenlit' : 'Your ticket')}
+    ${greet(userName, role)}
+    ${p(lead)}
+    ${p(`<span style="color:#ff4d2e;font-weight:700;">Your ticket${remaining === 1 ? '' : 's'} ${remaining === 1 ? 'is' : 'are'} in the attached PDF (<strong>tickets.pdf</strong>).</span> It has one printable ticket with its own QR code per person — show each QR at the door to check in. QR codes are only valid during the event.`)}
+    ${detailsBox('Ticket Details',
+      row('Event', eventTitle) +
+      (dateText ? row('When', dateText) : '') +
+      (location ? row('Where', location) : '') +
+      divider +
+      row('Tickets', `${remaining}`, '#ff4d2e') +
+      row('Reference', reference ?? '—'),
+    )}
+    ${qrToken ? button('Download your tickets (PDF)', `${APP_URL}/api/tickets/by-token/${qrToken}/pdf`) : ''}
+  `);
+}
+
 export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeThreshold, deadline }) {
   const formattedDeadline = sgDateTime(deadline, 'the funding deadline');
   const manageUrl = eventId ? `${APP_URL}/hosted-events/events/${eventId}/edit` : `${APP_URL}/hosted-events`;
 
   return emailShell(`
-    ${h1('Your event is live! 🚀')}
+    ${h1('Your event is live!')}
     ${greet(organiserName, 'organiser')}
     ${p(`Your event <strong>${eventTitle}</strong> has been created and is now open for pledges. It will greenlight automatically once it reaches its hype threshold.`)}
     ${detailsBox('Event Details',
@@ -156,10 +179,31 @@ export function eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeT
   `);
 }
 
-export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason }) {
+export function coOrganiserInviteTemplate({ userName, inviterName, eventTitle, eventId }) {
+  const inviteUrl = `${APP_URL}/pending-invites`;
+  const eventUrl = eventId ? `${APP_URL}/events/${eventId}` : `${APP_URL}/events`;
+
+  return emailShell(`
+    ${h1('Co-organiser invite')}
+    ${greet(userName || 'there', 'organiser')}
+    ${p(`<strong>${inviterName || 'An organiser'}</strong> invited you to help manage <strong>${eventTitle}</strong> on party.fun.`)}
+    ${detailsBox('What co-organisers can do',
+      row('Allowed', 'Edit event details, view attendees, and check in tickets') +
+      row('Not allowed', 'Cancel, hide, or delete the event'),
+    )}
+    ${p('Accept or decline the invite inside party.fun. This email is only a notification.')}
+    ${button('Review Invite', inviteUrl)}
+    ${button('View Event', eventUrl, '#374151')}
+  `);
+}
+
+export function eventCancelledTemplate({ userName, role, method, eventTitle, refundAmount, reason, reasonText }) {
   const formattedRefund = Number(refundAmount || 0).toFixed(2);
   const missed = reason === 'missed_threshold';
-  const intro = missed
+  const byAdmin = reason === 'admin';
+  const intro = byAdmin
+    ? `<strong>${eventTitle}</strong> has been cancelled by a party.fun administrator.`
+    : missed
     ? `Unfortunately, <strong>${eventTitle}</strong> did not reach its hype threshold by the deadline, so it has been cancelled.`
     : `The organiser has cancelled <strong>${eventTitle}</strong>.`;
   const card = method === 'card';
@@ -172,6 +216,7 @@ export function eventCancelledTemplate({ userName, role, method, eventTitle, ref
     ${h1('Event Cancelled')}
     ${greet(userName, role)}
     ${p(`${intro} ${refundLine} No action needed on your part.`)}
+    ${byAdmin && reasonText ? detailsBox('Reason for cancellation', p(reasonText).replace('margin:0 0 20px', 'margin:0')) : ''}
     ${detailsBox('Refund Details',
       row('Event', eventTitle) +
       divider +
@@ -179,6 +224,20 @@ export function eventCancelledTemplate({ userName, role, method, eventTitle, ref
     )}
     ${p("We're sorry this one didn't happen — there are plenty more parties to back.")}
     ${button('Browse Other Events', `${APP_URL}/events`, '#374151')}
+  `);
+}
+
+// Event edited (by the organiser or an admin) — sent to the organiser + every backer.
+export function eventUpdatedTemplate({ userName, role, eventTitle, changes = [], editedByAdmin }) {
+  const who = editedByAdmin ? 'A party.fun administrator' : 'The organiser';
+  const rows = changes.map((c) => row(c.label, `${c.from} -> ${c.to}`)).join('');
+  return emailShell(`
+    ${h1('Event updated')}
+    ${greet(userName, role)}
+    ${p(`${who} updated <strong>${eventTitle}</strong>. Here's what changed:`)}
+    ${detailsBox('Changes', rows || row('Details', 'updated'))}
+    ${p('Your tickets remain valid. If the new details no longer work for you, you can manage your tickets from your profile.')}
+    ${button('View Event', `${APP_URL}/events`, '#374151')}
   `);
 }
 
@@ -239,7 +298,7 @@ export function pledgeCancelledTemplate({ userName, eventTitle, qty, refundAmoun
 export function eventGreenlitTemplate({ userName, eventTitle, start_time, location }) {
   const formattedDate = sgDateTime(start_time, 'soon');
   return emailShell(`
-    ${h1(`It's a Go! 🎉 ${eventTitle} is Greenlit!`)}
+    ${h1(`It's a Go! ${eventTitle} is Greenlit!`)}
     ${p(`Hi ${userName},`)}
     ${p(`Great news — <strong>${eventTitle}</strong> has reached its hype threshold and is officially <strong>GREENLIT</strong>! Your pledge is locked in.`)}
     ${detailsBox('Event Schedule & Location',

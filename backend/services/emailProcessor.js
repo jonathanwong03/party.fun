@@ -31,7 +31,7 @@ const isApiKeyValid = (key) => {
  * @param {string} params.html - HTML content body
  * @returns {Promise<{ success: boolean, messageId?: string, error?: string }>}
  */
-export async function sendEmail({ to, subject, html }) {
+export async function sendEmail({ to, subject, html, attachments = [] }) {
   const apiKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.NOTIFICATION_FROM_EMAIL || 'onboarding@resend.dev';
   
@@ -55,6 +55,7 @@ export async function sendEmail({ to, subject, html }) {
     console.log(`From:    ${fromEmail}`);
     console.log(`To:      ${recipient}`);
     console.log(`Subject: ${subject}`);
+    if (attachments.length) console.log(`Attachments: ${attachments.map((a) => a.filename).join(', ')}`);
     console.log('------------------ Content Preview ------------------');
     // Simple text version from HTML
     console.log(html.replace(/<[^>]*>/g, ' ').substring(0, 300).trim() + '...');
@@ -83,6 +84,14 @@ export async function sendEmail({ to, subject, html }) {
         to: recipient,
         subject,
         html,
+        // Resend attachments: { filename, content (base64) }, plus content_id for inline cid: images.
+        ...(attachments.length ? {
+          attachments: attachments.map((a) => ({
+            filename: a.filename,
+            content: a.content,
+            ...(a.contentId ? { content_id: a.contentId } : {}),
+          })),
+        } : {}),
         // Resend SDK passes unknown keys through to fetch; AbortSignal prevents hangs.
         signal: controller.signal,
       });

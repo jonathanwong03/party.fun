@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft, AtSign } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Moon, Sun, User as UserIcon, Image as ImageIcon, Trash2, AlertTriangle, ChevronLeft, AtSign, Award, Download } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -7,7 +7,7 @@ import { Switch } from '../components/ui/switch';
 import { DeleteEventModal } from '../components/DeleteEventModal';
 import { PRESET_AVATARS } from '../components/media';
 import type { Route } from '../components/types';
-import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, type AuthUser } from '../api';
+import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, fetchLicense, openLicensePdf, type AdminLicense, type AuthUser } from '../api';
 
 export function Settings({
   user,
@@ -115,6 +115,14 @@ export function Settings({
     }
   };
 
+  // Admin license
+  const isAdmin = user?.role === 'admin';
+  const [license, setLicense] = useState<AdminLicense | null>(null);
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchLicense().then(setLicense).catch(() => setLicense(null));
+  }, [isAdmin]);
+
   // Delete account
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -147,7 +155,7 @@ export function Settings({
         </div>
         <div className="flex items-center gap-5">
           {user?.avatarUrl ? (
-            <img src={user.avatarUrl} alt="Your avatar" className="size-20 rounded-full object-cover" style={{ border: '2px solid var(--border)' }} />
+            <img src={user.avatarUrl} alt="Your avatar" referrerPolicy="no-referrer" className="size-20 rounded-full object-cover" style={{ border: '2px solid var(--border)' }} />
           ) : (
             <div className="grid size-20 place-items-center rounded-full text-white" style={{ background: '#ff4d2e', fontSize: 32, fontWeight: 600 }}>
               {(currentName || '?').charAt(0).toUpperCase()}
@@ -235,7 +243,36 @@ export function Settings({
         {saved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Username updated.</p>}
       </section>
 
+      {/* Admin license (admins only) */}
+      {isAdmin && (
+        <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <div className="mb-4 flex items-center gap-2">
+            <Award size={18} style={{ color: '#ff4d2e' }} />
+            <h3>Administrator license</h3>
+          </div>
+          <div className="rounded-xl border p-6 text-center" style={{ borderColor: '#ff4d2e', background: 'var(--surface-2)' }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#ff4d2e' }}>party.fun</div>
+            <div className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>Certificate of Administration</div>
+            <div className="mt-4" style={{ fontSize: 20, fontWeight: 700 }}>{license?.username ?? currentName}</div>
+            <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Licensed Administrator of party.fun</div>
+            <div className="mt-4 space-y-0.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+              <div>License ID: <strong style={{ color: 'var(--foreground)' }}>{license?.licenseId ?? '—'}</strong></div>
+              <div>Issued: {license?.issued ?? '—'}</div>
+              <div>{license?.validity ?? ''}</div>
+            </div>
+          </div>
+          <Button
+            onClick={() => openLicensePdf().catch(() => {})}
+            className="mt-4 gap-2 bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
+            style={{ borderRadius: 12, height: 44 }}
+          >
+            <Download size={15} /> Export as PDF
+          </Button>
+        </section>
+      )}
+
       {/* Contact details */}
+      {!isAdmin && (
       <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <div className="mb-4 flex items-center gap-2">
           <AtSign size={18} />
@@ -279,6 +316,7 @@ export function Settings({
         {contactError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{contactError}</p>}
         {contactSaved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Contact details updated.</p>}
       </section>
+      )}
 
       {/* Appearance */}
       <section className="mb-6 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
@@ -298,6 +336,7 @@ export function Settings({
       </section>
 
       {/* Danger zone */}
+      {!isAdmin && (
       <section className="rounded-2xl border p-6" style={{ borderColor: 'rgba(255,51,84,0.35)', background: 'var(--surface)' }}>
         <div className="mb-4 flex items-center gap-2" style={{ color: '#ff6b85' }}>
           <AlertTriangle size={18} />
@@ -317,6 +356,7 @@ export function Settings({
         </div>
         {deleteError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{deleteError}</p>}
       </section>
+      )}
 
       {usernameModal && (
         <DeleteEventModal

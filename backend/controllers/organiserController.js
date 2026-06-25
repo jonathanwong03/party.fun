@@ -9,9 +9,59 @@ import {
   saveDraft,
   deleteDraft as removeDraft,
   getHostedSummary,
+  listCoOrganiserInvites,
+  inviteCoOrganiser,
+  respondCoOrganiserInvite,
 } from '../services/eventService.js';
-import { notifyEventCreated, notifyEventCancelled } from '../services/notificationService.js';
+import { notifyCoOrganiserInvite, notifyEventCreated, notifyEventCancelled, notifyEventUpdated } from '../services/notificationService.js';
 import { refundEventCardBookings } from '../services/stripeRefunds.js';
+import { adminClient } from '../services/supabaseAdmin.js';
+
+const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
+
+// Snapshot the editable fields of an event (service-role read) so an edit can be diffed.
+async function loadEventSnapshot(admin, eventId) {
+  const [{ data: e }, { data: s }, { data: ps }] = await Promise.all([
+    admin.from('EVENT').select('title, description, location, address, startDate, endDate, imageUrl').eq('id', eventId).single(),
+    admin.from('EVENT_SETTINGS').select('hypeThreshold, maxCapacity, deadline').eq('eventId', eventId).single(),
+    admin.from('PRICE_STATUSES').select('statusName, price').eq('eventId', eventId),
+  ]);
+  const early = (ps ?? []).find((p) => p.statusName === 'early_bird');
+  const greenlit = (ps ?? []).find((p) => p.statusName === 'greenlit');
+  return { e: e ?? {}, s: s ?? {}, earlyPrice: early?.price, greenlitPrice: greenlit?.price };
+}
+
+// Build a human-readable list of what changed between a snapshot and the edit payload.
+function diffEvent(before, body) {
+  const out = [];
+  const sEq = (a, b) => String(a ?? '') === String(b ?? '');
+  const tEq = (a, b) => a && b && Math.floor(new Date(a).getTime() / 60000) === Math.floor(new Date(b).getTime() / 60000);
+  const be = before.e, bs = before.s;
+  if (!sEq(be.title, body.title)) out.push({ label: 'Title', from: be.title || '—', to: body.title || '—' });
+  if (!sEq(be.description, body.description)) out.push({ label: 'Description', from: '(previous)', to: '(updated)' });
+  if (!sEq(be.location, body.location)) out.push({ label: 'Venue', from: be.location || '—', to: body.location || '—' });
+  if (!sEq(be.address, body.address)) out.push({ label: 'Address', from: be.address || 'none', to: body.address || 'none' });
+  if (!sEq(be.imageUrl, body.image)) out.push({ label: 'Image', from: be.imageUrl ? '(previous image)' : 'none', to: body.image ? '(updated image)' : 'none' });
+  if (body.startsAt && !tEq(be.startDate, body.startsAt)) out.push({ label: 'Start', from: fmtDateTime(be.startDate), to: fmtDateTime(body.startsAt) });
+  if (body.endsAt && !tEq(be.endDate, body.endsAt)) out.push({ label: 'End', from: fmtDateTime(be.endDate), to: fmtDateTime(body.endsAt) });
+  if (body.deadlineAt && bs.deadline && !tEq(bs.deadline, body.deadlineAt)) out.push({ label: 'Deadline', from: fmtDateTime(bs.deadline), to: fmtDateTime(body.deadlineAt) });
+  if (body.hypeThreshold != null && !sEq(bs.hypeThreshold, body.hypeThreshold)) out.push({ label: 'Hype threshold', from: `${bs.hypeThreshold}`, to: `${body.hypeThreshold}` });
+  if (body.maxCapacity != null && !sEq(bs.maxCapacity, body.maxCapacity)) out.push({ label: 'Capacity', from: `${bs.maxCapacity}`, to: `${body.maxCapacity}` });
+  const be2 = (body.statuses ?? []).find((s) => s.statusName === 'early_bird');
+  const bg2 = (body.statuses ?? []).find((s) => s.statusName === 'greenlit');
+  if (be2 && !sEq(before.earlyPrice, be2.price)) out.push({ label: 'Early bird price', from: `$${Number(before.earlyPrice ?? 0).toFixed(2)}`, to: `$${Number(be2.price).toFixed(2)}` });
+  if (bg2 && !sEq(before.greenlitPrice, bg2.price)) out.push({ label: 'Greenlit price', from: `$${Number(before.greenlitPrice ?? 0).toFixed(2)}`, to: `$${Number(bg2.price).toFixed(2)}` });
+  return out;
+}
+
+// Every distinct backer (live booking) of an event, with contact info (service-role read).
+async function gatherEventBackers(admin, eventId) {
+  const { data: bookings } = await admin.from('BOOKINGS').select('userId').eq('eventId', eventId).is('deletedAt', null);
+  const ids = [...new Set((bookings ?? []).map((b) => b.userId))];
+  if (!ids.length) return [];
+  const { data: users } = await admin.from('USER').select('email, username, role').in('id', ids);
+  return (users ?? []).filter((u) => u.email).map((u) => ({ email: u.email, username: u.username, role: u.role }));
+}
 
 // Human-readable messages for the authoritative validation codes the RPCs return.
 const EVENT_ERROR_MESSAGES = {
@@ -23,6 +73,12 @@ const EVENT_ERROR_MESSAGES = {
   not_found: 'Event not found.',
   reason_required: 'A cancellation reason is required.',
   event_started: "You can't cancel an event that has already started.",
+  not_owner: 'Only the event owner can manage co-organisers.',
+  invitee_not_found: 'No organiser account found for that email or username.',
+  invite_self: "You can't invite yourself as a co-organiser.",
+  invalid_action: 'Invalid invite action.',
+  not_invitee: 'This invite does not belong to your account.',
+  not_pending: 'This invite has already been responded to.',
 };
 const eventErrorMessage = (code, fallback) => EVENT_ERROR_MESSAGES[code] ?? fallback;
 
@@ -34,6 +90,84 @@ export const getEditEvent = createPlaceholderHandler('edit-event');
 
 export async function getSummary(req, res) {
   res.json(await getHostedSummary(req.supabase, req.user.id));
+}
+
+export async function getCoOrganiserInvites(req, res) {
+  try {
+    res.json(await listCoOrganiserInvites(req.supabase));
+  } catch (error) {
+    res.status(400).json({ status: 'error', message: error.message });
+  }
+}
+
+export async function postCoOrganiserInvite(req, res) {
+  const identifier = String(req.body?.identifier ?? '').trim();
+  if (!identifier) {
+    res.status(400).json({ status: 'identifier_required', message: 'Enter an organiser email or username.' });
+    return;
+  }
+
+  const result = await inviteCoOrganiser(req.supabase, req.params.eventId, identifier);
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to invite co-organiser.') });
+    return;
+  }
+
+  if (result?.inviteeEmail) {
+    notifyCoOrganiserInvite({
+      email: result.inviteeEmail,
+      username: result.inviteeUsername,
+      inviterName: result.ownerUsername,
+      eventTitle: result.eventTitle,
+      eventId: result.eventId,
+    });
+  }
+
+  res.status(201).json(result);
+}
+
+export async function acceptCoOrganiserInvite(req, res) {
+  const result = await respondCoOrganiserInvite(req.supabase, req.params.inviteId, 'accept');
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to accept invite.') });
+    return;
+  }
+  res.json(result);
+}
+
+export async function declineCoOrganiserInvite(req, res) {
+  const result = await respondCoOrganiserInvite(req.supabase, req.params.inviteId, 'decline');
+  if (result?.error) {
+    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to decline invite.') });
+    return;
+  }
+  res.json(result);
+}
+
+// Aggregated attendee list across all of the organiser's events.
+export async function getAllAttendees(req, res) {
+  const { data, error } = await req.supabase.rpc('get_all_attendees');
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data ?? []);
+}
+
+// Tickets for one of the organiser's events (check-in list).
+export async function getEventTickets(req, res) {
+  const { data, error } = await req.supabase.rpc('get_event_tickets', { p_event_id: req.params.eventId });
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data ?? []);
+}
+
+// Door check-in. A per-ticket QR (PF-… code) checks in one ticket; a booking QR
+// (a bare uuid token) checks in all of that booking's remaining active tickets.
+export async function postCheckIn(req, res) {
+  const code = String(req.body?.qr ?? '').trim();
+  const isTicketCode = code.startsWith('PF-');
+  const { data, error } = isTicketCode
+    ? await req.supabase.rpc('check_in_ticket', { p_qr: code })
+    : await req.supabase.rpc('check_in_booking', { p_token: code });
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json(data);
 }
 
 export async function getDrafts(req, res) {
@@ -73,12 +207,29 @@ export async function postCreateEvent(req, res) {
 }
 
 export async function patchEvent(req, res) {
-  const result = await updateEvent(req.supabase, { ...req.body, id: req.params.eventId });
+  const eventId = req.params.eventId;
+  const admin = adminClient();
+  const before = await loadEventSnapshot(admin, eventId);
+
+  const result = await updateEvent(req.supabase, { ...req.body, id: eventId });
   if (result.error) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to update event.') });
     return;
   }
   res.json({ status: 'ok' });
+
+  // Fire-and-forget: notify the organiser + every backer of what changed (organiser or admin edit).
+  const changes = diffEvent(before, req.body);
+  if (changes.length) {
+    const [{ data: me }, { data: ev }] = await Promise.all([
+      admin.from('USER').select('role').eq('id', req.user.id).single(),
+      admin.from('EVENT').select('title, hostId').eq('id', eventId).single(),
+    ]);
+    const editedByAdmin = me?.role === 'admin';
+    const { data: host } = await admin.from('USER').select('email, username, role').eq('id', ev?.hostId).single();
+    const backers = await gatherEventBackers(admin, eventId);
+    notifyEventUpdated({ eventTitle: ev?.title ?? 'your event', changes, editedByAdmin, organiser: host?.email ? host : null, backers });
+  }
 }
 
 export async function deleteEvent(req, res) {
