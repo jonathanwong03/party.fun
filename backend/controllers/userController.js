@@ -1,5 +1,26 @@
 import { getProfile as readProfile, giveAwayTickets, deleteBooking as removeBooking } from '../services/eventService.js';
-import { notifyTicketsGivenAway } from '../services/notificationService.js';
+import { notifyTicketsGivenAway, notifyBookingTicket } from '../services/notificationService.js';
+
+const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+
+// Re-issue the booking ticket (booking QR + per-ticket PDF) with the updated remaining
+// count after some tickets were given away. No-op if no active tickets remain.
+async function reissueBookingTicket(sb, userId, bookingId) {
+  const { data: b } = await sb.from('BOOKINGS').select('qrToken, reference, eventId').eq('id', bookingId).single();
+  if (!b) return;
+  const [{ data: ev }, { data: tix }, { data: me }] = await Promise.all([
+    sb.from('EVENT').select('title, location, startDate').eq('id', b.eventId).single(),
+    sb.from('TICKETS').select('qrCode, status').eq('bookingId', bookingId),
+    sb.from('USER').select('email, username, role').eq('id', userId).single(),
+  ]);
+  const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
+  if (!me?.email || !ev || !codes.length) return;
+  notifyBookingTicket({
+    email: me.email, username: me.username, role: me.role,
+    eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: ev.location,
+    reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes,
+  });
+}
 
 export async function getProfile(req, res) {
   const profile = await readProfile(req.supabase);
@@ -30,6 +51,10 @@ export async function giveAwayBookingTickets(req, res) {
       qty: Number(req.body.quantity),
       allGivenAway: !booking || booking.activeTicketCount === 0,
     });
+  }
+  // Re-send the updated ticket (new remaining count) if any active tickets are left.
+  if (booking && booking.activeTicketCount > 0) {
+    reissueBookingTicket(req.supabase, req.user.id, bookingId).catch((e) => console.error('[Profile] reissue ticket failed:', e?.message || e));
   }
 
   res.json({ status: 'ok', event: result.event, profile: result.profile });
