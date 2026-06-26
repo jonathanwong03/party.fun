@@ -114,6 +114,41 @@ describe('postPledge', () => {
     assert.equal(res.statusCode, 409);
     assert.equal(sendCalls.length, 0);
   });
+
+  it('uses captured pledge amount for hype-driven notification totals', async () => {
+    dependencies.createPledge = async () => ({
+      bookingId: 1,
+      qrToken: 'qr-token',
+      reference: 'PF-ABCD-1234',
+      amount: 20.23,
+      event: {
+        title: 'Curve Party',
+        price: 10,
+        status: 'early_bird',
+        deadline: '2026-12-15T18:00:00+08:00',
+      },
+      profile: {
+        profile: { email: 'user@smu.edu.sg', handle: 'jamie', fullName: 'Jamie' },
+      },
+    });
+
+    const res = createMockRes();
+    await postPledge(
+      {
+        supabase: mockSupabase(),
+        user: { id: 'user-1' },
+        params: { eventId: 'event-1' },
+        body: { qty: 2 },
+        originalUrl: '/api/checkout/event-1/pledge',
+      },
+      res,
+    );
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(sendCalls.length, 1);
+    assert.equal(sendCalls[0].totalAmount, 20.23);
+    assert.equal(sendCalls[0].pricePerTicket, 10.115);
+  });
 });
 
 function createMockRes() {
