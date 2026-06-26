@@ -3,6 +3,8 @@
 // enforce access. The backend is a thin, authenticated pass-through to those RPCs;
 // the business logic stays in Postgres where it already works atomically.
 
+import { quoteTotal, validateHypePricingConfig } from '../utils/pricingCalculator.js';
+
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
 function sgDate(iso, opts) {
@@ -75,6 +77,9 @@ function mapRow(row, userId) {
     })),
     mine: userId != null ? row.hostId === userId : undefined,
     hostHidden: row.hostHidden ?? false,
+    hypeDrivenPricing: Boolean(row.hypeDrivenPricing ?? row.hype_driven_pricing),
+    basePrice: row.basePrice ?? row.base_price ?? null,
+    maxPrice: row.maxPrice ?? row.max_price ?? null,
     isCoOrganiser: !!row.isCoOrganiser,
     canEdit: !!row.canEdit,
     canCheckIn: !!row.canCheckIn,
@@ -106,7 +111,79 @@ export async function getEvent(sb, eventId, userId) {
   return events.find((e) => e.id === eventId) ?? null;
 }
 
+function roundMoney(n) {
+  return Math.round(Number(n) * 100) / 100;
+}
+
+function pricingContextFromRow(row) {
+  if (!row) return null;
+  return {
+    eventId: row.id,
+    hypeDrivenPricing: Boolean(row.hypeDrivenPricing ?? row.hype_driven_pricing),
+    basePrice: row.basePrice ?? row.base_price,
+    maxPrice: row.maxPrice ?? row.max_price,
+    maxCapacity: row.maxCapacity ?? row.max_capacity ?? 0,
+    activeTicketCount: row.active_ticket_count ?? 0,
+  };
+}
+
+async function fetchPricingContext(sb, eventId) {
+  const { data, error } = await sb.rpc('get_events');
+  if (error) throw new Error(error.message);
+  const row = (data ?? []).find((item) => item.id === eventId);
+  return pricingContextFromRow(row);
+}
+
+export function buildHypeDrivenQuote(eventId, qty, context) {
+  const normalizedQty = Math.max(1, Math.floor(Number(qty) || 1));
+  const config = {
+    basePrice: Number(context.basePrice),
+    maxPrice: Number(context.maxPrice),
+    maxCapacity: Number(context.maxCapacity),
+  };
+  const validation = validateHypePricingConfig(config);
+  if (validation.error) return { error: 'invalid_hype_pricing' };
+
+  try {
+    const curve = quoteTotal(context.activeTicketCount, normalizedQty, config);
+    const lines = curve.unitPrices.map((price, index) => {
+      const rounded = roundMoney(price);
+      return {
+        label: `Ticket ${context.activeTicketCount + index + 1}`,
+        price: rounded,
+        count: 1,
+        subtotal: rounded,
+        subtotalText: money(rounded),
+      };
+    });
+    const subtotal = roundMoney(curve.total);
+    return {
+      eventId,
+      qty: normalizedQty,
+      pricingModel: 'hype_driven',
+      activeTicketCount: context.activeTicketCount,
+      lines,
+      subtotal,
+      total: subtotal,
+      subtotalText: money(subtotal),
+      totalText: money(subtotal),
+    };
+  } catch (err) {
+    if (err.message === 'quote exceeds maxCapacity') {
+      return { error: 'not_enough_tickets' };
+    }
+    throw err;
+  }
+}
+
 export async function quotePledge(sb, eventId, qty) {
+  const context = await fetchPricingContext(sb, eventId);
+  if (!context) return null;
+
+  if (context.hypeDrivenPricing) {
+    return buildHypeDrivenQuote(eventId, qty, context);
+  }
+
   const { data, error } = await sb.rpc('get_quote', { p_event_id: eventId, p_qty: Number(qty) });
   if (error) throw new Error(error.message);
   if (!data || data.error) return data; // { error: 'not_enough_tickets' } passes through
