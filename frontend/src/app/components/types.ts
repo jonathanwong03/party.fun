@@ -88,6 +88,11 @@ export type EventItem = {
   startClock?: string;
   endLong?: string;
   endClock?: string;
+  /** Hype-driven bonding curve pricing (when enabled on EVENT_SETTINGS). */
+  hypeDrivenPricing?: boolean;
+  basePrice?: number | null;
+  maxPrice?: number | null;
+  currentDynamicPrice?: number | null;
 };
 
 // Index into the price-status arrays/colors: 1 once greenlit, else 0 (early_bird).

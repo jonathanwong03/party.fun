@@ -3,7 +3,7 @@
 // enforce access. The backend is a thin, authenticated pass-through to those RPCs;
 // the business logic stays in Postgres where it already works atomically.
 
-import { quoteTotal, validateHypePricingConfig } from '../utils/pricingCalculator.js';
+import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
@@ -18,7 +18,7 @@ const sgLong = (iso) => sgDate(iso, { weekday: 'long', day: 'numeric', month: 'l
 const sgClock = (iso) => sgDate(iso, { hour: 'numeric', minute: '2-digit', hour12: true }).replace(/\s/g, '').toLowerCase();
 
 // Maps a raw `get_events` row into the EventItem shape the frontend renders.
-function mapRow(row, userId) {
+export function mapEventRow(row, userId) {
   const statuses = Array.isArray(row.statuses) ? row.statuses : [];
 
   const eb = statuses.find((s) => s.statusName === 'early_bird');
@@ -28,6 +28,27 @@ function mapRow(row, userId) {
   const activeTicketCount = row.active_ticket_count ?? 0;
   const hypeThreshold = row.hypeThreshold ?? 1;
   const maxCapacity = row.maxCapacity ?? 0;
+  const hypeDrivenPricing = Boolean(row.hypeDrivenPricing ?? row.hype_driven_pricing);
+  const basePrice = row.basePrice ?? row.base_price ?? null;
+  const maxPrice = row.maxPrice ?? row.max_price ?? null;
+
+  let currentDynamicPrice = row.current_dynamic_price ?? row.currentDynamicPrice ?? null;
+  if (currentDynamicPrice == null && hypeDrivenPricing && basePrice != null && maxPrice != null) {
+    try {
+      currentDynamicPrice = roundMoney(ticketPrice(activeTicketCount, {
+        basePrice: Number(basePrice),
+        maxPrice: Number(maxPrice),
+        maxCapacity,
+      }));
+    } catch {
+      currentDynamicPrice = null;
+    }
+  } else if (currentDynamicPrice != null) {
+    currentDynamicPrice = roundMoney(currentDynamicPrice);
+  }
+
+  const staticPrice = current?.price ?? 0;
+  const displayPrice = hypeDrivenPricing && currentDynamicPrice != null ? currentDynamicPrice : staticPrice;
 
   return {
     id: row.id,
@@ -53,7 +74,7 @@ function mapRow(row, userId) {
     address: row.address ?? '',
     description: row.description ?? '',
     image: row.imageUrl ?? '',
-    price: current?.price ?? 0,
+    price: displayPrice,
     statusLabel: LABELS[activeName] ?? 'Early Birds',
     hypePercentage: Math.min(100, Math.round((activeTicketCount / hypeThreshold) * 100)),
     // Uncapped fill ratio for the "most hyped" pick (106% beats 105% though both display 100%).
@@ -77,9 +98,14 @@ function mapRow(row, userId) {
     })),
     mine: userId != null ? row.hostId === userId : undefined,
     hostHidden: row.hostHidden ?? false,
-    hypeDrivenPricing: Boolean(row.hypeDrivenPricing ?? row.hype_driven_pricing),
-    basePrice: row.basePrice ?? row.base_price ?? null,
-    maxPrice: row.maxPrice ?? row.max_price ?? null,
+    hypeDrivenPricing,
+    basePrice: basePrice != null ? Number(basePrice) : null,
+    maxPrice: maxPrice != null ? Number(maxPrice) : null,
+    currentDynamicPrice,
+    hype_driven_pricing: hypeDrivenPricing,
+    base_price: basePrice != null ? Number(basePrice) : null,
+    max_price: maxPrice != null ? Number(maxPrice) : null,
+    current_dynamic_price: currentDynamicPrice,
     isCoOrganiser: !!row.isCoOrganiser,
     canEdit: !!row.canEdit,
     canCheckIn: !!row.canCheckIn,
@@ -94,7 +120,7 @@ function mapRow(row, userId) {
 export async function listEvents(sb, userId) {
   const { data, error } = await sb.rpc('get_events');
   if (error) throw new Error(error.message);
-  const events = (data ?? []).map((row) => mapRow(row, userId));
+  const events = (data ?? []).map((row) => mapEventRow(row, userId));
   // Backend picks the single "most hyped" still-open event (highest hype ratio) so
   // the Landing page renders the feature card without recomputing the winner.
   let featured = null;

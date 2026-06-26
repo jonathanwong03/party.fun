@@ -51,7 +51,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     if (!canPay) return;
     try {
       setSubmitting(true);
-      const reference = await onPledge(event.id, qty, event.price, method);
+      const reference = await onPledge(event.id, qty, total, method);
       go({ name: 'confirmation', id, qty, lines: quote?.lines, reference });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
@@ -130,6 +130,9 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={getActiveStatus(event)} size="sm" />
               <div className="h-px" style={{ background: 'var(--border)' }} />
               <div className="space-y-1.5 text-sm">
+                {quote?.pricingModel === 'hype_driven' && (
+                  <p className="text-xs" style={{ color: '#ff8a66' }}>Bonding-curve pricing — each ticket priced along the live curve.</p>
+                )}
                 {quote ? quote.lines.map((l) => (<Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />)) : <Row label={`Ticket × ${qty}`} value="—" />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>

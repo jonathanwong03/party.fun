@@ -65,8 +65,12 @@ export function EventCard({
 
       <div className="flex flex-1 flex-col gap-3 p-4">
         <div className="flex items-center justify-between text-xs" style={{ color: 'var(--muted-foreground)' }}>
-          <span className="flex shrink-0 items-center gap-1 whitespace-nowrap"><Calendar size={12} /> {event.date}</span>
-          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>${event.price}</span>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
+          </div>
+          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>
+            ${event.price.toFixed(2)}{event.hypeDrivenPricing ? '+' : ''}
+          </span>
         </div>
 
         <div className="space-y-1">
