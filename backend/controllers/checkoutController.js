@@ -1,13 +1,11 @@
-import { createPledge, quotePledge } from '../services/eventService.js';
-import { notifyBookingTicket } from '../services/notificationService.js';
+import * as eventService from '../services/eventService.js';
+import * as notificationService from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
 import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
-// On greenlight, re-issue a ticket email (booking QR + per-ticket PDF) to every backer.
-// Uses the service-role client because it reads across all backers' rows.
 async function fanOutGreenlitTickets(eventId) {
   const admin = adminClient();
   const { data: ev } = await admin.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single();
@@ -20,9 +18,29 @@ async function fanOutGreenlitTickets(eventId) {
     if (!codes.length) continue;
     const { data: u } = await admin.from('USER').select('email, username, role').eq('id', b.userId).single();
     if (!u?.email) continue;
-    notifyBookingTicket({ email: u.email, username: u.username, role: u.role, eventTitle: ev.title, dateText, location: formatVenueAddress(ev.location, ev.address), reference: b.reference, bookingToken: b.qrToken, ticketCodes: codes, greenlit: true });
+    notificationService.notifyBookingTicket({
+      email: u.email,
+      username: u.username,
+      role: u.role,
+      eventTitle: ev.title,
+      dateText,
+      location: formatVenueAddress(ev.location, ev.address),
+      reference: b.reference,
+      bookingToken: b.qrToken,
+      ticketCodes: codes,
+      greenlit: true,
+    });
   }
 }
+
+export const dependencies = {
+  getEvent: eventService.getEvent,
+  quotePledge: eventService.quotePledge,
+  createPledge: eventService.createPledge,
+  notifyPledgeConfirmed: notificationService.notifyPledgeConfirmed,
+  notifyEventGreenlit: notificationService.notifyEventGreenlit,
+  notifyBookingTicket: notificationService.notifyBookingTicket,
+};
 
 const PLEDGE_MESSAGES = {
   not_found: 'Event not found.',
@@ -36,8 +54,7 @@ const PLEDGE_MESSAGES = {
 };
 
 export async function getQuote(req, res) {
-  // Quotes are public (used on the checkout screen before committing).
-  const quote = await quotePledge(req.supabase, req.params.eventId, req.query.qty);
+  const quote = await dependencies.quotePledge(req.supabase, req.params.eventId, req.query.qty);
   if (!quote) {
     res.status(404).json({ status: 'not_found', route: req.originalUrl, message: 'Event not found.' });
     return;
@@ -51,17 +68,18 @@ export async function getQuote(req, res) {
 
 export async function postPledge(req, res) {
   const eventId = req.params.eventId;
-  const qty = req.body.qty;
+  const qty = Number(req.body.qty) || 1;
   const method = req.body.paymentMethod === 'card' ? 'card' : 'wallet';
   let paymentIntentId = null;
 
-  // Card path: charge the saved card via Stripe BEFORE creating the booking.
+  const eventBefore = await dependencies.getEvent(req.supabase, eventId, req.user.id);
+
   if (method === 'card') {
     if (!stripeEnabled()) {
       res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured.' });
       return;
     }
-    const quote = await quotePledge(req.supabase, eventId, qty);
+    const quote = await dependencies.quotePledge(req.supabase, eventId, qty);
     if (!quote || quote.error) {
       res.status(quote ? 409 : 404).json({ status: quote?.error ?? 'not_found', message: quote ? 'Not enough tickets are available.' : 'Event not found.' });
       return;
@@ -93,9 +111,8 @@ export async function postPledge(req, res) {
     paymentIntentId = pi.id;
   }
 
-  const result = await createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId);
+  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId);
   if (result.error) {
-    // Card was charged but booking failed (e.g. sold out) → refund immediately.
     if (method === 'card' && paymentIntentId) {
       try { await stripe().refunds.create({ payment_intent: paymentIntentId }); } catch { /* logged by Stripe dashboard */ }
     }
@@ -106,7 +123,22 @@ export async function postPledge(req, res) {
     });
     return;
   }
-  // Fire-and-forget: email the buyer their booking ticket (booking QR + per-ticket PDF).
+
+  const profile = result.profile?.profile;
+  const pricePerTicket = result.event?.price ?? 0;
+  if (profile) {
+    void dependencies.notifyPledgeConfirmed({
+      userId: req.user.id,
+      email: profile.email,
+      username: profile.handle || profile.fullName,
+      eventId: req.params.eventId,
+      eventTitle: result.event?.title ?? eventBefore?.title ?? 'your event',
+      deadline: result.event?.deadline ?? eventBefore?.deadline ?? '',
+      qty,
+      pricePerTicket,
+    });
+  }
+
   const { data: me } = await req.supabase.from('USER').select('email, username, role').eq('id', req.user.id).single();
   const [{ data: ev }, { data: tix }] = await Promise.all([
     req.supabase.from('EVENT').select('title, location, address, startDate').eq('id', eventId).single(),
@@ -114,15 +146,25 @@ export async function postPledge(req, res) {
   ]);
   const codes = (tix ?? []).filter((t) => t.status === 'active').map((t) => t.qrCode);
   if (me?.email && ev && codes.length && result.qrToken) {
-    notifyBookingTicket({
-      email: me.email, username: me.username, role: me.role,
-      eventTitle: ev.title, dateText: fmtDate(ev.startDate), location: formatVenueAddress(ev.location, ev.address),
-      reference: result.reference, bookingToken: result.qrToken, ticketCodes: codes,
+    void dependencies.notifyBookingTicket({
+      email: me.email,
+      username: me.username,
+      role: me.role,
+      eventTitle: ev.title,
+      dateText: fmtDate(ev.startDate),
+      location: formatVenueAddress(ev.location, ev.address),
+      reference: result.reference,
+      bookingToken: result.qrToken,
+      ticketCodes: codes,
     });
   }
-  // If this pledge crossed the threshold, re-issue tickets to all backers as "greenlit".
+
   if (result.greenlitNow) {
     Promise.resolve().then(() => fanOutGreenlitTickets(eventId)).catch((e) => console.error('[Checkout] greenlit fan-out failed:', e?.message || e));
+  }
+
+  if (eventBefore?.status !== 'greenlit' && result.event?.status === 'greenlit') {
+    void dependencies.notifyEventGreenlit(req.params.eventId, result.event);
   }
 
   res.json({ status: 'ok', event: result.event, profile: result.profile, reference: result.reference });

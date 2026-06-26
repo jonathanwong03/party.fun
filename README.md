@@ -356,6 +356,10 @@ After `organiser@smu.edu.sg` accepts the co-organiser invite for `Inter-Uni Welc
 
 **Check in by scanning a QR code** (instead of typing the code):
 
+- For this step, you will need to be in the backend directory and run the command:
+`node scripts/sendDemoTickets.js` 
+in order to generate the 10 tickets used for testing
+
 1. Still on Tickets, select the event (e.g. `Neon Rave: Semester Send-Off`).
 2. Click **Scan with camera** and allow camera access.
 3. Point the camera at the attendee's ticket QR — each ticket in the emailed ticket PDF carries one,
@@ -363,6 +367,7 @@ After `organiser@smu.edu.sg` accepts the co-organiser invite for `Inter-Uni Welc
    automatically on a successful read.
 4. For a quick self-contained demo without the PDF, generate a QR image from a seeded code such as
    `PF-DEMO-PFD-04-01` (any online QR generator) and scan that. Manual code entry remains as a fallback.
+
 
 ### 10. Attendee/contact visibility
 

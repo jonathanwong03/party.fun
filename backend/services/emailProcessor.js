@@ -1,5 +1,9 @@
 import { Resend } from 'resend';
 
+export const dependencies = {
+  createResend: (apiKey) => new Resend(apiKey),
+};
+
 // Placeholder prefix used in default configuration files (.env)
 const PLACEHOLDER_KEY_PREFIX = 're_xxxx';
 
@@ -59,12 +63,13 @@ export async function sendEmail({ to, subject, html, attachments = [] }) {
     
     return {
       success: true,
-      messageId: `mock-msg-${Date.now()}`
+      mock: true,
+      messageId: `mock-msg-${Date.now()}`,
     };
   }
 
   // REAL MODE - Resend Integration
-  const resend = new Resend(apiKey);
+  const resend = dependencies.createResend(apiKey);
   
   let lastError = null;
 

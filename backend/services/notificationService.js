@@ -1,29 +1,101 @@
-// Notification orchestration: builds an email from a template and hands it to the
-// Resend-backed email processor. Every function is fire-and-forget — failures are
-// logged but never block or fail the HTTP request that triggered them.
+import { createClient } from '@supabase/supabase-js';
 import * as templates from './emailTemplates.js';
-import { sendEmail } from './emailProcessor.js';
+import { sendEmail as defaultSendEmail } from './emailProcessor.js';
 import { buildTicketsPdf } from './ticketPdf.js';
 
-// Run an async notification job without awaiting it; swallow + log any error.
-function fireAndForget(label, job) {
-  Promise.resolve()
-    .then(job)
-    .catch((err) => console.error(`[NotificationService] ${label} failed:`, err?.message || err));
+function defaultServerClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+  if (!url || !key) return null;
+  return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-async function send(label, { to, subject, html, attachments }) {
-  if (!to) {
-    console.warn(`[NotificationService] ${label}: no recipient email; skipped.`);
+const defaultDependencies = {
+  sendEmail: defaultSendEmail,
+  createServerClient: defaultServerClient,
+  insertNotificationLog: null,
+};
+
+export const dependencies = { ...defaultDependencies };
+
+export function __resetNotificationDependenciesForTests() {
+  dependencies.sendEmail = defaultDependencies.sendEmail;
+  dependencies.createServerClient = defaultDependencies.createServerClient;
+  dependencies.insertNotificationLog = defaultDependencies.insertNotificationLog;
+}
+
+function deliveryStatus(result) {
+  if (!result.success) return 'failed';
+  if (result.mock) return 'mock_sent';
+  return 'sent';
+}
+
+async function logNotification({ userId, email, eventId, type, subject, status, error }) {
+  const sentAt = status === 'sent' || status === 'mock_sent' ? new Date().toISOString() : null;
+  console.log(`[NotificationService Log] Type: ${type} | To: ${email} | Status: ${status}${error ? ` | Error: ${error}` : ''}`);
+
+  const row = {
+    user_id: userId ?? null,
+    recipient_email: email,
+    event_id: eventId,
+    notification_type: type,
+    subject,
+    status,
+    error_message: error || null,
+    sent_at: sentAt,
+  };
+
+  if (dependencies.insertNotificationLog) {
+    try {
+      await dependencies.insertNotificationLog(row);
+    } catch (dbErr) {
+      console.warn(`[NotificationService] Log warning: ${dbErr.message}`);
+    }
     return;
   }
-  const result = await sendEmail({ to, subject, html, attachments });
-  console.log(`[NotificationService] ${label} → ${to}: ${result.success ? 'sent' : `failed (${result.error})`}`);
+
+  const supabase = dependencies.createServerClient();
+  if (!supabase) return;
+
+  try {
+    const { error: dbError } = await supabase.from('notification_logs').insert(row);
+    if (dbError) console.warn(`[NotificationService] Supabase log warning: ${dbError.message}`);
+  } catch (dbErr) {
+    console.warn(`[NotificationService] Supabase log warning: ${dbErr.message}`);
+  }
 }
 
-// #1 — account created (user or organiser)
+function fireAndForget(label, job) {
+  const p = Promise.resolve()
+    .then(job)
+    .catch((err) => console.error(`[NotificationService] ${label} failed:`, err?.message || err));
+  return p;
+}
+
+async function send(label, { to, subject, html, attachments, logPayload = {} }) {
+  if (!to) {
+    console.warn(`[NotificationService] ${label}: no recipient email; skipped.`);
+    return { success: false, error: 'no_email' };
+  }
+  const result = await dependencies.sendEmail({ to, subject, html, attachments });
+  const status = deliveryStatus(result);
+  console.log(`[NotificationService] ${label} → ${to}: ${status}${result.error ? ` (${result.error})` : ''}`);
+
+  await logNotification({
+    userId: logPayload.userId,
+    email: to,
+    eventId: logPayload.eventId,
+    type: logPayload.type || label,
+    subject,
+    status,
+    error: result.error,
+  });
+
+  return result;
+}
+
 export function notifyAccountCreated({ email, username, role }) {
-  fireAndForget('accountCreated', () =>
+  return fireAndForget('accountCreated', () =>
     send('accountCreated', {
       to: email,
       subject: 'Welcome to party.fun',
@@ -32,9 +104,8 @@ export function notifyAccountCreated({ email, username, role }) {
   );
 }
 
-// #3 — pledge confirmed (to the pledger)
-export function notifyPledgeConfirmed({ email, username, role, eventTitle, qty, pricePerTicket, deadline }) {
-  fireAndForget('pledgeConfirmed', () =>
+export function notifyPledgeConfirmed({ userId, email, username, role, eventId, eventTitle, qty, pricePerTicket, totalAmount, deadline }) {
+  return fireAndForget('pledgeConfirmed', () =>
     send('pledgeConfirmed', {
       to: email,
       subject: `Pledge Confirmed: ${eventTitle}`,
@@ -44,18 +115,16 @@ export function notifyPledgeConfirmed({ email, username, role, eventTitle, qty, 
         eventTitle,
         qty,
         pricePerTicket,
-        total: Number(qty) * Number(pricePerTicket),
+        total: totalAmount ?? Number(qty) * Number(pricePerTicket),
         deadline,
       }),
+      logPayload: { userId, eventId, type: 'pledge_confirmed' },
     }),
   );
 }
 
-// Booking ticket email: a printable PDF of N individual per-ticket QRs attached
-// (one ticket per page). Sent at purchase, on greenlit, and whenever the remaining
-// count changes. Fire-and-forget.
 export function notifyBookingTicket({ email, username, role, eventTitle, dateText, location, reference, bookingToken, ticketCodes = [], greenlit = false }) {
-  fireAndForget('bookingTicket', async () => {
+  return fireAndForget('bookingTicket', async () => {
     const remaining = ticketCodes.length;
     const pdfBuffer = await buildTicketsPdf({
       event: { title: eventTitle, dateText, location, reference },
@@ -64,7 +133,17 @@ export function notifyBookingTicket({ email, username, role, eventTitle, dateTex
     await send('bookingTicket', {
       to: email,
       subject: greenlit ? `You're in: ${eventTitle}` : `Your ticket: ${eventTitle}`,
-      html: templates.bookingTicketTemplate({ userName: username, role, eventTitle, dateText, location, remaining, reference, greenlit, qrToken: bookingToken }),
+      html: templates.bookingTicketTemplate({
+        userName: username,
+        role,
+        eventTitle,
+        dateText,
+        location,
+        remaining,
+        reference,
+        greenlit,
+        qrToken: bookingToken,
+      }),
       attachments: [
         { filename: 'tickets.pdf', content: pdfBuffer.toString('base64') },
       ],
@@ -72,30 +151,30 @@ export function notifyBookingTicket({ email, username, role, eventTitle, dateTex
   });
 }
 
-// #5 — tickets given away (to the giver). allGivenAway → "can no longer attend".
-export function notifyTicketsGivenAway({ email, username, role, eventTitle, qty, allGivenAway }) {
-  fireAndForget('ticketsGivenAway', () =>
+export function notifyTicketsGivenAway({ userId, email, username, role, eventId, eventTitle, qty, allGivenAway }) {
+  return fireAndForget('ticketsGivenAway', () =>
     send('ticketsGivenAway', {
       to: email,
       subject: `Tickets given away: ${eventTitle}`,
       html: templates.ticketsGivenAwayTemplate({ userName: username, role, eventTitle, qty, allGivenAway }),
+      logPayload: { userId, eventId, type: 'tickets_given_away' },
     }),
   );
 }
 
-// #6 — organiser created an event (to the organiser)
 export function notifyEventCreated({ email, organiserName, eventTitle, eventId, hypeThreshold, deadline }) {
-  fireAndForget('eventCreated', () =>
+  return fireAndForget('eventCreated', () =>
     send('eventCreated', {
       to: email,
       subject: `Your event is live: ${eventTitle}`,
       html: templates.eventCreatedTemplate({ organiserName, eventTitle, eventId, hypeThreshold, deadline }),
+      logPayload: { eventId, type: 'event_created' },
     }),
   );
 }
 
 export function notifyCoOrganiserInvite({ email, username, inviterName, eventTitle, eventId }) {
-  fireAndForget('coOrganiserInvite', () =>
+  return fireAndForget('coOrganiserInvite', () =>
     send('coOrganiserInvite', {
       to: email,
       subject: `Co-organiser invite: ${eventTitle}`,
@@ -104,8 +183,6 @@ export function notifyCoOrganiserInvite({ email, username, inviterName, eventTit
   );
 }
 
-// Password reset: emails the 6-digit code. Awaited (the request waits on the send),
-// unlike the fire-and-forget notifications above.
 export async function notifyPasswordReset({ email, username, role, code }) {
   await send('passwordReset', {
     to: email,
@@ -114,10 +191,9 @@ export async function notifyPasswordReset({ email, username, role, code }) {
   });
 }
 
-// Event edited (organiser or admin): notify the organiser + every backer of the diff.
 export function notifyEventUpdated({ eventTitle, changes = [], editedByAdmin = false, organiser = null, backers = [] }) {
   if (!changes.length) return;
-  fireAndForget('eventUpdated', async () => {
+  return fireAndForget('eventUpdated', async () => {
     const recipients = [];
     if (organiser?.email) recipients.push(organiser);
     for (const b of backers) if (b?.email) recipients.push(b);
@@ -131,10 +207,8 @@ export function notifyEventUpdated({ eventTitle, changes = [], editedByAdmin = f
   });
 }
 
-// #4 — event cancelled: full-refund email to every backer + a summary to the organiser.
-// `reason` is 'missed_threshold' | 'organiser' | 'admin' (with optional reasonText).
 export function notifyEventCancelled({ eventTitle, reason, reasonText, backers = [], organiser = null }) {
-  fireAndForget('eventCancelled', async () => {
+  return fireAndForget('eventCancelled', async () => {
     await Promise.all(
       backers.map((b) =>
         send('eventCancelled(backer)', {
@@ -149,6 +223,7 @@ export function notifyEventCancelled({ eventTitle, reason, reasonText, backers =
             reason,
             reasonText,
           }),
+          logPayload: { userId: b.userId, type: 'event_cancelled' },
         }),
       ),
     );
@@ -163,7 +238,78 @@ export function notifyEventCancelled({ eventTitle, reason, reasonText, backers =
           reason,
           backerCount: backers.length,
         }),
+        logPayload: { userId: organiser.userId, type: 'event_cancelled' },
       });
     }
+  });
+}
+
+export function notifyPledgeCancelled({ userId, email, username, eventId, eventTitle, qty, refundAmount }) {
+  return fireAndForget('pledgeCancelled', () =>
+    send('pledgeCancelled', {
+      to: email,
+      subject: `Pledge Cancelled: ${eventTitle}`,
+      html: templates.pledgeCancelledTemplate({
+        userName: username,
+        eventTitle,
+        qty,
+        refundAmount,
+      }),
+      logPayload: { userId, eventId, type: 'pledge_cancelled' },
+    }),
+  );
+}
+
+export function notifyEventGreenlit(eventId, event) {
+  return fireAndForget('eventGreenlit', async () => {
+    if (!event) {
+      console.error(`[NotificationService] Cannot send greenlit alerts: Event ${eventId} not found.`);
+      return;
+    }
+
+    const supabase = dependencies.createServerClient();
+    if (!supabase) {
+      console.warn('[NotificationService] No Supabase client; skipped greenlit fan-out.');
+      return;
+    }
+
+    const { data: bookings, error } = await supabase
+      .from('BOOKINGS')
+      .select('userId, USER!inner(email, username, role)')
+      .eq('eventId', eventId)
+      .gt('activeTicketCount', 0);
+
+    if (error) {
+      console.error('[NotificationService] Failed to load backers:', error.message);
+      return;
+    }
+
+    const backers = bookings ?? [];
+    if (backers.length === 0) {
+      console.log(`[NotificationService] Event ${event.title} greenlit, but has 0 backers to notify.`);
+      return;
+    }
+
+    console.log(`[NotificationService] Event ${event.title} is greenlit! Notifying ${backers.length} backer(s)...`);
+
+    await Promise.all(
+      backers.map(async (row) => {
+        const user = row.USER;
+        if (!user?.email) return;
+
+        await send('eventGreenlit', {
+          to: user.email,
+          subject: `It's a Go! 🎉 ${event.title} is Greenlit!`,
+          html: templates.eventGreenlitTemplate({
+            userName: user.username,
+            eventTitle: event.title,
+            start_time: event.startLong || event.date,
+            location: event.location,
+            backers_count: event.activeTicketCount ?? backers.length,
+          }),
+          logPayload: { userId: row.userId, eventId, type: 'event_greenlit' },
+        });
+      }),
+    );
   });
 }
