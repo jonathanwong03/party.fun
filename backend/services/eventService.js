@@ -440,5 +440,9 @@ function eventRpcArgs(e) {
     p_greenlit_price: gl?.price ?? 0,
     p_greenlit_capacity: gl?.qty ?? 0,
     p_restrict_university: !!e.restrictToUniversity,
+    // Hype-driven pricing: base = early-bird price (curve floor), max = ceiling at capacity.
+    p_hype_driven: !!e.hypeDrivenPricing,
+    p_base_price: e.hypeDrivenPricing ? (e.basePrice ?? eb?.price ?? null) : null,
+    p_max_price: e.hypeDrivenPricing ? (e.maxPrice ?? null) : null,
   };
 }

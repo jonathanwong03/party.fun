@@ -66,6 +66,8 @@ async function gatherEventBackers(admin, eventId) {
 // Human-readable messages for the authoritative validation codes the RPCs return.
 const EVENT_ERROR_MESSAGES = {
   price_order: 'Greenlit price must be higher than the Early Birds price.',
+  hype_pricing_invalid: 'Set a max price higher than the base price.',
+  pricing_locked: "The pricing system can't be changed after the event is greenlit.",
   bad_schedule: 'The event end must be after its start.',
   deadline_after_start: 'The deadline must be before the event start.',
   not_future: 'Event start and deadline must be in the future.',

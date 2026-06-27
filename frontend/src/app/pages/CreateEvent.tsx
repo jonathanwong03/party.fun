@@ -101,6 +101,14 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
   const [greenlitQty, setGreenlitQty] = useState<number>(
     source?.statuses[1]?.qty ?? 150,
   );
+  // Pricing system: tiered (early/greenlit) or the hype bonding curve. Hype mode reuses the
+  // Early-Birds price as the curve floor (base) and adds a max price (ceiling at capacity).
+  const [pricingMode, setPricingMode] = useState<"static" | "hype">(
+    source?.hypeDrivenPricing ? "hype" : "static",
+  );
+  const [maxPrice, setMaxPrice] = useState<string>(
+    money(source?.maxPrice ?? undefined) || "60.00",
+  );
   const maxCapacity = ebQty + greenlitQty;
   const [deleting, setDeleting] = useState(false);
   const [cancelReason, setCancelReason] = useState("");
@@ -139,6 +147,14 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
   // Price-format errors computed up front so the order check only runs once both are valid.
   const ebPErr = priceError(ebPrice);
   const greenlitPErr = priceError(greenlitPrice);
+  const maxPErr = priceError(maxPrice);
+  const isHype = pricingMode === "hype";
+  // Pricing fields carried on the EventItem; the backend RPC reads these to enable the curve.
+  const hypeFields = {
+    hypeDrivenPricing: isHype,
+    basePrice: isHype ? num(ebPrice) : null,
+    maxPrice: isHype ? num(maxPrice) : null,
+  };
 
   const errs = {
     title: required(title),
@@ -163,10 +179,15 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       ? null
       : futureDateTimeError(deadlineDate, deadlineTime),
     ebP: ebPErr,
-    greenlitP: greenlitPErr,
-    // Greenlit price must be strictly higher than the Early Birds price (checked once both are valid).
-    priceOrder:
-      !ebPErr && !greenlitPErr && num(greenlitPrice) <= num(ebPrice)
+    // Greenlit price only matters in tiered mode; the max price only in hype mode.
+    greenlitP: isHype ? null : greenlitPErr,
+    maxP: isHype ? maxPErr : null,
+    // Tiered: greenlit must exceed early bird. Hype: max (ceiling) must exceed base (floor).
+    priceOrder: isHype
+      ? !ebPErr && !maxPErr && num(maxPrice) <= num(ebPrice)
+        ? "Max price must be higher than the base price."
+        : null
+      : !ebPErr && !greenlitPErr && num(greenlitPrice) <= num(ebPrice)
         ? "Greenlit price must be higher than the Early Birds price."
         : null,
     // Start/end must be strictly in the future and end strictly after start (greenlit & non-greenlit).
@@ -186,6 +207,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
     const newEvent: EventItem = {
       id: `e${Date.now()}`,
       mine: true,
+      ...hypeFields,
       title,
       organiser,
       date,
@@ -237,6 +259,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
     const draft: EventItem = {
       id: draftId ?? `draft-${Date.now()}`,
       mine: true,
+      ...hypeFields,
       title: title || "Untitled draft",
       organiser,
       date,
@@ -304,6 +327,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
     ];
     const updated: EventItem = {
       ...existing,
+      ...hypeFields,
       image,
       title,
       organiser,
@@ -632,32 +656,62 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     Pricing is locked — this event is greenlit.
                   </div>
                 )}
+                <PricingModeSelector
+                  mode={pricingMode}
+                  onChange={setPricingMode}
+                  disabled={locked}
+                />
                 <div
                   className="mb-8 text-xs"
                   style={{ color: "var(--muted-foreground)" }}
                 >
-                  The Early Birds quantity is the hype threshold — the minimum
-                  viable attendance that confirms the event. Status quantities
-                  set the maximum capacity of {maxCapacity}.
+                  {isHype
+                    ? `The base price is the floor (first ticket); the price climbs the bonding curve with each pledge up to the max at full capacity. The first quantity is the hype threshold; quantities set the maximum capacity of ${maxCapacity}.`
+                    : `The Early Birds quantity is the hype threshold — the minimum viable attendance that confirms the event. Status quantities set the maximum capacity of ${maxCapacity}.`}
                 </div>
-                <StatusRow
-                  label="Early Birds - Hype Threshold"
-                  price={ebPrice}
-                  qty={ebQty}
-                  onPrice={setEbPrice}
-                  onQty={setEbQty}
-                  disabled={locked}
-                  error={errOf("ebP")}
-                />
-                <StatusRow
-                  label="Greenlit"
-                  price={greenlitPrice}
-                  qty={greenlitQty}
-                  onPrice={setGreenlitPrice}
-                  onQty={setGreenlitQty}
-                  disabled={locked}
-                  error={errOf("greenlitP") || errOf("priceOrder")}
-                />
+                {isHype ? (
+                  <>
+                    <StatusRow
+                      label="Base price (floor) - Hype Threshold"
+                      price={ebPrice}
+                      qty={ebQty}
+                      onPrice={setEbPrice}
+                      onQty={setEbQty}
+                      disabled={locked}
+                      error={errOf("ebP")}
+                    />
+                    <StatusRow
+                      label="Max price (ceiling at capacity)"
+                      price={maxPrice}
+                      qty={greenlitQty}
+                      onPrice={setMaxPrice}
+                      onQty={setGreenlitQty}
+                      disabled={locked}
+                      error={errOf("maxP") || errOf("priceOrder")}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <StatusRow
+                      label="Early Birds - Hype Threshold"
+                      price={ebPrice}
+                      qty={ebQty}
+                      onPrice={setEbPrice}
+                      onQty={setEbQty}
+                      disabled={locked}
+                      error={errOf("ebP")}
+                    />
+                    <StatusRow
+                      label="Greenlit"
+                      price={greenlitPrice}
+                      qty={greenlitQty}
+                      onPrice={setGreenlitPrice}
+                      onQty={setGreenlitQty}
+                      disabled={locked}
+                      error={errOf("greenlitP") || errOf("priceOrder")}
+                    />
+                  </>
+                )}
                 <div className="mt-3 grid gap-3 sm:grid-cols-2">
                   <Field
                     label="Deadline date"
@@ -871,6 +925,67 @@ function Field({
       {error && (
         <p className="mt-1 text-xs" style={{ color: "#ff9a82" }}>
           {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function PricingModeSelector({
+  mode,
+  onChange,
+  disabled,
+}: {
+  mode: "static" | "hype";
+  onChange: (m: "static" | "hype") => void;
+  disabled?: boolean;
+}) {
+  const option = (
+    value: "static" | "hype",
+    title: string,
+    desc: string,
+  ) => {
+    const active = mode === value;
+    return (
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => onChange(value)}
+        className="flex-1 rounded-xl border p-3 text-left transition"
+        style={{
+          borderColor: active ? "#ff4d2e" : "var(--border)",
+          background: active ? "rgba(255,77,46,0.08)" : "var(--surface-2)",
+          opacity: disabled && !active ? 0.5 : 1,
+          cursor: disabled ? "not-allowed" : "pointer",
+        }}
+      >
+        <div className="text-sm" style={{ fontWeight: 700 }}>
+          {title}
+        </div>
+        <div
+          className="mt-0.5 text-xs"
+          style={{ color: "var(--muted-foreground)" }}
+        >
+          {desc}
+        </div>
+      </button>
+    );
+  };
+  return (
+    <div className="mb-5">
+      <Label
+        className="mb-1.5 block text-xs"
+        style={{ color: "var(--muted-foreground)" }}
+      >
+        Pricing system
+      </Label>
+      <div className="flex flex-col gap-3 sm:flex-row">
+        {option("static", "Tiered", "Fixed Early Bird then Greenlit prices.")}
+        {option("hype", "Hype curve", "Price rises with each pledge, up to a max.")}
+      </div>
+      {disabled && (
+        <p className="mt-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
+          Pricing system is locked after the event is greenlit.
         </p>
       )}
     </div>
