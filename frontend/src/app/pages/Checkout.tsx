@@ -8,8 +8,12 @@ import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, fetchWallet, type Quote, type WalletInfo } from '../api';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
 
-export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card') => Promise<string | undefined> }) {
+export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card', attemptId?: string) => Promise<string | undefined> }) {
   const event = events.find((e) => e.id === id);
+  // One idempotency key per checkout (event+qty). Manual retries reuse it (no double charge);
+  // changing the quantity starts a fresh key since it's a different charge.
+  const [attemptId, setAttemptId] = useState(() => crypto.randomUUID());
+  useEffect(() => { setAttemptId(crypto.randomUUID()); }, [id, qty]);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [wallet, setWallet] = useState<WalletInfo | null>(null);
   const [method, setMethod] = useState<'wallet' | 'card'>('wallet');
@@ -51,7 +55,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     if (!canPay) return;
     try {
       setSubmitting(true);
-      const reference = await onPledge(event.id, qty, total, method);
+      const reference = await onPledge(event.id, qty, total, method, attemptId);
       go({ name: 'confirmation', id, qty, lines: quote?.lines, reference });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');

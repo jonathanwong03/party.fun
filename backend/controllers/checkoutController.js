@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import * as eventService from '../services/eventService.js';
 import * as notificationService from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
@@ -5,6 +6,10 @@ import { stripe, stripeEnabled } from '../services/stripeClient.js';
 import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Per-attempt idempotency key: trust the client's UUID (reused across retries), else mint one.
+const attemptIdOf = (body) => (UUID_RE.test(body?.attemptId ?? '') ? body.attemptId : randomUUID());
 
 async function fanOutGreenlitTickets(eventId) {
   const admin = adminClient();
@@ -40,6 +45,9 @@ export const dependencies = {
   notifyPledgeConfirmed: notificationService.notifyPledgeConfirmed,
   notifyEventGreenlit: notificationService.notifyEventGreenlit,
   notifyBookingTicket: notificationService.notifyBookingTicket,
+  // Stripe behind the dependencies object so the charge/refund orchestration is unit-testable.
+  stripeEnabled,
+  getStripe: () => stripe(),
 };
 
 const PLEDGE_MESSAGES = {
@@ -75,9 +83,11 @@ export async function postPledge(req, res) {
 
   const eventBefore = await dependencies.getEvent(req.supabase, eventId, req.user.id);
   let chargedAmount = null;
+  // Stable across client retries: keys the Stripe charge AND the booking so a replay never double-charges.
+  const attemptId = attemptIdOf(req.body);
 
   if (method === 'card') {
-    if (!stripeEnabled()) {
+    if (!dependencies.stripeEnabled()) {
       res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured.' });
       return;
     }
@@ -93,15 +103,15 @@ export async function postPledge(req, res) {
     }
     let pi;
     try {
-      pi = await stripe().paymentIntents.create({
+      pi = await dependencies.getStripe().paymentIntents.create({
         amount: Math.round(Number(quote.total) * 100),
         currency: 'sgd',
         customer: me.stripeCustomerId,
         payment_method: me.stripePaymentMethodId,
         off_session: true,
         confirm: true,
-        metadata: { eventId, userId: req.user.id, qty: String(qty) },
-      });
+        metadata: { kind: 'pledge', eventId, userId: req.user.id, qty: String(qty), attemptId },
+      }, { idempotencyKey: `pledge:${attemptId}` });
     } catch (e) {
       res.status(402).json({ status: 'charge_failed', message: e?.message || 'Your card was declined.' });
       return;
@@ -114,10 +124,11 @@ export async function postPledge(req, res) {
     chargedAmount = quote.total;
   }
 
-  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId, chargedAmount);
+  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId, chargedAmount, attemptId);
   if (result.error) {
+    // Booking didn't commit — refund the charge (idempotent so a retry never double-refunds).
     if (method === 'card' && paymentIntentId) {
-      try { await stripe().refunds.create({ payment_intent: paymentIntentId }); } catch { /* logged by Stripe dashboard */ }
+      try { await dependencies.getStripe().refunds.create({ payment_intent: paymentIntentId }, { idempotencyKey: `refund:${paymentIntentId}` }); } catch { /* logged by Stripe dashboard */ }
     }
     const status = result.error === 'not_found' ? 404 : result.error === 'insufficient_funds' ? 402 : result.error === 'university_restricted' ? 403 : 409;
     res.status(status).json({

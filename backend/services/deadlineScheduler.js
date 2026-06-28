@@ -1,6 +1,7 @@
 import { adminClient } from './supabaseAdmin.js';
 import { notifyEventCancelled } from './notificationService.js';
 import { refundEventCardBookings } from './stripeRefunds.js';
+import { reconcilePayments } from './paymentReconciler.js';
 
 // Periodically auto-cancels + refunds early_bird events that passed their deadline
 // below the hype threshold (via the expire_overdue_events RPC), then emails the
@@ -60,6 +61,10 @@ async function runOnce() {
   const { data: completed, error: payoutErr } = await admin.rpc('complete_due_events');
   if (payoutErr) console.error('[DeadlineScheduler] complete_due_events failed:', payoutErr.message);
   else if ((completed ?? []).length) console.log(`[DeadlineScheduler] Paid out ${completed.length} completed event(s) to organisers.`);
+
+  // 3) Orphan recovery: refund pledge charges that succeeded but have no booking recorded.
+  const { refunded } = await reconcilePayments();
+  if (refunded) console.log(`[DeadlineScheduler] Reconciler refunded ${refunded} orphaned charge(s).`);
 }
 
 export function startDeadlineScheduler() {

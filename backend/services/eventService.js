@@ -280,20 +280,22 @@ async function mutationResult(sb, userId, eventId) {
 
 // ── User writes ────────────────────────────────────────────────────────────
 
-export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null, chargedAmount = null) {
+export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null, chargedAmount = null, idempotencyKey = null) {
   const { data, error } = await sb.rpc('create_pledge', {
     p_event_id: eventId,
     p_qty: Number(qty),
     p_payment_method: paymentMethod,
     p_payment_intent_id: paymentIntentId,
     p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
+    p_idempotency_key: idempotencyKey,
   });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
   // Surface the booking reference + charged amount for the confirmation page, plus the
   // booking id/QR token and whether this pledge just greenlit the event (for emails).
-  return { ...result, reference: data?.reference, amount: data?.amount, bookingId: data?.bookingId, qrToken: data?.qrToken, greenlitNow: data?.greenlitNow };
+  // `idempotent` is true when a retry returned the original booking (no new charge).
+  return { ...result, reference: data?.reference, amount: data?.amount, bookingId: data?.bookingId, qrToken: data?.qrToken, greenlitNow: data?.greenlitNow, idempotent: data?.idempotent ?? false };
 }
 
 async function eventIdForBooking(sb, bookingId) {

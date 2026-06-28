@@ -556,10 +556,13 @@ export function fetchQuote(
 }
 
 // ── User writes ───────────────────────────────────────────────────────────────
-export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<MutationResponse> {
+// `attemptId` is a per-checkout UUID reused across retries — the backend keys both the Stripe
+// charge and the booking on it, so a retry can never double-charge. Callers should generate it
+// once per checkout attempt (not per retry) and pass the same value on every retry.
+export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet', attemptId?: string): Promise<MutationResponse> {
   return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
     method: 'POST',
-    body: JSON.stringify({ qty, paymentMethod }),
+    body: JSON.stringify({ qty, paymentMethod, attemptId: attemptId ?? crypto.randomUUID() }),
   });
 }
 
@@ -577,8 +580,8 @@ export function createSetupIntent(): Promise<{ clientSecret: string }> {
 export function saveCard(paymentMethodId: string): Promise<{ card: { brand: string | null; last4: string | null } }> {
   return apiFetch('/api/wallet/card', { method: 'POST', body: JSON.stringify({ paymentMethodId }) });
 }
-export function topUpWallet(amount: number): Promise<{ balance: number }> {
-  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount }) });
+export function topUpWallet(amount: number, attemptId?: string): Promise<{ balance: number }> {
+  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount, attemptId: attemptId ?? crypto.randomUUID() }) });
 }
 
 export function giveAwayTickets(_role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {

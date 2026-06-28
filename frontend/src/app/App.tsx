@@ -398,9 +398,9 @@ function AppShell() {
     };
   }, [role]);
 
-  const pledge = async (eventId: string, qty: number, amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<string | undefined> => {
+  const pledge = async (eventId: string, qty: number, amount: number, paymentMethod: 'wallet' | 'card' = 'wallet', attemptId?: string): Promise<string | undefined> => {
     if (!role) return undefined;
-    const result = await createPledge(role, eventId, qty, amount, paymentMethod);
+    const result = await createPledge(role, eventId, qty, amount, paymentMethod, attemptId);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
     setProfileCounts(result.profile.counts);
