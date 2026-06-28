@@ -6,7 +6,7 @@ export type Route =
   | { name: 'attendees'; id: string }
   | { name: 'login' }
   | { name: 'forgot-password' }
-  | { name: 'verify-code'; email: string }
+  | { name: 'verify-code'; email: string; channel?: 'email' | 'sms' }
   | { name: 'reset-confirm'; email: string; code: string }
   | { name: 'reset-password'; email: string; code: string }
   | { name: 'choose-account' }

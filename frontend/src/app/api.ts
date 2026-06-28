@@ -150,6 +150,43 @@ export async function loginWithGoogleRequest(): Promise<void> {
   if (error) throw new Error(error.message);
 }
 
+export async function loginWithFacebookRequest(): Promise<void> {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "facebook",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
+// Phone sign-in (custom backend OTP). Step 1: the backend matches the phone against
+// USER.contact and sends a 6-digit code via Twilio (redirected to the SMS override number).
+export async function requestPhoneOtp(phone: string): Promise<void> {
+  return postPublic('/api/phone-login/request', { phone: phone.trim() });
+}
+
+// Step 2: the backend verifies the code and returns a one-time magic-link token; we exchange
+// it for a Supabase session, then load the profile.
+export async function verifyPhoneOtp(phone: string, code: string): Promise<AuthUser> {
+  const response = await fetch('/api/phone-login/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: phone.trim(), code: code.trim() }),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+  const { tokenHash } = (await response.json()) as { email: string; tokenHash: string };
+  const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+  if (error) throw new Error(error.message);
+  const user = await fetchCurrentUser();
+  if (!user) throw new Error("Could not load your profile.");
+  return user;
+}
+
 // Load the signed-in user's profile (or null if no session). `onboarded` is false
 // for a fresh OAuth account that hasn't picked a role yet.
 export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boolean }) | null> {
@@ -383,8 +420,21 @@ async function postPublic(path: string, body: unknown): Promise<void> {
 }
 
 // Emails a 6-digit code (via Resend → the override inbox in dev) for any email in the DB.
-export function requestPasswordReset(email: string): Promise<void> {
-  return postPublic('/api/password-reset/request', { email: email.trim() });
+// `identifier` is an email (email channel) or a phone number (SMS channel). Returns the
+// resolved account email so the rest of the reset flow stays email-keyed.
+export async function requestPasswordReset(identifier: string, channel: 'email' | 'sms' = 'email'): Promise<{ email: string }> {
+  const response = await fetch('/api/password-reset/request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: identifier.trim(), channel }),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+  const data = (await response.json()) as { email: string };
+  return { email: data.email };
 }
 
 // Verifies the 6-digit code for that email.
