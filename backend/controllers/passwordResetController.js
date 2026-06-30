@@ -2,6 +2,8 @@ import { requestReset, verifyReset, completeReset } from '../services/passwordRe
 
 const MESSAGES = {
   no_account: 'No account found for that email.',
+  no_phone: 'No phone number is saved on this account.',
+  sms_failed: 'Unable to send the SMS code. Try email instead.',
   invalid_code: 'That code is incorrect.',
   expired_code: 'That code has expired. Request a new one.',
   too_many_attempts: 'Too many attempts. Request a new code.',
@@ -10,12 +12,13 @@ const MESSAGES = {
 const msg = (code, fallback) => MESSAGES[code] ?? fallback;
 
 export async function postRequest(req, res) {
-  const result = await requestReset(req.body?.email ?? '');
+  const channel = req.body?.channel === 'sms' ? 'sms' : 'email';
+  const result = await requestReset(req.body?.email ?? '', channel);
   if (result.error) {
     res.status(result.error === 'no_account' ? 404 : 400).json({ status: result.error, message: msg(result.error, 'Unable to send a reset code.') });
     return;
   }
-  res.json({ status: 'ok' });
+  res.json({ status: 'ok', email: result.email });
 }
 
 export function postVerify(req, res) {

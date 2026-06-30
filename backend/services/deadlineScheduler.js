@@ -1,6 +1,7 @@
 import { adminClient } from './supabaseAdmin.js';
-import { notifyEventCancelled } from './notificationService.js';
+import { notifyEventCancelled, notifyEventCompleted } from './notificationService.js';
 import { refundEventCardBookings } from './stripeRefunds.js';
+import { reconcilePayments } from './paymentReconciler.js';
 
 // Periodically auto-cancels + refunds early_bird events that passed their deadline
 // below the hype threshold (via the expire_overdue_events RPC), then emails the
@@ -56,10 +57,32 @@ async function runOnce() {
     }
   }
 
-  // 2) Pay out greenlit events whose end time has passed (organiser wallet).
+  // 2) Pay out greenlit events whose end time has passed (organiser wallet) and
+  //    email each organiser the revenue generated from ticket sales.
   const { data: completed, error: payoutErr } = await admin.rpc('complete_due_events');
-  if (payoutErr) console.error('[DeadlineScheduler] complete_due_events failed:', payoutErr.message);
-  else if ((completed ?? []).length) console.log(`[DeadlineScheduler] Paid out ${completed.length} completed event(s) to organisers.`);
+  if (payoutErr) {
+    console.error('[DeadlineScheduler] complete_due_events failed:', payoutErr.message);
+  } else if ((completed ?? []).length) {
+    console.log(`[DeadlineScheduler] Paid out ${completed.length} completed event(s) to organisers.`);
+    for (const { event_id } of completed) {
+      try {
+        // complete_due_events stores the paid-out revenue in EVENT.profit.
+        const { data: event } = await admin.from('EVENT').select('title, hostId, profit').eq('id', event_id).single();
+        if (!event) continue;
+        const { data: organiser } = await admin.from('USER').select('id, email, username').eq('id', event.hostId).single();
+        notifyEventCompleted({
+          organiser: organiser?.email ? { userId: organiser.id, email: organiser.email, username: organiser.username } : null,
+          eventTitle: event.title ?? 'your event',
+          revenue: Number(event.profit ?? 0),
+          eventId: event_id,
+        });
+      } catch (e) { console.error(`[DeadlineScheduler] completion email failed for ${event_id}:`, e?.message || e); }
+    }
+  }
+
+  // 3) Orphan recovery: refund pledge charges that succeeded but have no booking recorded.
+  const { refunded } = await reconcilePayments();
+  if (refunded) console.log(`[DeadlineScheduler] Reconciler refunded ${refunded} orphaned charge(s).`);
 }
 
 export function startDeadlineScheduler() {

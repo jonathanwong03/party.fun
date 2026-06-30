@@ -1,21 +1,27 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { AuthShell } from '../components/AuthShell';
 import { requestPasswordReset, verifyResetCode } from '../api';
+import { useResendCooldown } from '../hooks/useResendCooldown';
 import type { Route } from '../components/types';
 
-export function VerifyCode({ go, email }: { go: (r: Route) => void; email: string }) {
+export function VerifyCode({ go, email, channel = 'email' }: { go: (r: Route) => void; email: string; channel?: 'email' | 'sms' }) {
   const [code, setCode] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [resent, setResent] = useState(false);
+  const { remaining, start } = useResendCooldown(30);
+  const isSms = channel === 'sms';
+
+  // A code was just sent when arriving here — start the 30s cooldown immediately.
+  useEffect(() => { start(); }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (code.trim().length !== 6) {
-      setError('Enter the 6-digit code from your email.');
+      setError(`Enter the 6-digit code from your ${isSms ? 'phone' : 'email'}.`);
       return;
     }
     setError(null);
@@ -31,11 +37,13 @@ export function VerifyCode({ go, email }: { go: (r: Route) => void; email: strin
   };
 
   const resend = async () => {
+    if (remaining > 0) return;
     setError(null);
     setResent(false);
     try {
-      await requestPasswordReset(email);
+      await requestPasswordReset(email, channel);
       setResent(true);
+      start();
     } catch (e2) {
       setError(e2 instanceof Error ? e2.message : 'Unable to resend the code.');
     }
@@ -45,8 +53,8 @@ export function VerifyCode({ go, email }: { go: (r: Route) => void; email: strin
     <AuthShell
       maxWidthClass="max-w-xl"
       backTo={{ label: 'Back', onClick: () => go({ name: 'forgot-password' }) }}
-      title="Check your email"
-      subtitle={`We sent a 6-digit code to ${email}. Enter it below to continue.`}
+      title={isSms ? 'Check your phone' : 'Check your email'}
+      subtitle={`We sent a 6-digit code ${isSms ? 'by SMS' : `to ${email}`}. Enter it below to continue.`}
     >
       <form className="space-y-4" onSubmit={submit} autoComplete="off">
         <div>
@@ -67,8 +75,16 @@ export function VerifyCode({ go, email }: { go: (r: Route) => void; email: strin
           {submitting ? 'Verifying…' : 'Verify code'}
         </Button>
         <p className="text-center text-xs" style={{ color: 'var(--muted-foreground)' }}>
-          Didn't get the email?{' '}
-          <button type="button" onClick={resend} className="text-[#ff4d2e]" style={{ fontWeight: 600 }}>Resend code</button>
+          Didn't get the {isSms ? 'SMS' : 'email'}?{' '}
+          <button
+            type="button"
+            onClick={resend}
+            disabled={remaining > 0}
+            className="text-[#ff4d2e] disabled:opacity-50"
+            style={{ fontWeight: 600 }}
+          >
+            {remaining > 0 ? `Resend in ${remaining}s` : 'Resend code'}
+          </button>
         </p>
       </form>
     </AuthShell>

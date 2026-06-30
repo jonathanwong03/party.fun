@@ -5,6 +5,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 import { UNIVERSITIES, universityLabel } from '../components/universities';
+import { fetchEventRecommendations, type EventRecommendation } from '../api';
 
 
 export function Landing({
@@ -82,6 +83,13 @@ export function Landing({
         </div>
       </section>
 
+      {/* AI recommendations */}
+      <AiRecommendations
+        events={available}
+        onView={(id) => go({ name: 'event', id })}
+        purchasedEventIds={purchasedEventIds}
+      />
+
       {/* Featured */}
       {featured && (
         <>
@@ -153,5 +161,85 @@ export function Landing({
         </div>
       )}
     </div>
+  );
+}
+
+// AI "Recommended for you": the student types interests, the assistant ranks the
+// visible events (factoring cheapest price). Hides if no AI provider is configured.
+function AiRecommendations({
+  events,
+  onView,
+  purchasedEventIds,
+}: {
+  events: EventItem[];
+  onView: (id: string) => void;
+  purchasedEventIds: Set<string>;
+}) {
+  const [interests, setInterests] = useState('');
+  const [recs, setRecs] = useState<EventRecommendation[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  async function recommend() {
+    if (loading || events.length === 0) return;
+    setLoading(true);
+    try {
+      const res = await fetchEventRecommendations(interests);
+      if (!res.available) { setHidden(true); return; }
+      setRecs(res.recommendations ?? []);
+    } catch {
+      // leave as-is
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (hidden || events.length === 0) return null;
+  const byId = new Map(events.map((e) => [e.id, e]));
+
+  return (
+    <section className="mb-10 rounded-3xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+      <div className="flex items-center gap-2" style={{ fontWeight: 700 }}>
+        <Sparkles size={18} style={{ color: '#ff4d2e' }} /> Recommended for you
+      </div>
+      <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
+        Tell us what you're into and we'll match events (cheapest first).
+      </p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <Input
+          value={interests}
+          onChange={(e) => setInterests(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') recommend(); }}
+          placeholder="e.g. live music, networking, budget-friendly"
+          style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
+        />
+        <button
+          onClick={recommend}
+          disabled={loading}
+          className="inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold text-white transition disabled:opacity-50"
+          style={{ background: '#ff4d2e' }}
+        >
+          <Sparkles size={15} /> {loading ? 'Matching…' : 'Recommend'}
+        </button>
+      </div>
+
+      {recs && recs.length === 0 && (
+        <p className="mt-3 text-sm" style={{ color: 'var(--muted-foreground)' }}>No strong matches yet — try different interests.</p>
+      )}
+      {recs && recs.length > 0 && (
+        <div className="mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {recs.map((r) => {
+            const e = byId.get(r.eventId);
+            if (!e) return null;
+            return (
+              <div key={r.eventId}>
+                <EventCard event={e} alreadyPurchased={purchasedEventIds.has(e.id)} onView={() => onView(e.id)} />
+                <div className="mt-1 px-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>✨ {r.reason}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
   );
 }

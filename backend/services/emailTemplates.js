@@ -260,6 +260,37 @@ export function eventCancelledOrganiserTemplate({ organiserName, eventTitle, rea
   `);
 }
 
+export function eventCompletedTemplate({ organiserName, eventTitle, revenue }) {
+  const formattedRevenue = Number(revenue || 0).toFixed(2);
+  return emailShell(`
+    ${h1('Event Complete 🎉')}
+    ${greet(organiserName, 'organiser')}
+    ${p(`Your event <strong>${eventTitle}</strong> has wrapped up. Here's the revenue generated from ticket sales, paid out to your wallet.`)}
+    ${detailsBox('Revenue Summary',
+      row('Event', eventTitle) +
+      row('Revenue from ticket sales', `$${formattedRevenue}`, '#29e07a'),
+    )}
+    ${p('Operational costs are handled outside party.fun and are not deducted here.')}
+    ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
+  `);
+}
+
+export function agentAdviceTemplate({ organiserName, eventTitle, tips = [] }) {
+  const items = tips
+    .map((t) => `<li style="margin:0 0 12px;font-size:14px;line-height:1.5;color:#e5e7eb;"><strong style="color:#ffffff;">${t.title}</strong> — ${t.detail}</li>`)
+    .join('');
+  return emailShell(`
+    ${h1('A few ways to boost your event 🚀')}
+    ${greet(organiserName, 'organiser')}
+    ${p(`Your event <strong>${eventTitle}</strong> is approaching its deadline and hasn't reached its hype threshold yet. Here are some ideas from the party.fun assistant to help it get there:`)}
+    <div style="background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:20px 24px;margin-bottom:30px;">
+      <ul style="margin:0;padding-left:18px;">${items}</ul>
+    </div>
+    ${p('Open your dashboard to make changes — or ask the in-app assistant and it can apply them for you (with your confirmation).')}
+    ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
+  `);
+}
+
 export function ticketsGivenAwayTemplate({ userName, role, eventTitle, qty, allGivenAway }) {
   const note = allGivenAway
     ? `You've given away <strong>all</strong> your tickets, so you will <strong>no longer be able to attend ${eventTitle}</strong>. The released spots have returned to the public pool.`

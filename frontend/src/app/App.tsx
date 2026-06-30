@@ -11,11 +11,13 @@ import {
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
+import { AiAssistant } from './components/AiAssistant';
 import { type EventItem, type Role, type Route } from './components/types';
 import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, adminCancelEvent, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, inviteCoOrganiserRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
+import { installIdleTimeout, resetActivity } from './idle';
 import { Landing } from './pages/Landing';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
@@ -54,6 +56,7 @@ type RouteState = {
   tab?: 'created' | 'drafts';
   email?: string;
   code?: string;
+  channel?: 'email' | 'sms';
 };
 
 function pathForRoute(route: Route) {
@@ -139,7 +142,7 @@ function stateForRoute(route: Route): RouteState | undefined {
   }
 
   if (route.name === 'verify-code') {
-    return { email: route.email };
+    return { email: route.email, channel: route.channel };
   }
 
   if (route.name === 'reset-confirm' || route.name === 'reset-password') {
@@ -163,7 +166,7 @@ function isPublicPath(pathname: string) {
 function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/' || pathname === '/login') return { name: 'login' };
   if (pathname === '/forgot-password') return { name: 'forgot-password' };
-  if (pathname === '/forgot-password/verify') return { name: 'verify-code', email: state?.email ?? '' };
+  if (pathname === '/forgot-password/verify') return { name: 'verify-code', email: state?.email ?? '', channel: state?.channel };
   if (pathname === '/forgot-password/confirm') return { name: 'reset-confirm', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/forgot-password/reset') return { name: 'reset-password', email: state?.email ?? '', code: state?.code ?? '' };
   if (pathname === '/signup') return { name: 'choose-account' };
@@ -323,6 +326,7 @@ function AppShell() {
 
   // Restore session on page load and keep role/user in sync with Supabase Auth.
   useEffect(() => {
+    installIdleTimeout(); // 3-hour inactivity auto sign-out
     supabase.auth.getSession().then(async ({ data: { session } }) => {
       if (session) {
         const { data: profile } = await supabase
@@ -395,9 +399,9 @@ function AppShell() {
     };
   }, [role]);
 
-  const pledge = async (eventId: string, qty: number, amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<string | undefined> => {
+  const pledge = async (eventId: string, qty: number, amount: number, paymentMethod: 'wallet' | 'card' = 'wallet', attemptId?: string): Promise<string | undefined> => {
     if (!role) return undefined;
-    const result = await createPledge(role, eventId, qty, amount, paymentMethod);
+    const result = await createPledge(role, eventId, qty, amount, paymentMethod, attemptId);
     if (result.event) replaceEvent(result.event);
     setProfileTickets(result.profile.tickets);
     setProfileCounts(result.profile.counts);
@@ -440,6 +444,7 @@ function AppShell() {
   };
 
   const handleLogin = (account: AuthUser) => {
+    resetActivity(); // start the 3-hour idle clock fresh on every login
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
@@ -512,7 +517,7 @@ function AppShell() {
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={role === 'admin' ? <Navigate to="/events" replace /> : <JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
-        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} /> : <Navigate to="/login" replace />} />
+        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} events={events} /> : <Navigate to="/login" replace />} />
         <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/pending-invites" element={role === 'organiser' ? <PendingInvites go={go} onChanged={refreshEvents} /> : <Navigate to="/events" replace />} />
@@ -529,6 +534,7 @@ function AppShell() {
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
+      {!isAuthPage && role && <AiAssistant />}
     </div>
   );
 }
@@ -608,10 +614,11 @@ function ConfirmationRoute({
 
 function VerifyCodeRoute({ go }: { go: (r: Route) => void }) {
   const location = useLocation();
-  const email = (location.state as RouteState | null)?.email;
+  const st = location.state as RouteState | null;
+  const email = st?.email;
   // Direct hits / refreshes lose the email in router state — send back to step 1.
   if (!email) return <Navigate to="/forgot-password" replace />;
-  return <VerifyCode go={go} email={email} />;
+  return <VerifyCode go={go} email={email} channel={st?.channel} />;
 }
 
 function ResetConfirmRoute({ go }: { go: (r: Route) => void }) {

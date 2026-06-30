@@ -6,6 +6,7 @@ The app uses a React + Vite frontend and an Express API, both backed by **Supaba
 
 - **Auth** (login, registration, session) runs directly against **Supabase Auth** from the frontend.
 - **Data** (events, profiles, checkout, organiser CRUD) goes through the **Express backend**, which forwards each request's Supabase access token to Supabase. Every query therefore runs as the signed-in user, so **Row Level Security (RLS)** and the database's `SECURITY DEFINER` RPC functions enforce access. The backend never uses the service-role key.
+- **Forecasting** runs inside the same Express backend. There is no separate Python forecasting service to start.
 
 Real payment processing is not connected yet (payment capture is simulated at pledge time).
 
@@ -450,6 +451,9 @@ For the cleanest presentation, use this sequence:
 - After giving away all tickets, the user may buy available tickets again. The old cancelled booking remains in their history.
 - Released tickets are made available at the current tier price. Once Greenlit pricing opens, pricing does not regress to Early Birds.
 - Organisers cannot pledge for their own events.
+- Pricing model choice (`Tiered` or `Hype curve`) is locked after event creation.
+- Analytics forecasts expected ticket revenue. Operational costs are shown only as typical categories outside party.fun.
+- Completed greenlit events record a simulated ticket revenue payout to the organiser; operational costs are not deducted by the app.
 
 ## Event rules
 
@@ -459,6 +463,7 @@ For the cleanest presentation, use this sequence:
 - `maxCapacity`: maximum active ticket count allowed
 - `activeTicketCount`, `hypePercentage`, and `spotsLeft` are derived values
 - `hypePercentage = min(100, activeTicketCount / hypeThreshold * 100)`
+- Pricing model (`EVENT_SETTINGS.hypeDrivenPricing`) is immutable once the event has been created.
 
 ## Database (Supabase)
 
@@ -472,7 +477,7 @@ Data lives in Supabase Postgres. The tables (RLS enabled):
 - `BOOKING_ITEMS`: quantity and price breakdown for each booking
 - `TICKETS`: individual ticket lifecycle records
 
-The business logic (pledge allocation across tiers, hype recalculation, give-away, soft delete, event CRUD) lives in Postgres **RPC functions** — `get_events`, `get_profile`, `get_quote`, `create_pledge`, `give_away_tickets`, `soft_delete_booking`, `create_event`, `update_event`, `delete_event`. These are `SECURITY DEFINER` and use `auth.uid()`, so they run safely whether called by the frontend or the backend on the user's behalf.
+The business logic (pledge allocation across tiers, hype recalculation, give-away, soft delete, event CRUD, expiry, and ticket revenue payout) lives in Postgres **RPC functions** — `get_events`, `get_profile`, `get_quote`, `create_pledge`, `give_away_tickets`, `soft_delete_booking`, `create_event`, `update_event`, `delete_event`, `expire_overdue_events`, `complete_due_events`. These are `SECURITY DEFINER` and use `auth.uid()` where user context is required, so they run safely whether called by the frontend or the backend on the user's behalf.
 
 ## Main API routes
 

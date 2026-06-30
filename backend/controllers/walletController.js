@@ -1,4 +1,8 @@
+import { randomUUID } from 'crypto';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const attemptIdOf = (body) => (UUID_RE.test(body?.attemptId ?? '') ? body.attemptId : randomUUID());
 
 const stripeOff = (res) =>
   res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' });
@@ -66,6 +70,7 @@ export async function postTopup(req, res) {
     res.status(400).json({ status: 'no_card', message: 'Link a card before topping up.' });
     return;
   }
+  const attemptId = attemptIdOf(req.body);
   let pi;
   try {
     pi = await stripe().paymentIntents.create({
@@ -75,7 +80,8 @@ export async function postTopup(req, res) {
       payment_method: me.stripePaymentMethodId,
       off_session: true,
       confirm: true,
-    });
+      metadata: { kind: 'topup', userId: req.user.id, attemptId },
+    }, { idempotencyKey: `topup:${attemptId}` });
   } catch (e) {
     res.status(402).json({ status: 'charge_failed', message: e?.message || 'Your card was declined.' });
     return;
