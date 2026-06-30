@@ -42,6 +42,52 @@ export function anyConfigured() {
   return Object.values(dependencies.providers).some((p) => p?.isConfigured?.());
 }
 
+const PROVIDER_LABEL = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' };
+
+// Configured (provider, model) pairs across both tiers, for the UI model picker.
+export function listConfiguredModels() {
+  const cfg = tierConfig();
+  const seen = new Set();
+  const out = [];
+  for (const tier of Object.keys(cfg)) {
+    for (const { provider, model } of cfg[tier]) {
+      const impl = dependencies.providers[provider];
+      const key = `${provider}:${model}`;
+      if (!impl?.isConfigured?.() || seen.has(key)) continue;
+      seen.add(key);
+      out.push({ provider, model, tier, label: `${PROVIDER_LABEL[provider] ?? provider} · ${model}` });
+    }
+  }
+  return out;
+}
+
+// Ordered candidate list for a tier: the user-picked {provider, model} first (if
+// configured), then the tier's other configured providers — enabling auto-fallback.
+export function resolveCandidates(tier, preferred) {
+  const base = (tierConfig()[tier] ?? []).filter((c) => dependencies.providers[c.provider]?.isConfigured?.());
+  if (!preferred?.provider || !preferred?.model) return base;
+  if (!dependencies.providers[preferred.provider]?.isConfigured?.()) return base;
+  const rest = base.filter((c) => !(c.provider === preferred.provider && c.model === preferred.model));
+  return [{ provider: preferred.provider, model: preferred.model }, ...rest];
+}
+
+// Run a tool-capable turn over an ordered candidate list (preferred-first), with
+// fallback. Returns the first provider's normalised {text, toolCalls, ...} or null.
+export async function runChat(candidates, { system, messages, tools, maxTokens }) {
+  const errors = [];
+  for (const { provider, model } of candidates) {
+    const impl = dependencies.providers[provider];
+    if (!impl?.isConfigured?.() || typeof impl.chatWithTools !== 'function') continue;
+    try {
+      return await impl.chatWithTools({ system, messages, tools, model, maxTokens });
+    } catch (e) {
+      errors.push(`${provider}: ${e?.message || e}`);
+    }
+  }
+  if (errors.length) console.warn('[modelRouter] runChat exhausted:', errors.join(' | '));
+  return null;
+}
+
 // Try each candidate in the tier; return the first successful generation, or
 // null if none are configured or all fail. Never throws.
 export async function runTier(tier, { system, messages, jsonSchema, maxTokens }) {

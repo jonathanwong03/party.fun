@@ -706,7 +706,9 @@ export type EventRecommendation = { eventId: string; title: string; cheapestPric
 export type EventRecommendations = { available: boolean; recommendations?: EventRecommendation[] };
 export type AssistantAnswer = { available: boolean; answer?: string };
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
-export type ChatReply = { available: boolean; reply?: string };
+export type ChatReply = { available: boolean; reply?: string; provider?: string; model?: string };
+export type AiModel = { provider: string; model: string; label: string; tier?: string };
+export type AiModels = { available: boolean; models: AiModel[] };
 
 export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {
   return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
@@ -724,8 +726,12 @@ export function askAssistant(question: string, history: ChatMessage[] = []): Pro
   return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
 }
 
-export function sendChat(messages: ChatMessage[]): Promise<ChatReply> {
-  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages }) });
+export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, ...(model ?? {}) }) });
+}
+
+export function fetchAiModels(): Promise<AiModels> {
+  return apiFetch<AiModels>('/api/ai/models');
 }
 
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────

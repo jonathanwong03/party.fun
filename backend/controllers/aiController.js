@@ -1,9 +1,9 @@
-import { anyConfigured } from '../services/ai/modelRouter.js';
+import { anyConfigured, listConfiguredModels } from '../services/ai/modelRouter.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
-import { answerAppQuestion } from '../services/ai/tasks/answerAppQuestion.js';
-import { chat as chatTask } from '../services/ai/tasks/chat.js';
+import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
+import { runAgent } from '../services/ai/agent/runAgent.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -105,9 +105,31 @@ export async function ask(req, res) {
   res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [] }));
 }
 
-// POST /api/ai/chat
+const AGENT_SYSTEM = () => [
+  buildKnowledgeSystem(),
+  '',
+  'You are an event-planning agent for party.fun. You can call tools to look up real events and forecasts:',
+  '- search_events: find events the user can see (by keyword/price/hype).',
+  '- get_event_details: full details for one event.',
+  "- get_event_forecast: projected sales/revenue/costs for the user's OWN events (use this before giving revenue advice).",
+  'Prefer calling a tool over guessing about events or numbers. Keep replies short, friendly and practical.',
+].join('\n');
+
+// POST /api/ai/chat — agentic: the model autonomously calls tools in a loop.
 export async function chat(req, res) {
   if (!guard(req, res)) return;
-  const { messages } = req.body ?? {};
-  res.json(await chatTask({ messages: Array.isArray(messages) ? messages : [] }));
+  const { messages, provider, model } = req.body ?? {};
+  const preferred = provider && model ? { provider, model } : undefined;
+  const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
+  res.json(await runAgent({
+    system: AGENT_SYSTEM(),
+    messages: Array.isArray(messages) ? messages : [],
+    ctx,
+    preferred,
+  }));
+}
+
+// GET /api/ai/models — configured provider/model options for the UI picker.
+export function models(_req, res) {
+  res.json({ available: anyConfigured(), models: listConfiguredModels() });
 }
