@@ -3,8 +3,8 @@ import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   AreaChart, Area, PieChart, Pie, Cell, Legend,
 } from 'recharts';
-import { TrendingUp, Users, DollarSign, CalendarCheck, Ticket, Zap, CheckCircle2, LineChart as LineChartIcon } from 'lucide-react';
-import { fetchAnalytics, fetchHostedSummary, fetchRevenueForecast, type AnalyticsData, type DayCount, type HostedSummary, type RevenueForecast } from '../api';
+import { TrendingUp, Users, DollarSign, CalendarCheck, Ticket, Zap, CheckCircle2, Sparkles, LineChart as LineChartIcon } from 'lucide-react';
+import { fetchAnalytics, fetchHostedSummary, fetchRevenueForecast, fetchRevenueTips, type AnalyticsData, type DayCount, type HostedSummary, type RevenueForecast, type RevenueTip } from '../api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import type { EventItem, Role, Route } from '../components/types';
 
@@ -263,8 +263,66 @@ function RevenueForecast({ events }: { events: EventItem[] }) {
     >
       {loading ? <Empty text="Forecasting…" />
         : !fc || fc.available === false ? <Empty text="Forecast unavailable." />
-        : <ForecastBody fc={fc} />}
+        : <><ForecastBody fc={fc} /><RevenueTipsPanel eventId={eventId} /></>}
     </ChartCard>
+  );
+}
+
+// AI revenue-boost tips for the selected event (on-demand; degrades silently).
+function RevenueTipsPanel({ eventId }: { eventId: string }) {
+  const [tips, setTips] = useState<RevenueTip[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+
+  useEffect(() => { setTips(null); setUnavailable(false); }, [eventId]);
+
+  async function load() {
+    if (!eventId || loading) return;
+    setLoading(true);
+    try {
+      const res = await fetchRevenueTips(eventId);
+      if (!res.available) setUnavailable(true);
+      else setTips(res.tips ?? []);
+    } catch {
+      setUnavailable(true);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (unavailable) return null;
+  const impactColor = (i: RevenueTip['impact']) => (i === 'high' ? '#29e07a' : i === 'medium' ? '#ffcb3c' : '#8a8a99');
+
+  return (
+    <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border)' }}>
+      {tips === null ? (
+        <button
+          onClick={load}
+          disabled={loading}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+          style={{ background: '#ff4d2e' }}
+        >
+          <Sparkles size={14} /> {loading ? 'Thinking…' : 'Get AI revenue tips'}
+        </button>
+      ) : tips.length === 0 ? (
+        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>No tips available right now.</div>
+      ) : (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
+            <Sparkles size={14} style={{ color: '#ff4d2e' }} /> AI revenue tips
+          </div>
+          {tips.map((t, i) => (
+            <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm" style={{ fontWeight: 600, color: 'var(--foreground)' }}>{t.title}</span>
+                <span className="text-xs uppercase" style={{ color: impactColor(t.impact), fontWeight: 700 }}>{t.impact}</span>
+              </div>
+              <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{t.detail}</div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

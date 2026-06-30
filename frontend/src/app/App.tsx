@@ -11,6 +11,7 @@ import {
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { MobileNav } from './components/MobileNav';
+import { AiAssistant } from './components/AiAssistant';
 import { type EventItem, type Role, type Route } from './components/types';
 import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile, logoutRequest, createEventRequest, updateEventRequest, deleteEventRequest, cancelEventRequest, hideEventRequest, adminCancelEvent, deleteAccountRequest, fetchDrafts, saveDraftRequest, deleteDraftRequest, fetchWallet, inviteCoOrganiserRequest, type AuthUser, type ProfileTicket, type ProfileCounts } from './api';
 
@@ -533,6 +534,7 @@ function AppShell() {
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
+      {!isAuthPage && role && <AiAssistant />}
     </div>
   );
 }

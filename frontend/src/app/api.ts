@@ -697,6 +697,37 @@ export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> 
   return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
 }
 
+// ── AI assistant (multi-provider; all responses tolerate {available:false}) ────
+
+export type EventCopySuggestions = { available: boolean; names?: string[]; descriptions?: string[] };
+export type RevenueTip = { title: string; detail: string; impact: 'high' | 'medium' | 'low' };
+export type RevenueTips = { available: boolean; tips?: RevenueTip[] };
+export type EventRecommendation = { eventId: string; title: string; cheapestPrice: number | null; reason: string };
+export type EventRecommendations = { available: boolean; recommendations?: EventRecommendation[] };
+export type AssistantAnswer = { available: boolean; answer?: string };
+export type ChatMessage = { role: 'user' | 'assistant'; content: string };
+export type ChatReply = { available: boolean; reply?: string };
+
+export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {
+  return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function fetchRevenueTips(eventId: string): Promise<RevenueTips> {
+  return apiFetch<RevenueTips>(`/api/ai/revenue-tips/${eventId}`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export function fetchEventRecommendations(interests: string): Promise<EventRecommendations> {
+  return apiFetch<EventRecommendations>('/api/ai/recommend-events', { method: 'POST', body: JSON.stringify({ interests }) });
+}
+
+export function askAssistant(question: string, history: ChatMessage[] = []): Promise<AssistantAnswer> {
+  return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
+}
+
+export function sendChat(messages: ChatMessage[]): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages }) });
+}
+
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────
 
 export type AttendeeRow = {

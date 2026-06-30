@@ -4,8 +4,9 @@ import {
   Image as ImageIcon,
   AlertTriangle,
   X,
+  Sparkles,
 } from "lucide-react";
-import { uploadEventImage } from "../api";
+import { uploadEventImage, suggestEventCopy } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -464,6 +465,12 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     style={errStyle(errOf("description"))}
                   />
                 </Field>
+                <AiCopyHelper
+                  title={title}
+                  theme={description}
+                  onPickName={setTitle}
+                  onPickDescription={setDescription}
+                />
                 <Field label="Event image / banner" error={imageError}>
                   <input
                     ref={imageRef}
@@ -886,6 +893,80 @@ const fieldStyle: React.CSSProperties = {
   borderColor: "var(--border)",
   height: 42,
 };
+
+// Inline AI helper: suggest event names + descriptions from the current draft.
+// Hides itself if the backend reports no AI provider is configured.
+function AiCopyHelper({
+  title,
+  theme,
+  onPickName,
+  onPickDescription,
+}: {
+  title: string;
+  theme: string;
+  onPickName: (v: string) => void;
+  onPickDescription: (v: string) => void;
+}) {
+  const [names, setNames] = useState<string[]>([]);
+  const [descriptions, setDescriptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  async function generate() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const res = await suggestEventCopy({ title, theme });
+      if (!res.available) { setHidden(true); return; }
+      setNames(res.names ?? []);
+      setDescriptions(res.descriptions ?? []);
+    } catch {
+      // leave as-is; user can retry
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (hidden) return null;
+
+  return (
+    <div className="mt-2 rounded-xl p-3" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+      <button
+        type="button"
+        onClick={generate}
+        disabled={loading}
+        className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+        style={{ background: "#ff4d2e" }}
+      >
+        <Sparkles size={14} /> {loading ? "Thinking…" : "Suggest names & description with AI"}
+      </button>
+      {names.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Name ideas</div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {names.map((n, i) => (
+              <button key={i} type="button" onClick={() => onPickName(n)} className="rounded-full px-2.5 py-1 text-xs transition hover:opacity-80" style={{ background: "rgba(255,255,255,0.06)", color: "var(--foreground)" }}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {descriptions.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Descriptions</div>
+          <div className="mt-1 space-y-2">
+            {descriptions.map((d, i) => (
+              <button key={i} type="button" onClick={() => onPickDescription(d)} className="block w-full rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-80" style={{ background: "rgba(255,255,255,0.06)", color: "var(--foreground)" }}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function Section({
   title,
