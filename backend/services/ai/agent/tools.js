@@ -54,6 +54,33 @@ export const TOOL_DEFS = [
       required: ['eventId'],
     },
   },
+  {
+    name: 'propose_adjust_pricing',
+    description: "PROPOSE a ticket price change for one of the organiser's OWN events. This does NOT apply the change — it returns a proposal the user must confirm. Provide earlyPrice and/or greenlitPrice.",
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        eventId: { type: 'string', description: 'The event id (must be hosted by the caller).' },
+        earlyPrice: { type: 'number', description: 'New early-bird price (optional).' },
+        greenlitPrice: { type: 'number', description: 'New greenlit price (optional).' },
+      },
+      required: ['eventId'],
+    },
+  },
+  {
+    name: 'propose_invite_coorganiser',
+    description: "PROPOSE inviting a co-organiser to one of the organiser's OWN events. Does NOT send the invite — returns a proposal the user must confirm.",
+    parameters: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        eventId: { type: 'string', description: 'The event id (must be hosted by the caller).' },
+        identifier: { type: 'string', description: 'Email or username of the organiser to invite.' },
+      },
+      required: ['eventId', 'identifier'],
+    },
+  },
 ];
 
 export const EXECUTORS = {
@@ -108,6 +135,53 @@ export const EXECUTORS = {
       totalOperationalCost: f.totalOperationalCost,
       estimatedNet: f.estimatedNet,
       operationalCosts: f.operationalCosts,
+    };
+  },
+
+  // ── Proposal tools (write actions; validate only, never mutate) ──────────────
+  async propose_adjust_pricing(args, ctx) {
+    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    if (!ev) return { error: 'Event not found or not visible to you.' };
+    if (ev.hostId !== ctx.userId) return { error: 'You can only change pricing for events you host.' };
+    if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be edited.' };
+
+    const curPrice = (name) => (ev.statuses ?? []).find((s) => s.statusName === name)?.price;
+    const early = args.earlyPrice != null ? Number(args.earlyPrice) : null;
+    const greenlit = args.greenlitPrice != null ? Number(args.greenlitPrice) : null;
+    if (early == null && greenlit == null) return { error: 'Specify earlyPrice and/or greenlitPrice.' };
+    if (early != null && (!Number.isFinite(early) || early < 0)) return { error: 'earlyPrice must be a non-negative number.' };
+    if (greenlit != null && (!Number.isFinite(greenlit) || greenlit < 0)) return { error: 'greenlitPrice must be a non-negative number.' };
+
+    const parts = [];
+    if (early != null) parts.push(`Early-bird $${Number(curPrice('early_bird') ?? 0).toFixed(2)} → $${early.toFixed(2)}`);
+    if (greenlit != null) parts.push(`Greenlit $${Number(curPrice('greenlit') ?? 0).toFixed(2)} → $${greenlit.toFixed(2)}`);
+    return {
+      proposal: {
+        id: `adjust_pricing:${ev.id}:${Date.now()}`,
+        action: 'adjust_pricing',
+        eventId: ev.id,
+        title: ev.title,
+        summary: `Update pricing for "${ev.title}": ${parts.join(', ')}.`,
+        payload: { earlyPrice: early, greenlitPrice: greenlit },
+      },
+    };
+  },
+
+  async propose_invite_coorganiser(args, ctx) {
+    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    if (!ev) return { error: 'Event not found or not visible to you.' };
+    if (ev.hostId !== ctx.userId) return { error: 'Only the event owner can invite co-organisers.' };
+    const identifier = String(args.identifier ?? '').trim();
+    if (!identifier) return { error: 'Provide the co-organiser email or username.' };
+    return {
+      proposal: {
+        id: `invite_coorganiser:${ev.id}:${Date.now()}`,
+        action: 'invite_coorganiser',
+        eventId: ev.id,
+        title: ev.title,
+        summary: `Invite "${identifier}" as a co-organiser of "${ev.title}".`,
+        payload: { identifier },
+      },
     };
   },
 };

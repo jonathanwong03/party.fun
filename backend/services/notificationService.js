@@ -5,7 +5,7 @@ import { buildTicketsPdf } from './ticketPdf.js';
 
 function defaultServerClient() {
   const url = process.env.SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_ANON_KEY;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
   if (!url || !key) return null;
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
@@ -58,7 +58,7 @@ async function logNotification({ userId, email, eventId, type, subject, status, 
   if (!supabase) return;
 
   try {
-    const { error: dbError } = await supabase.from('notification_logs').insert(row);
+    const { error: dbError } = await supabase.from('NOTIFICATION_LOGS').insert(row);
     if (dbError) console.warn(`[NotificationService] Supabase log warning: ${dbError.message}`);
   } catch (dbErr) {
     console.warn(`[NotificationService] Supabase log warning: ${dbErr.message}`);
@@ -181,6 +181,18 @@ export function notifyEventCompleted({ organiser, eventTitle, revenue, eventId }
       subject: `Event complete — revenue summary: ${eventTitle}`,
       html: templates.eventCompletedTemplate({ organiserName: organiser.username, eventTitle, revenue }),
       logPayload: { userId: organiser.userId, eventId, type: 'event_completed' },
+    }),
+  );
+}
+
+export function notifyAgentAdvice({ organiser, eventTitle, tips, eventId }) {
+  if (!organiser?.email) return;
+  return fireAndForget('agentAdvice', () =>
+    send('agentAdvice', {
+      to: organiser.email,
+      subject: `Boost your event: ${eventTitle}`,
+      html: templates.agentAdviceTemplate({ organiserName: organiser.username, eventTitle, tips }),
+      logPayload: { userId: organiser.userId, eventId, type: 'agent_advice' },
     }),
   );
 }

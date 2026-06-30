@@ -706,7 +706,9 @@ export type EventRecommendation = { eventId: string; title: string; cheapestPric
 export type EventRecommendations = { available: boolean; recommendations?: EventRecommendation[] };
 export type AssistantAnswer = { available: boolean; answer?: string };
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
-export type ChatReply = { available: boolean; reply?: string; provider?: string; model?: string };
+export type AgentProposal = { id: string; action: string; eventId: string; title: string; summary: string; payload?: Record<string, unknown> };
+export type ChatReply = { available: boolean; reply?: string; proposals?: AgentProposal[]; provider?: string; model?: string; conversationId?: string | null };
+export type ActionResult = { status?: string; message?: string };
 export type AiModel = { provider: string; model: string; label: string; tier?: string };
 export type AiModels = { available: boolean; models: AiModel[] };
 
@@ -726,12 +728,29 @@ export function askAssistant(question: string, history: ChatMessage[] = []): Pro
   return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
 }
 
-export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }): Promise<ChatReply> {
-  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, ...(model ?? {}) }) });
+export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }, conversationId?: string | null): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null, ...(model ?? {}) }) });
 }
 
 export function fetchAiModels(): Promise<AiModels> {
   return apiFetch<AiModels>('/api/ai/models');
+}
+
+export function executeAiAction(action: string, eventId: string, payload?: Record<string, unknown>): Promise<ActionResult> {
+  return apiFetch<ActionResult>('/api/ai/execute-action', { method: 'POST', body: JSON.stringify({ action, eventId, payload }) });
+}
+
+export type StoredChatMessage = { role: 'user' | 'assistant'; content: string; model?: string | null };
+export type AiConversation = { id: string; title: string; updatedAt: string };
+
+export function fetchConversations(): Promise<{ conversations: AiConversation[] }> {
+  return apiFetch<{ conversations: AiConversation[] }>('/api/ai/conversations');
+}
+export function fetchConversation(id: string): Promise<{ messages: StoredChatMessage[] }> {
+  return apiFetch<{ messages: StoredChatMessage[] }>(`/api/ai/conversations/${id}`);
+}
+export function deleteConversation(id: string): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>(`/api/ai/conversations/${id}`, { method: 'DELETE' });
 }
 
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────

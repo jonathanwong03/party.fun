@@ -4,6 +4,7 @@ import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runAgent } from '../services/ai/agent/runAgent.js';
+import { executeAction } from '../services/ai/agent/actions.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -108,28 +109,114 @@ export async function ask(req, res) {
 const AGENT_SYSTEM = () => [
   buildKnowledgeSystem(),
   '',
-  'You are an event-planning agent for party.fun. You can call tools to look up real events and forecasts:',
+  'You are an event-planning agent for party.fun. You can call tools to look up real data and to PROPOSE changes:',
   '- search_events: find events the user can see (by keyword/price/hype).',
   '- get_event_details: full details for one event.',
   "- get_event_forecast: projected sales/revenue/costs for the user's OWN events (use this before giving revenue advice).",
-  'Prefer calling a tool over guessing about events or numbers. Keep replies short, friendly and practical.',
+  "- propose_adjust_pricing: PROPOSE a price change to the user's own event.",
+  "- propose_invite_coorganiser: PROPOSE inviting a co-organiser to the user's own event.",
+  'Prefer calling a tool over guessing about events or numbers.',
+  'The propose_* tools do NOT make the change — they create a proposal the user must confirm. After calling one,',
+  'tell the user what you are proposing and that they need to confirm it; never claim the change is already done.',
+  'Keep replies short, friendly and practical.',
 ].join('\n');
 
-// POST /api/ai/chat — agentic: the model autonomously calls tools in a loop.
+// Title a new conversation from the opening message (first ~8 words).
+function makeTitle(text) {
+  const words = String(text ?? '').trim().split(/\s+/).filter(Boolean).slice(0, 8).join(' ');
+  return (words || 'New chat').slice(0, 60);
+}
+
+// POST /api/ai/chat — agentic chat. Persists into a conversation (creating one,
+// auto-titled, when none is supplied) and returns the conversationId so the UI
+// can keep appending to the same thread.
 export async function chat(req, res) {
   if (!guard(req, res)) return;
-  const { messages, provider, model } = req.body ?? {};
+  const { messages, provider, model, conversationId } = req.body ?? {};
+  const list = Array.isArray(messages) ? messages : [];
   const preferred = provider && model ? { provider, model } : undefined;
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
-  res.json(await runAgent({
-    system: AGENT_SYSTEM(),
-    messages: Array.isArray(messages) ? messages : [],
-    ctx,
-    preferred,
-  }));
+  const result = await runAgent({ system: AGENT_SYSTEM(), messages: list, ctx, preferred });
+
+  let convoId = conversationId || null;
+  if (result?.available && result.reply) {
+    try {
+      if (!convoId) {
+        const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+        const { data: conv } = await req.supabase
+          .from('AI_CHAT_CONVERSATIONS')
+          .insert({ title: makeTitle(firstUser?.content) })
+          .select('id')
+          .single();
+        convoId = conv?.id ?? null;
+      }
+      if (convoId) {
+        const lastUser = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+        const rows = [];
+        // Stored as 'chat user' (not 'user') to avoid confusion with the app's USER role.
+        if (lastUser) rows.push({ conversation_id: convoId, role: 'chat user', content: String(lastUser.content) });
+        rows.push({ conversation_id: convoId, role: 'assistant', content: result.reply, model: result.model ? `${result.provider} · ${result.model}` : null });
+        await req.supabase.from('AI_CHAT_MESSAGES').insert(rows);
+        await req.supabase.from('AI_CHAT_CONVERSATIONS').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
+      }
+    } catch (e) {
+      console.warn('[ai] history persist failed:', e?.message || e);
+    }
+  }
+
+  res.json({ ...result, conversationId: convoId });
+}
+
+// GET /api/ai/conversations — the user's saved conversations (most recent first).
+export async function listConversations(req, res) {
+  const { data, error } = await req.supabase
+    .from('AI_CHAT_CONVERSATIONS')
+    .select('id, title, updated_at')
+    .order('updated_at', { ascending: false })
+    .limit(100);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json({ conversations: (data ?? []).map((c) => ({ id: c.id, title: c.title, updatedAt: c.updated_at })) });
+}
+
+// GET /api/ai/conversations/:id — messages in one conversation (oldest first).
+export async function getConversation(req, res) {
+  const { data, error } = await req.supabase
+    .from('AI_CHAT_MESSAGES')
+    .select('role, content, model, created_at')
+    .eq('conversation_id', req.params.id)
+    .order('created_at', { ascending: true })
+    .limit(500);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  // Map stored 'chat user' back to the standard 'user' role the UI/LLM expect.
+  res.json({ messages: (data ?? []).map((m) => ({ role: m.role === 'chat user' ? 'user' : m.role, content: m.content, model: m.model })) });
+}
+
+// DELETE /api/ai/conversations/:id — delete a conversation (messages cascade).
+export async function deleteConversation(req, res) {
+  const { error } = await req.supabase.from('AI_CHAT_CONVERSATIONS').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json({ status: 'ok' });
 }
 
 // GET /api/ai/models — configured provider/model options for the UI picker.
 export function models(_req, res) {
   res.json({ available: anyConfigured(), models: listConfiguredModels() });
+}
+
+// POST /api/ai/execute-action — run a user-confirmed agent proposal (a write).
+// No LLM needed, so it only enforces the rate limit, not provider availability.
+export async function executeActionHandler(req, res) {
+  if (rateLimited(req.user.id)) {
+    return res.status(429).json({ status: 'rate_limited', message: 'Too many requests; try again shortly.' });
+  }
+  const { action, eventId, payload } = req.body ?? {};
+  if (!action || !eventId) {
+    return res.status(400).json({ status: 'error', message: 'action and eventId are required.' });
+  }
+  const result = await executeAction({ sb: req.supabase, user: req.user, action, eventId, payload });
+  if (result?.error) {
+    const code = result.error === 'not_owner' ? 403 : result.error === 'not_found' ? 404 : 400;
+    return res.status(code).json({ status: result.error, message: result.message });
+  }
+  res.json(result);
 }
