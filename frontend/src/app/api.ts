@@ -23,9 +23,13 @@ export type Quote = {
   qty: number;
   lines: QuoteLine[];
   subtotal: number;
-  total: number;
+  total: number;        // ticket total (GST-exclusive)
   subtotalText: string;
   totalText: string;
+  gst: number;          // 9% GST on the ticket total
+  grandTotal: number;   // total payable = total + gst
+  gstText: string;
+  grandTotalText: string;
   pricingModel?: 'hype_driven' | 'static';
 };
 
@@ -656,10 +660,12 @@ export type AnalyticsData = {
     perEvent: { title: string; ticketsSold: number; capacity: number; projected: number; revenue: number }[];
     pledgesByDay: DayCount[];
     totals: { events: number; revenue: number; attendees: number };
+    past: { tickets: number; revenue: number; profit: number };
   } | null;
   user: {
     pledgesByDay: DayCount[];
     spendByMonth: { month: string; amount: number }[];
+    spendByDay: { day: string; amount: number }[];
     totals: { joined: number; upcoming: number; spent: number };
   };
   platform?: {
@@ -670,6 +676,25 @@ export type AnalyticsData = {
 
 export function fetchAnalytics(): Promise<AnalyticsData> {
   return apiFetch<AnalyticsData>("/api/analytics");
+}
+
+// Backend-local ticket revenue forecast. `available:false` lets the dashboard degrade gracefully.
+export type RevenueForecast = {
+  available: boolean;
+  attractiveness?: number;
+  projectedTicketsSold?: number;
+  avgTicketPrice?: number;
+  projectedRevenue?: number;
+  dailySales?: { dayOffset: number; tickets: number }[];
+  dailyRevenue?: { dayOffset: number; revenue: number }[];
+  breakdown?: Record<string, number>;
+  operationalCosts?: { category: string; cost: number }[];
+  totalOperationalCost?: number;
+  estimatedNet?: number;
+};
+
+export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> {
+  return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
 }
 
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────

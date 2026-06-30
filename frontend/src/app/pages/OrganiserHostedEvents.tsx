@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Plus, Eye, Pencil, Trash2, Ban, TrendingUp, Zap, CheckCircle2, DollarSign } from 'lucide-react';
+import { Plus, Eye, Pencil, Trash2, Ban } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { HypeMeter } from '../components/HypeMeter';
@@ -78,14 +78,6 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
               <Plus size={18} strokeWidth={2.5} color="#ffffff" />
               <span>Create New Event</span>
             </button>
-          </div>
-
-          {/* Summary cards */}
-          <div className="mb-8 grid grid-cols-2 gap-4 lg:grid-cols-4">
-            <SummaryCard icon={TrendingUp} accent="#ff4d2e" label="Total events" value={summary.totalEvents.toString()} hint="All-time events" />
-            <SummaryCard icon={Zap} accent="#ffcb3c" label="Upcoming" value={summary.upcoming.toString()} hint="Ongoing events" />
-            <SummaryCard icon={CheckCircle2} accent="#29e07a" label="Confirmed" value={summary.confirmed.toString()} hint="Reached the hype threshold" />
-            <SummaryCard icon={DollarSign} accent="#7c5cff" label="Total pledged" value={`$${summary.totalRevenue.toLocaleString()}`} hint="Across all events" />
           </div>
 
           {/* Tabs */}
@@ -258,21 +250,6 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
           />
         )
       )}
-    </div>
-  );
-}
-
-function SummaryCard({ icon: Icon, label, value, hint, accent }: { icon: any; label: string; value: string; hint: string; accent: string }) {
-  return (
-    <div className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>{label}</span>
-        <div className="grid size-8 place-items-center rounded-lg" style={{ background: `${accent}20`, color: accent }}>
-          <Icon size={15} />
-        </div>
-      </div>
-      <div className="mt-2" style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>{value}</div>
-      <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{hint}</div>
     </div>
   );
 }

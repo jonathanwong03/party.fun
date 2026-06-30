@@ -104,7 +104,8 @@ export async function postPledge(req, res) {
     let pi;
     try {
       pi = await dependencies.getStripe().paymentIntents.create({
-        amount: Math.round(Number(quote.total) * 100),
+        // Buyer pays the GST-inclusive grand total; create_pledge still records GST-free revenue.
+        amount: Math.round((Number(quote.total) + Number(quote.gst || 0)) * 100),
         currency: 'sgd',
         customer: me.stripeCustomerId,
         payment_method: me.stripePaymentMethodId,

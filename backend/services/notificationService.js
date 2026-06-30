@@ -173,6 +173,18 @@ export function notifyEventCreated({ email, organiserName, eventTitle, eventId, 
   );
 }
 
+export function notifyEventCompleted({ organiser, eventTitle, revenue, eventId }) {
+  if (!organiser?.email) return;
+  return fireAndForget('eventCompleted', () =>
+    send('eventCompleted', {
+      to: organiser.email,
+      subject: `Event complete — revenue summary: ${eventTitle}`,
+      html: templates.eventCompletedTemplate({ organiserName: organiser.username, eventTitle, revenue }),
+      logPayload: { userId: organiser.userId, eventId, type: 'event_completed' },
+    }),
+  );
+}
+
 export function notifyCoOrganiserInvite({ email, username, inviterName, eventTitle, eventId }) {
   return fireAndForget('coOrganiserInvite', () =>
     send('coOrganiserInvite', {

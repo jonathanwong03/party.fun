@@ -516,7 +516,7 @@ function AppShell() {
         <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
         <BrowserRoute path="/joined-events" element={role === 'admin' ? <Navigate to="/events" replace /> : <JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
-        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} /> : <Navigate to="/login" replace />} />
+        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} events={events} /> : <Navigate to="/login" replace />} />
         <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/pending-invites" element={role === 'organiser' ? <PendingInvites go={go} onChanged={refreshEvents} /> : <Navigate to="/events" replace />} />

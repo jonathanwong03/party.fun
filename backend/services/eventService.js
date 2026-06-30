@@ -141,6 +141,14 @@ function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
+// 9% GST is added on top of the ticket total (buyer-paid; excluded from organiser revenue).
+const GST_RATE = 0.09;
+function withGst(quote) {
+  const gst = roundMoney(Number(quote.total || 0) * GST_RATE);
+  const grandTotal = roundMoney(Number(quote.total || 0) + gst);
+  return { ...quote, gst, grandTotal, gstText: money(gst), grandTotalText: money(grandTotal) };
+}
+
 function pricingContextFromRow(row) {
   if (!row) return null;
   return {
@@ -183,7 +191,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       };
     });
     const subtotal = roundMoney(curve.total);
-    return {
+    return withGst({
       eventId,
       qty: normalizedQty,
       pricingModel: 'hype_driven',
@@ -193,7 +201,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       total: subtotal,
       subtotalText: money(subtotal),
       totalText: money(subtotal),
-    };
+    });
   } catch (err) {
     if (err.message === 'quote exceeds maxCapacity') {
       return { error: 'not_enough_tickets' };
@@ -217,7 +225,7 @@ export async function quotePledge(sb, eventId, qty) {
     const subtotal = Number(l.price) * Number(l.count);
     return { ...l, subtotal, subtotalText: money(subtotal) };
   });
-  return { ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) };
+  return withGst({ ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) });
 }
 
 export async function getProfile(sb) {
@@ -446,5 +454,7 @@ function eventRpcArgs(e) {
     p_hype_driven: !!e.hypeDrivenPricing,
     p_base_price: e.hypeDrivenPricing ? (e.basePrice ?? eb?.price ?? null) : null,
     p_max_price: e.hypeDrivenPricing ? (e.maxPrice ?? null) : null,
+    // Backward-compatible RPC argument. Operational costs are outside app scope.
+    p_costs: {},
   };
 }

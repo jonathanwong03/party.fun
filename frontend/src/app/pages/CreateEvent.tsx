@@ -659,7 +659,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                 <PricingModeSelector
                   mode={pricingMode}
                   onChange={setPricingMode}
-                  disabled={locked}
+                  disabled={isEdit}
+                  lockedAfterCreation={isEdit}
                 />
                 <div
                   className="mb-8 text-xs"
@@ -935,10 +936,12 @@ function PricingModeSelector({
   mode,
   onChange,
   disabled,
+  lockedAfterCreation,
 }: {
   mode: "static" | "hype";
   onChange: (m: "static" | "hype") => void;
   disabled?: boolean;
+  lockedAfterCreation?: boolean;
 }) {
   const option = (
     value: "static" | "hype",
@@ -985,7 +988,9 @@ function PricingModeSelector({
       </div>
       {disabled && (
         <p className="mt-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
-          Pricing system is locked after the event is greenlit.
+          {lockedAfterCreation
+            ? "Pricing model is locked after event creation. You may still edit prices and capacities before the event is greenlit."
+            : "Pricing system is locked after the event is greenlit."}
         </p>
       )}
     </div>

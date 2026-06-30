@@ -43,9 +43,10 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   }
 
   const total = quote?.total ?? 0;
+  const payable = quote?.grandTotal ?? total;   // ticket total + 9% GST
   const balance = wallet?.balance ?? 0;
   const hasCard = !!wallet?.card;
-  const walletShort = balance < total;
+  const walletShort = balance < payable;
   // University-restricted event the signed-in user can't attend — block the pledge (server enforces too).
   const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
   const canPay = !universityBlocked && (method === 'wallet' ? !walletShort : hasCard);
@@ -138,10 +139,12 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                   <p className="text-xs" style={{ color: '#ff8a66' }}>Bonding-curve pricing — each ticket priced along the live curve.</p>
                 )}
                 {quote ? quote.lines.map((l) => (<Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />)) : <Row label={`Ticket × ${qty}`} value="—" />}
+                {quote && <Row label="Subtotal" value={quote.totalText} />}
+                {quote && <Row label="GST (9%)" value={quote.gstText} />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
-                <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total</span>
-                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.totalText : '—'}</span>
+                <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total payable</span>
+                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.grandTotalText : '—'}</span>
               </div>
 
               {universityBlocked && (
