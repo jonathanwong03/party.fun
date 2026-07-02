@@ -753,6 +753,17 @@ export function deleteConversation(id: string): Promise<{ status?: string }> {
   return apiFetch<{ status?: string }>(`/api/ai/conversations/${id}`, { method: 'DELETE' });
 }
 
+export type AiMemory = { id: number; content: string; category?: string | null };
+export function fetchMemories(): Promise<{ memories: AiMemory[] }> {
+  return apiFetch<{ memories: AiMemory[] }>('/api/ai/memory');
+}
+export function deleteMemory(id: number): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>(`/api/ai/memory/${id}`, { method: 'DELETE' });
+}
+export function clearMemories(): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>('/api/ai/memory', { method: 'DELETE' });
+}
+
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────
 
 export type AttendeeRow = {

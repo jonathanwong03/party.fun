@@ -27,6 +27,20 @@ party.fun is a campus events platform where organisers create events and student
 ## Deadlines & automation
 - A scheduler periodically auto-cancels overdue early_bird events below threshold (refunding backers) and pays out greenlit events whose end time has passed. When an event completes, the organiser is emailed a revenue summary.
 
+## App structure — where events live
+- **All Events (discovery):** the public browse page. It shows events a user can **buy/pledge for** — i.e. events they do **not** host, that are still open (`early_bird` or `greenlit`, not `cancelled`/`completed`). To answer "the cheapest / most expensive ticket I can buy", scan **only** this list **and exclude events the user has already purchased** (they already hold a booking). Use the `list_available_events` tool — it already applies these filters and returns each event's current buyable price.
+- **Hosted Events (organisers only):** an organiser's **own** events dashboard — the events they created (plus ones they co-organise). Shows each event's status (`early_bird`/`greenlit`/`completed`/`cancelled`), its early-bird and greenlit prices, tickets sold, and hype threshold. Use `get_my_hosted_events`.
+- **Joined events:** events the user has pledged for (holds tickets in). Use `get_my_joined_events`.
+- A user can be **both** an attendee (joins/buys events) and an organiser (hosts their own). "My events" is ambiguous — clarify whether they mean events they **host** vs events they **joined**.
+
+## Ticket prices
+- **Tiered events:** each tier has a fixed price — `early_bird` first, then `greenlit`. The "price of a ticket" is the tier currently on sale.
+- **Hype-driven events:** the live price rises with the active ticket count (base → max); the *current* price is what a buyer pays now.
+
+## Editing & creating events (organisers)
+- An organiser can edit their own **open** event's title, description, venue/address, dates, deadline, capacity, hype threshold, and prices (the pricing **model** is locked after creation). Editing notifies backers.
+- New events can be started as **drafts** and published from the Drafts tab.
+
 ## Other
 - **University gating:** some events are restricted to a university; users only see events they're eligible to join.
 - **Co-organisers:** an organiser can invite co-organisers to help manage an event.

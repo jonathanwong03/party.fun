@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft, Brain } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
   sendChat, fetchAiModels, executeAiAction,
   fetchConversations, fetchConversation, deleteConversation,
-  type ChatMessage, type AiModel, type AgentProposal, type AiConversation,
+  fetchMemories, deleteMemory, clearMemories,
+  type ChatMessage, type AiModel, type AgentProposal, type AiConversation, type AiMemory,
 } from '../api';
 
 type Turn = ChatMessage & { via?: string; proposals?: AgentProposal[] };
@@ -12,18 +13,21 @@ type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: strin
 
 // Floating AI agent: a launcher + chat panel. The model calls backend tools in a
 // loop; a dropdown picks the provider/model. Conversations are saved per user —
-// "New chat" starts a thread, the history list reopens past ones.
-export function AiAssistant() {
+// "New chat" starts a thread, the history list reopens past ones. `onDataChanged`
+// refreshes the app's data after a write so edits show instantly.
+export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [view, setView] = useState<'chat' | 'history'>('chat');
+  const [view, setView] = useState<'chat' | 'history' | 'memory'>('chat');
   const [messages, setMessages] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<AiConversation[]>([]);
+  const [memories, setMemories] = useState<AiMemory[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [models, setModels] = useState<AiModel[]>([]);
   const [picked, setPicked] = useState('auto'); // 'auto' = router chooses; else `${provider}|${model}`
+  const [mode, setMode] = useState<'ask' | 'auto'>('ask'); // ask = confirm each write; auto = apply immediately
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -71,6 +75,19 @@ export function AiAssistant() {
     if (id === conversationId) newChat();
   }
 
+  async function openMemory() {
+    setView('memory');
+    try { const r = await fetchMemories(); setMemories(r.memories ?? []); } catch { setMemories([]); }
+  }
+  async function forget(id: number) {
+    try { await deleteMemory(id); } catch { /* ignore */ }
+    setMemories((m) => m.filter((x) => x.id !== id));
+  }
+  async function forgetAll() {
+    try { await clearMemories(); } catch { /* ignore */ }
+    setMemories([]);
+  }
+
   // Pending (un-acted) proposals from the most recent assistant message that has any.
   function pendingProposals(): AgentProposal[] {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
@@ -110,6 +127,10 @@ export function AiAssistant() {
       if (res.conversationId) setConversationId(res.conversationId);
       const via = res.model ? `${res.provider} · ${res.model}` : undefined;
       setMessages([...next, { role: 'assistant', content: res.reply ?? 'Sorry, I had trouble answering.', via, proposals: res.proposals }]);
+      // Auto-edit mode: apply proposed actions immediately, no confirmation.
+      if (mode === 'auto' && res.proposals?.length) {
+        for (const p of res.proposals) await confirmAction(p);
+      }
     } catch {
       setMessages([...next, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
     } finally {
@@ -123,6 +144,7 @@ export function AiAssistant() {
       const res = await executeAiAction(p.action, p.eventId, p.payload);
       const ok = res.status === 'ok';
       setActions((s) => ({ ...s, [p.id]: { status: ok ? 'done' : 'error', message: res.message } }));
+      if (ok) onDataChanged?.(); // refresh app data so the edit shows instantly
     } catch (e) {
       setActions((s) => ({ ...s, [p.id]: { status: 'error', message: e instanceof Error ? e.message : 'Action failed.' } }));
     }
@@ -153,12 +175,12 @@ export function AiAssistant() {
     >
       <div className="flex items-center justify-between gap-2 border-b px-4 py-3" style={{ borderColor: 'var(--border)' }}>
         <span className="flex items-center gap-2" style={{ fontWeight: 700 }}>
-          {view === 'history' ? (
+          {view !== 'chat' ? (
             <button onClick={() => setView('chat')} className={iconBtn} style={muted} title="Back to chat"><ArrowLeft size={16} /></button>
           ) : (
             <Sparkles size={16} style={{ color: '#ff4d2e' }} />
           )}
-          {view === 'history' ? 'Past conversations' : 'party.fun assistant'}
+          {view === 'history' ? 'Past conversations' : view === 'memory' ? 'What I remember' : 'party.fun assistant'}
         </span>
         <div className="flex items-center gap-1.5">
           {view === 'chat' && (
@@ -178,11 +200,34 @@ export function AiAssistant() {
               )}
               <button onClick={newChat} title="New chat" className={iconBtn} style={muted}><Plus size={17} /></button>
               <button onClick={openHistory} title="Past conversations" className={iconBtn} style={muted}><History size={16} /></button>
+              <button onClick={openMemory} title="What I remember about you" className={iconBtn} style={muted}><Brain size={16} /></button>
             </>
+          )}
+          {view === 'memory' && memories.length > 0 && (
+            <button onClick={forgetAll} title="Forget everything" className="rounded-md px-2 py-1 text-xs transition hover:bg-white/5" style={muted}>Clear all</button>
           )}
           <button onClick={() => setOpen(false)} className={iconBtn} style={muted}><X size={18} /></button>
         </div>
       </div>
+
+      {view === 'chat' && (
+        <div className="flex items-center gap-2 border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--border)' }}>
+          <span style={muted}>Mode</span>
+          <div className="flex gap-1 rounded-lg p-0.5" style={{ background: 'var(--surface-2)' }}>
+            {(['ask', 'auto'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => setMode(m)}
+                className="rounded-md px-2 py-0.5 transition"
+                style={{ background: mode === m ? '#ff4d2e' : 'transparent', color: mode === m ? '#fff' : 'var(--muted-foreground)', fontWeight: 600 }}
+                title={m === 'ask' ? 'Ask for permission before each change' : 'Apply changes immediately'}
+              >
+                {m === 'ask' ? 'Ask permission' : 'Auto-edit'}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {view === 'history' ? (
         <div className="flex-1 overflow-y-auto px-2 py-2">
@@ -195,6 +240,22 @@ export function AiAssistant() {
                 <span className="block text-[10px]" style={muted}>{new Date(c.updatedAt).toLocaleString()}</span>
               </button>
               <button onClick={() => removeConversation(c.id)} title="Delete" className={iconBtn} style={muted}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      ) : view === 'memory' ? (
+        <div className="flex-1 overflow-y-auto px-3 py-3">
+          {memories.length === 0 ? (
+            <div className="grid h-full place-items-center px-4 text-center text-sm" style={muted}>
+              Nothing remembered yet. Tell me your interests, budget or preferences and I'll adapt over time.
+            </div>
+          ) : memories.map((m) => (
+            <div key={m.id} className="group flex items-start gap-2 rounded-lg px-2 py-2 transition hover:bg-white/5">
+              <span className="flex-1 text-sm" style={{ color: 'var(--foreground)' }}>
+                {m.content}
+                {m.category && <span className="ml-1 text-[10px] uppercase" style={muted}>· {m.category}</span>}
+              </span>
+              <button onClick={() => forget(m.id)} title="Forget this" className={iconBtn} style={muted}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>

@@ -2,6 +2,23 @@
 
 A campus-event crowdfunding and ticketing platform where users pledge for tickets and events greenlight once active ticket count reaches the hype threshold.
 
+## App structure (pages & events)
+
+**All Events (discovery)**:
+The public browse page listing events a user can **pledge for** — events they do **not** host that are still open (`early_bird` or `greenlit`; not `cancelled`/`completed`). "The cheapest / most expensive ticket I can buy" is computed over **this** list, **excluding** events the user has already purchased (already holds a booking).
+
+**Hosted Events (organiser dashboard)**:
+An organiser's **own** events (created + co-organised), each with its status, early-bird & greenlit prices, tickets sold, and hype threshold. Distinct from All Events, which is what everyone browses to buy.
+
+**Joined events**:
+Events the user has pledged for (holds active tickets in).
+
+**Event status**:
+`early_bird` (open, collecting pledges) → `greenlit` (hit its hype threshold; confirmed) → `completed` (finished, paid out); or `cancelled` (organiser cancelled, or missed threshold by deadline — all pledges refunded).
+
+**Draft event**:
+An unpublished event saved in the organiser's Drafts tab, resumed and published later via the Create Event form. The AI assistant creates new events as drafts.
+
 ## Language
 
 **Pledge**:

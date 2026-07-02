@@ -1,13 +1,24 @@
 import { adminClient } from '../../supabaseAdmin.js';
 import { mapEventRow } from '../../eventService.js';
-import { forecastForEvent } from '../../forecastService.js';
-import { revenueTips } from '../tasks/revenueTips.js';
 import { notifyAgentAdvice } from '../../notificationService.js';
 import { anyConfigured } from '../modelRouter.js';
+import { runAgent } from './runAgent.js';
+import { loadMemory, formatMemory } from '../memory.js';
 
-// Proactive autonomy: on a schedule (no user prompt), the agent finds at-risk
-// events and emails the organiser concrete suggestions to boost them. It only
-// ADVISES — it never mutates data (writes stay human-confirmed in the chat).
+// Proactive autonomy: on a schedule (no user prompt), a fully agentic run reviews
+// each at-risk event — the model autonomously calls tools (details, forecast, and
+// may draft price/co-organiser proposals) — then emails the organiser its advice.
+// It only ADVISES: proposals are surfaced as suggestions; nothing is auto-applied.
+
+const ADVISOR_SYSTEM = [
+  'You are the party.fun proactive event advisor. You are reviewing ONE at-risk event on the',
+  "organiser's behalf (early-bird, nearing its deadline, still below its hype threshold).",
+  'Use your tools to look up the event details and its forecast before advising. If a price change or',
+  'a co-organiser would clearly help, draft the corresponding proposal so it can be listed as a suggestion.',
+  'Then write the email body: a short, warm, concrete, prioritised set of recommendations to boost ticket',
+  'sales before the deadline. Plain prose only — no greeting, no sign-off, no markdown headings; the email',
+  'template adds the greeting and button.',
+].join(' ');
 
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // hourly
 const FIRST_RUN_DELAY_MS = 30 * 1000;
@@ -46,17 +57,25 @@ async function runOnce() {
   for (const e of atRisk) {
     try {
       if (await alreadyAdvised(admin, e.id)) continue;
-      const fc = await forecastForEvent(e.id);
-      if (!fc) continue;
-      const advice = await revenueTips({
-        event: { title: e.title, description: e.description, startDate: e.startsAt, address: e.address, pricingModel: e.hypeDrivenPricing ? 'hype' : 'tiered/static' },
-        forecast: fc.forecast,
-      });
-      if (!advice.available || !advice.tips?.length) continue;
+
+      // Run the agent as the organiser (service-role client + their user id) so the
+      // ownership-scoped tools (forecast, proposals) work without a logged-in session.
+      const ctx = { supabase: admin, userId: e.hostId, role: 'organiser' };
+      const memBlock = formatMemory(await loadMemory(admin, e.hostId));
+      const system = memBlock ? `${ADVISOR_SYSTEM}\n\n${memBlock}` : ADVISOR_SYSTEM;
+      const prompt = `Proactively review my event "${e.title}" (id ${e.id}). It's an early-bird event nearing its deadline and still below its hype threshold. Investigate it and tell me concrete, prioritised ways to boost ticket sales before the deadline.`;
+      const result = await runAgent({ system, messages: [{ role: 'user', content: prompt }], ctx });
+      if (!result?.available || !result.reply) continue;
 
       const { data: host } = await admin.from('USER').select('id, email, username').eq('id', e.hostId).single();
       if (!host?.email) continue;
-      notifyAgentAdvice({ organiser: { userId: host.id, email: host.email, username: host.username }, eventTitle: e.title, eventId: e.id, tips: advice.tips });
+      notifyAgentAdvice({
+        organiser: { userId: host.id, email: host.email, username: host.username },
+        eventTitle: e.title,
+        eventId: e.id,
+        advice: result.reply,
+        proposals: result.proposals,
+      });
       console.log(`[AgentAdvisor] Advised organiser of "${e.title}".`);
     } catch (err) {
       console.error(`[AgentAdvisor] failed for ${e.id}:`, err?.message || err);

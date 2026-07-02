@@ -319,6 +319,9 @@ function AppShell() {
     setDrafts((prev) => prev.filter((d) => d.id !== id));
     try { await deleteDraftRequest(id); } catch { /* already removed from state */ }
   };
+  const refreshDrafts = async () => { try { setDrafts(await fetchDrafts()); } catch { /* keep current */ } };
+  // After an AI write, refresh both events and drafts so edits/new drafts show instantly.
+  const onAiDataChanged = () => { refreshEvents(); refreshDrafts(); };
 
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
@@ -534,7 +537,7 @@ function AppShell() {
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
-      {!isAuthPage && role && <AiAssistant />}
+      {!isAuthPage && role && <AiAssistant onDataChanged={onAiDataChanged} />}
     </div>
   );
 }
@@ -669,7 +672,13 @@ function EditEventRoute({
   onInvite: (eventId: string, identifier: string) => Promise<void>;
 }) {
   const { eventId = '' } = useParams();
-  return <CreateEvent route={activeRoute} go={go} editId={eventId} events={events} hostUniversity={hostUniversity} organiserName={organiserName} onCancel={onCancel} onUpdate={onUpdate} onInvite={onInvite} />;
+  // Remount the form when the underlying event data changes (e.g. after an AI edit
+  // refreshes `events`), so its once-at-mount field state re-seeds — no manual refresh.
+  const ev = events.find((e) => e.id === eventId);
+  const editKey = ev
+    ? [ev.id, ev.title, ev.description, ev.location, ev.address, ev.startsAt, ev.endsAt, ev.deadlineAt, ev.maxCapacity, ev.hypeThreshold, ev.hypeDrivenPricing, ev.maxPrice, (ev.statuses || []).map((s) => `${s.price}/${s.qty}`).join(',')].join('|')
+    : eventId;
+  return <CreateEvent key={editKey} route={activeRoute} go={go} editId={eventId} events={events} hostUniversity={hostUniversity} organiserName={organiserName} onCancel={onCancel} onUpdate={onUpdate} onInvite={onInvite} />;
 }
 
 function ResumeDraftRoute({

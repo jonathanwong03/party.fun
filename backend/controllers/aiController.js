@@ -5,6 +5,7 @@ import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/rec
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runAgent } from '../services/ai/agent/runAgent.js';
 import { executeAction } from '../services/ai/agent/actions.js';
+import { loadMemory, formatMemory } from '../services/ai/memory.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -109,16 +110,25 @@ export async function ask(req, res) {
 const AGENT_SYSTEM = () => [
   buildKnowledgeSystem(),
   '',
-  'You are an event-planning agent for party.fun. You can call tools to look up real data and to PROPOSE changes:',
-  '- search_events: find events the user can see (by keyword/price/hype).',
+  'You are an event-planning agent for party.fun. Prefer calling a tool over guessing about events, prices or numbers.',
+  '',
+  'READ tools:',
+  '- list_available_events: the ALL EVENTS / discovery list — events the user can BUY (not their own, not already purchased). Use this for "cheapest/most expensive ticket I can buy".',
+  "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype.",
+  '- get_my_joined_events: events the user has joined (pledged for).',
+  '- search_events: general search across events the user can see.',
   '- get_event_details: full details for one event.',
-  "- get_event_forecast: projected sales/revenue/costs for the user's OWN events (use this before giving revenue advice).",
-  "- propose_adjust_pricing: PROPOSE a price change to the user's own event.",
-  "- propose_invite_coorganiser: PROPOSE inviting a co-organiser to the user's own event.",
-  'Prefer calling a tool over guessing about events or numbers.',
-  'The propose_* tools do NOT make the change — they create a proposal the user must confirm. After calling one,',
-  'tell the user what you are proposing and that they need to confirm it; never claim the change is already done.',
-  'Keep replies short, friendly and practical.',
+  "- get_event_forecast: projected sales/revenue/costs for the user's OWN events (host only).",
+  '',
+  'WRITE tools (each creates a PROPOSAL the user confirms — they do NOT apply immediately):',
+  "- propose_update_event: edit any fields (title, description, venue, address, dates, deadline, capacity, hype threshold, prices) of the user's OWN event. Pass only the fields to change.",
+  '- propose_create_event: create a NEW event as a DRAFT. First ASK the user for the details; you MUST have the event date, start & end time and pledging deadline (pass as ISO 8601) plus a title before calling — do not create a draft with missing dates. It saves a draft the user reviews and publishes.',
+  "- propose_invite_coorganiser: invite a co-organiser to the user's own event.",
+  '',
+  'MEMORY: call `remember` to save a durable preference you learn about the user (interests, budget, preferred venue/theme/timing, or an organiser\'s pricing/venue preferences). Personalise your help using what you already remember about them (shown below, if any). Do not re-remember something already known.',
+  '',
+  'When you call a propose_* tool, tell the user what you are proposing and that it needs confirmation; never claim it is already done.',
+  "Distinguish \"all events\" (discovery — events to buy) from \"hosted events\" (the organiser's own). Keep replies short, friendly and practical.",
 ].join('\n');
 
 // Title a new conversation from the opening message (first ~8 words).
@@ -136,7 +146,9 @@ export async function chat(req, res) {
   const list = Array.isArray(messages) ? messages : [];
   const preferred = provider && model ? { provider, model } : undefined;
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
-  const result = await runAgent({ system: AGENT_SYSTEM(), messages: list, ctx, preferred });
+  const memBlock = formatMemory(await loadMemory(req.supabase, req.user.id));
+  const system = memBlock ? `${AGENT_SYSTEM()}\n\n${memBlock}` : AGENT_SYSTEM();
+  const result = await runAgent({ system, messages: list, ctx, preferred });
 
   let convoId = conversationId || null;
   if (result?.available && result.reply) {
@@ -198,6 +210,31 @@ export async function deleteConversation(req, res) {
   res.json({ status: 'ok' });
 }
 
+// GET /api/ai/memory — what the assistant has learned about the user.
+export async function getMemory(req, res) {
+  const { data, error } = await req.supabase
+    .from('AI_USER_MEMORY')
+    .select('id, content, category, created_at')
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json({ memories: (data ?? []).map((m) => ({ id: m.id, content: m.content, category: m.category })) });
+}
+
+// DELETE /api/ai/memory/:id — forget one fact.
+export async function deleteMemory(req, res) {
+  const { error } = await req.supabase.from('AI_USER_MEMORY').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json({ status: 'ok' });
+}
+
+// DELETE /api/ai/memory — forget everything.
+export async function clearMemory(req, res) {
+  const { error } = await req.supabase.from('AI_USER_MEMORY').delete().eq('user_id', req.user.id);
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  res.json({ status: 'ok' });
+}
+
 // GET /api/ai/models — configured provider/model options for the UI picker.
 export function models(_req, res) {
   res.json({ available: anyConfigured(), models: listConfiguredModels() });
@@ -210,8 +247,8 @@ export async function executeActionHandler(req, res) {
     return res.status(429).json({ status: 'rate_limited', message: 'Too many requests; try again shortly.' });
   }
   const { action, eventId, payload } = req.body ?? {};
-  if (!action || !eventId) {
-    return res.status(400).json({ status: 'error', message: 'action and eventId are required.' });
+  if (!action) {
+    return res.status(400).json({ status: 'error', message: 'action is required.' });
   }
   const result = await executeAction({ sb: req.supabase, user: req.user, action, eventId, payload });
   if (result?.error) {

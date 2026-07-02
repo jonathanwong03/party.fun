@@ -85,16 +85,49 @@ test('get_event_details returns details for a visible event, error otherwise', a
   assert.ok(miss.error);
 });
 
-test('propose_adjust_pricing returns a proposal for own event, errors for non-owner', async () => {
+test('propose_update_event returns a proposal for own event, errors for non-owner', async () => {
   const own = [{ id: 'e1', title: 'My Gig', status: 'early_bird', hostId: 'u1', statuses: [{ statusName: 'early_bird', price: 12 }] }];
-  const ok = await EXECUTORS.propose_adjust_pricing({ eventId: 'e1', earlyPrice: 8 }, ctxWith(own));
-  assert.equal(ok.proposal.action, 'adjust_pricing');
+  const ok = await EXECUTORS.propose_update_event({ eventId: 'e1', earlyPrice: 8, venue: 'Rooftop' }, ctxWith(own));
+  assert.equal(ok.proposal.action, 'update_event');
   assert.equal(ok.proposal.payload.earlyPrice, 8);
+  assert.equal(ok.proposal.payload.venue, 'Rooftop');
   assert.match(ok.proposal.summary, /12\.00 → \$8\.00/);
 
   const notMine = [{ id: 'e1', title: 'Theirs', status: 'early_bird', hostId: 'other', statuses: [] }];
-  const blocked = await EXECUTORS.propose_adjust_pricing({ eventId: 'e1', earlyPrice: 8 }, ctxWith(notMine));
+  const blocked = await EXECUTORS.propose_update_event({ eventId: 'e1', earlyPrice: 8 }, ctxWith(notMine));
   assert.ok(blocked.error);
+});
+
+test('propose_create_event drafts an event and requires title + dates', async () => {
+  const dates = { startDate: '2026-08-15T19:00:00+08:00', endDate: '2026-08-15T23:00:00+08:00', deadline: '2026-08-10T23:59:00+08:00' };
+  const out = await EXECUTORS.propose_create_event({ title: 'Rooftop Jam', venue: 'SoR', earlyPrice: 10, ...dates }, ctxWith([]));
+  assert.equal(out.proposal.action, 'create_event_draft');
+  assert.equal(out.proposal.eventId, null);
+  assert.equal(out.proposal.payload.title, 'Rooftop Jam');
+  assert.equal(out.proposal.payload.startDate, dates.startDate);
+
+  const noTitle = await EXECUTORS.propose_create_event({ ...dates, title: '  ' }, ctxWith([]));
+  assert.ok(noTitle.error);
+  const noDates = await EXECUTORS.propose_create_event({ title: 'Dateless' }, ctxWith([]));
+  assert.match(noDates.error, /deadline/i);
+});
+
+test('list_available_events excludes own + purchased events', async () => {
+  const events = [
+    { id: 'e1', title: 'Buyable', status: 'early_bird', hostId: 'other', statuses: [{ price: 10 }] },
+    { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', statuses: [{ price: 5 }] },
+    { id: 'e3', title: 'Already bought', status: 'early_bird', hostId: 'other', statuses: [{ price: 8 }] },
+  ];
+  const ctx = {
+    userId: 'u1',
+    role: 'user',
+    supabase: {
+      rpc: async () => ({ data: events, error: null }),
+      from: () => ({ select: () => ({ eq: () => ({ is: async () => ({ data: [{ eventId: 'e3' }], error: null }) }) }) }),
+    },
+  };
+  const out = await EXECUTORS.list_available_events({}, ctx);
+  assert.deepEqual(out.events.map((e) => e.id), ['e1']);
 });
 
 test('propose_invite_coorganiser returns a proposal for own event', async () => {
@@ -107,7 +140,7 @@ test('propose_invite_coorganiser returns a proposal for own event', async () => 
 test('runAgent surfaces proposals from a propose_* tool call', async () => {
   __setProvidersForTests({
     anthropic: scripted('anthropic', [
-      { text: '', toolCalls: [{ id: 't1', name: 'propose_adjust_pricing', args: { eventId: 'e1', earlyPrice: 8 } }] },
+      { text: '', toolCalls: [{ id: 't1', name: 'propose_update_event', args: { eventId: 'e1', earlyPrice: 8 } }] },
       { text: "I've proposed dropping the early-bird price to $8 — confirm to apply.", toolCalls: [] },
     ]),
     openai: unconfigured(),
@@ -117,7 +150,7 @@ test('runAgent surfaces proposals from a propose_* tool call', async () => {
   const out = await runAgent({ system: 's', messages: [{ role: 'user', content: 'drop my price' }], ctx: ctxWith(events) });
   assert.equal(out.available, true);
   assert.equal(out.proposals.length, 1);
-  assert.equal(out.proposals[0].action, 'adjust_pricing');
+  assert.equal(out.proposals[0].action, 'update_event');
 });
 
 test('executeAction rejects unknown actions and non-owners', async () => {
@@ -125,11 +158,32 @@ test('executeAction rejects unknown actions and non-owners', async () => {
   const bogus = await executeAction({ sb: sbWith([]), user: { id: 'u1' }, action: 'nuke', eventId: 'e1' });
   assert.equal(bogus.error, 'invalid_action');
 
-  const missing = await executeAction({ sb: sbWith([]), user: { id: 'u1' }, action: 'adjust_pricing', eventId: 'e1', payload: { earlyPrice: 5 } });
+  const missing = await executeAction({ sb: sbWith([]), user: { id: 'u1' }, action: 'update_event', eventId: 'e1', payload: { earlyPrice: 5 } });
   assert.equal(missing.error, 'not_found');
 
-  const notOwner = await executeAction({ sb: sbWith([{ id: 'e1', hostId: 'other' }]), user: { id: 'u1' }, action: 'adjust_pricing', eventId: 'e1', payload: { earlyPrice: 5 } });
+  const notOwner = await executeAction({ sb: sbWith([{ id: 'e1', hostId: 'other' }]), user: { id: 'u1' }, action: 'update_event', eventId: 'e1', payload: { earlyPrice: 5 } });
   assert.equal(notOwner.error, 'not_owner');
+});
+
+test('remember tool stores a durable fact and skips duplicates', async () => {
+  const rows = [];
+  const ctx = {
+    userId: 'u1',
+    role: 'user',
+    supabase: {
+      from: () => ({
+        select: () => ({ order: () => ({ limit: () => ({ eq: async () => ({ data: rows, error: null }) }) }) }),
+        insert: async (row) => { rows.push({ id: rows.length + 1, ...row }); return { error: null }; },
+      }),
+    },
+  };
+  const first = await EXECUTORS.remember({ fact: 'Loves live music', category: 'interest' }, ctx);
+  assert.equal(first.status, 'ok');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].user_id, 'u1');
+  const dup = await EXECUTORS.remember({ fact: 'loves live music' }, ctx); // case-insensitive dupe
+  assert.equal(dup.note, 'already remembered');
+  assert.equal(rows.length, 1);
 });
 
 test('advisor selectAtRisk picks open, near-deadline, below-threshold events', () => {

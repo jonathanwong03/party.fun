@@ -185,13 +185,13 @@ export function notifyEventCompleted({ organiser, eventTitle, revenue, eventId }
   );
 }
 
-export function notifyAgentAdvice({ organiser, eventTitle, tips, eventId }) {
+export function notifyAgentAdvice({ organiser, eventTitle, advice, proposals, eventId }) {
   if (!organiser?.email) return;
   return fireAndForget('agentAdvice', () =>
     send('agentAdvice', {
       to: organiser.email,
       subject: `Boost your event: ${eventTitle}`,
-      html: templates.agentAdviceTemplate({ organiserName: organiser.username, eventTitle, tips }),
+      html: templates.agentAdviceTemplate({ organiserName: organiser.username, eventTitle, advice, proposals }),
       logPayload: { userId: organiser.userId, eventId, type: 'agent_advice' },
     }),
   );
