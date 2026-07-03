@@ -1,5 +1,5 @@
 import express from 'express';
-import { suggestEventCopy, revenueTips, recommendEvents, ask, chat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory } from '../controllers/aiController.js';
+import { suggestEventCopy, revenueTips, recommendEvents, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory } from '../controllers/aiController.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 
 const router = express.Router();
@@ -16,6 +16,7 @@ router.post('/revenue-tips/:eventId', requireAuth, revenueTips);
 router.post('/recommend-events', requireAuth, recommendEvents);
 router.post('/ask', requireAuth, ask);
 router.post('/chat', requireAuth, chat);
+router.post('/chat/resume', requireAuth, resumeChat);
 router.post('/execute-action', requireAuth, executeActionHandler);
 
 export default router;

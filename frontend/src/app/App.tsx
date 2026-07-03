@@ -320,8 +320,8 @@ function AppShell() {
     try { await deleteDraftRequest(id); } catch { /* already removed from state */ }
   };
   const refreshDrafts = async () => { try { setDrafts(await fetchDrafts()); } catch { /* keep current */ } };
-  // After an AI write, refresh both events and drafts so edits/new drafts show instantly.
-  const onAiDataChanged = () => { refreshEvents(); refreshDrafts(); };
+  // After an AI write, refresh events, drafts and wallet so edits/new drafts/top-ups/pledges/refunds show instantly.
+  const onAiDataChanged = () => { refreshEvents(); refreshDrafts(); refreshWallet(); };
 
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));

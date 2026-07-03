@@ -1,8 +1,12 @@
 import { randomUUID } from 'crypto';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+import { topupWallet } from '../services/walletService.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const attemptIdOf = (body) => (UUID_RE.test(body?.attemptId ?? '') ? body.attemptId : randomUUID());
+
+// HTTP status for each tagged topupWallet error.
+const TOPUP_STATUS = { stripe_disabled: 503, bad_amount: 400, no_card: 400, charge_failed: 402, charge_incomplete: 402, error: 500 };
 
 const stripeOff = (res) =>
   res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' });
@@ -61,33 +65,11 @@ export async function postCard(req, res) {
 }
 
 // POST /api/wallet/topup { amount } — charge the linked card, then credit the wallet.
+// Delegates to the shared topupWallet service (reused by the AI agent's topup action).
 export async function postTopup(req, res) {
-  if (!stripeEnabled()) return stripeOff(res);
-  const amount = Number(req.body?.amount);
-  if (!amount || amount <= 0) { res.status(400).json({ message: 'Enter a valid top-up amount.' }); return; }
-  const { data: me } = await req.supabase.from('USER').select('stripeCustomerId, stripePaymentMethodId').eq('id', req.user.id).single();
-  if (!me?.stripeCustomerId || !me?.stripePaymentMethodId) {
-    res.status(400).json({ status: 'no_card', message: 'Link a card before topping up.' });
-    return;
+  const result = await topupWallet(req.supabase, req.user.id, req.body?.amount, attemptIdOf(req.body));
+  if (result.error) {
+    return res.status(TOPUP_STATUS[result.error] ?? 400).json({ status: result.error, message: result.message });
   }
-  const attemptId = attemptIdOf(req.body);
-  let pi;
-  try {
-    pi = await stripe().paymentIntents.create({
-      amount: Math.round(amount * 100),
-      currency: 'sgd',
-      customer: me.stripeCustomerId,
-      payment_method: me.stripePaymentMethodId,
-      off_session: true,
-      confirm: true,
-      metadata: { kind: 'topup', userId: req.user.id, attemptId },
-    }, { idempotencyKey: `topup:${attemptId}` });
-  } catch (e) {
-    res.status(402).json({ status: 'charge_failed', message: e?.message || 'Your card was declined.' });
-    return;
-  }
-  if (pi.status !== 'succeeded') { res.status(402).json({ status: 'charge_incomplete', message: 'Payment could not be completed.' }); return; }
-  const { data, error } = await req.supabase.rpc('wallet_topup', { p_amount: amount, p_payment_intent_id: pi.id });
-  if (error) { res.status(500).json({ message: error.message }); return; }
-  res.json({ status: 'ok', balance: data?.balance });
+  res.json({ status: 'ok', balance: result.balance });
 }

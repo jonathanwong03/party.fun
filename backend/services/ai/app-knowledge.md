@@ -37,9 +37,18 @@ party.fun is a campus events platform where organisers create events and student
 - **Tiered events:** each tier has a fixed price — `early_bird` first, then `greenlit`. The "price of a ticket" is the tier currently on sale.
 - **Hype-driven events:** the live price rises with the active ticket count (base → max); the *current* price is what a buyer pays now.
 
-## Editing & creating events (organisers)
+## Editing, creating & deleting events (organisers)
 - An organiser can edit their own **open** event's title, description, venue/address, dates, deadline, capacity, hype threshold, and prices (the pricing **model** is locked after creation). Editing notifies backers.
 - New events can be started as **drafts** and published from the Drafts tab.
+- **"Deleting" an event depends on its state:** a **published** event is **cancelled** (which closes it and refunds every backer) — use `propose_cancel_event`. An unpublished **draft** is deleted outright — use `propose_delete_draft`. There is no way to hard-delete a published event without refunding its backers.
+
+## Agent tools & how the assistant acts
+The assistant is a LangGraph workflow: a `classify` step tags each request (read-only question · event discovery · cheapest/best-fit · event management · transaction) and routes it to one of five branch **agents** (each a canonical `createAgent` with a scoped toolset), which call server-side tools. **Read** tools: `search_events`, `list_available_events`, `get_event_details`, `get_event_forecast`, `get_my_hosted_events`, `get_my_joined_events`, `get_wallet`, `list_my_drafts`. **Write** tools only ever create a **proposal the user must confirm** — in ask-mode the graph pauses at a human-in-the-loop step (nothing happens until they click Confirm / say "confirm"; Dismiss rejects it), then executes with a fresh server-side re-validation of ownership and balances:
+- Events: `propose_update_event`, `propose_create_event` (drafts a new event — needs a title + start/end/deadline), `propose_invite_coorganiser`, `propose_cancel_event` (cancel + refund), `propose_delete_draft`.
+- Money (all real transactions): `propose_topup` (charge the linked card to add wallet money), `propose_pledge` (buy ticket(s) with the wallet balance — a deduction), and refunds via `propose_cancel_event`.
+The agent never claims a change or a payment is done until the user confirms it. It also has a `remember` tool to save durable preferences and personalise future help.
+
+The assistant always knows the **current user's role** (organiser / user / admin), injected into its context each turn. `get_my_hosted_events` and `get_event_details` report each event's **live status** (early_bird/greenlit/completed/cancelled), the **current price** a buyer pays now (status- and hype-aware), and — for the organiser's own events — the **net revenue so far**. Replies are written in plain text (no markdown), as short paragraphs separated by blank lines.
 
 ## Other
 - **University gating:** some events are restricted to a university; users only see events they're eligible to join.

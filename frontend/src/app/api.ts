@@ -697,7 +697,7 @@ export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> 
   return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
 }
 
-// ── AI assistant (multi-provider; all responses tolerate {available:false}) ────
+// ── AI agent (multi-provider; all responses tolerate {available:false}) ────
 
 export type EventCopySuggestions = { available: boolean; names?: string[]; descriptions?: string[] };
 export type RevenueTip = { title: string; detail: string; impact: 'high' | 'medium' | 'low' };
@@ -707,7 +707,9 @@ export type EventRecommendations = { available: boolean; recommendations?: Event
 export type AssistantAnswer = { available: boolean; answer?: string };
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 export type AgentProposal = { id: string; action: string; eventId: string; title: string; summary: string; payload?: Record<string, unknown> };
-export type ChatReply = { available: boolean; reply?: string; proposals?: AgentProposal[]; provider?: string; model?: string; conversationId?: string | null };
+export type AgentResult = { proposalId: string; action: string; ok: boolean; message?: string; status?: string };
+export type ChatStatus = 'awaiting_confirmation' | 'done';
+export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; provider?: string; model?: string; conversationId?: string | null };
 export type ActionResult = { status?: string; message?: string };
 export type AiModel = { provider: string; model: string; label: string; tier?: string };
 export type AiModels = { available: boolean; models: AiModel[] };
@@ -728,8 +730,13 @@ export function askAssistant(question: string, history: ChatMessage[] = []): Pro
   return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
 }
 
-export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }, conversationId?: string | null): Promise<ChatReply> {
-  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null, ...(model ?? {}) }) });
+export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }, conversationId?: string | null, mode: 'ask' | 'auto' = 'ask'): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null, mode, ...(model ?? {}) }) });
+}
+
+// Confirm/reject one pending proposal, resuming the parked graph thread.
+export function resumeChat(threadId: string, proposalId: string, decision: 'confirm' | 'reject', conversationId?: string | null, model?: { provider: string; model: string }): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat/resume', { method: 'POST', body: JSON.stringify({ threadId, proposalId, decision, conversationId: conversationId ?? null, ...(model ?? {}) }) });
 }
 
 export function fetchAiModels(): Promise<AiModels> {

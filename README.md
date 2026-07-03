@@ -496,5 +496,77 @@ The backend exposes the data layer. Each request must include the Supabase acces
 
 Login and registration are **not** backend routes — they go straight to Supabase Auth from the frontend. A request with no/invalid token to a protected route returns `401`.
 
+## App structure (pages)
+
+- **All Events (discovery)** — the public browse page listing events a user can **pledge for**: events they do **not** host that are still open (`early_bird` or `greenlit`; not `cancelled`/`completed`). "The cheapest / most expensive ticket I can buy" is computed over **this** list, **excluding** events the user has already purchased.
+- **Hosted Events (organiser dashboard)** — an organiser's **own** events (created + co-organised), each with status, early-bird & greenlit prices, tickets sold, and hype threshold. Distinct from All Events, which is what everyone browses to buy.
+- **Joined events** — events the user has pledged for (holds active tickets in).
+- **Draft event** — an unpublished event saved in the organiser's Drafts tab, resumed and published later via the Create Event form. The AI assistant creates new events as drafts.
+- **Event status** — `early_bird` (open, collecting pledges) → `greenlit` (hit its hype threshold; confirmed) → `completed` (finished, paid out); or `cancelled` (organiser cancelled, or missed threshold by deadline — all pledges refunded).
+
+## Concepts & glossary
+
+Domain language used throughout the app and code (prefer these terms; avoid the noted alternatives):
+
+- **Pledge** — a user's commitment to buy tickets for an event, recorded as a `BOOKINGS` row. Payment is captured at pledge time. _Avoid_: purchase/checkout/order/reservation (implies unpaid hold).
+- **Payment capture** — money is taken at the moment of pledging; refunded if the event fails to greenlight by the deadline. _Avoid_: charge-on-greenlight, authorization hold, pay later.
+- **Booking** — the persisted record of a pledge (one payment transaction per user per event). _Avoid_: "pledge" when meaning the DB entity; transaction.
+- **Ticket** — an individual seat within a booking, with its own lifecycle (`active`, `given_away`, `refunded`, `used`). _Avoid_: spot, seat allocation.
+- **Give-away** — a voluntary release of some or all active tickets back to the event pool. **No money is returned.** _Avoid_: cancellation, refund, release.
+- **Cancellation** — when an event fails to reach its hype threshold by the deadline, or an organiser cancels it. Active tickets are refunded. _Avoid_: give-away, delete.
+- **Refund** — money returned when tickets are cancelled at the **event** level (deadline miss or organiser cancellation). Not applicable to give-aways.
+- **Greenlit** — an event that has reached its hype threshold (`activeTicketCount ≥ hypeThreshold`); confirmed, tickets locked in. Measured in **tickets pledged**, not unique backers (one user pledging 5 counts as 5). _Avoid_: confirmed, funded, backer count.
+- **Active ticket count** — tickets currently pledged and not given away or refunded across all users for an event. Drives hype percentage and greenlighting. _Avoid_: backers, ticket sales.
+- **Hype threshold** — the minimum active ticket count required to greenlight. _Avoid_: funding goal, target backers.
+
+Notification language:
+
+- **Notification recipient** — a user who should receive a transactional email about an event they're involved in (pledged, gave away tickets, or affected by greenlight/cancellation).
+- **Greenlit notification** — an email sent to every user with at least one active ticket when an event transitions to greenlit; recipient emails are resolved server-side via a Postgres RPC (not by reading other users' rows through RLS).
+- **Notification log** — a durable record of each email send attempt (`NOTIFICATION_LOGS`): recipient, event, type, outcome. For audit/debug, not retry orchestration.
+- **Notification delivery status** — `sent` (Resend accepted), `mock_sent` (dev/console only, no real delivery), or `failed` (retries exhausted). _Avoid_: delivered/read/opened.
+- **Transactional notification** — an email triggered by a domain event (pledge, give-away, greenlit). Delivery is a side effect: the underlying action succeeds even if the email fails.
+
+## Hype-driven pricing
+
+An alternative to tiered pricing where a ticket's price rises with demand instead of stepping between two fixed tiers.
+
+- **Base ticket price (P_base)** — the price of the first ticket when the active ticket count is zero (`EVENT_SETTINGS.basePrice`).
+- **Max ticket price (P_max)** — the price at full capacity (`EVENT_SETTINGS.maxPrice`).
+- **Bonding curve** — the dynamic price for the current active ticket count `x` (with `C = maxCapacity`):
+
+  `P(x) = P_base · (P_max / P_base) ^ (x / C)`
+
+- **Price elasticity** — the price fluctuates symmetrically (up **and** down) with the live active ticket count.
+- Tiered events instead store fixed `early_bird` then `greenlit` prices in `PRICE_STATUSES`; the pricing **model** (`EVENT_SETTINGS.hypeDrivenPricing`) is locked after event creation.
+
+## AI event-planning agent
+
+A multi-provider (Anthropic / OpenAI / Gemini) event-planning **agent**, built into the Express backend (`backend/services/ai/`) — no separate service. It's off gracefully when no provider key is set.
+
+- **LangGraph workflow** — chat runs as one explicit `StateGraph` ([backend/services/ai/agent/eventGraph.js](backend/services/ai/agent/eventGraph.js)) that mirrors the whole workflow diagram: `classify → {answer | discover | bestfit | manage | transact} → (proposals?) confirm → execute → END`.
+  - **`classify`** node (an LLM call, regex fallback) tags the request's intent (read-only question · event discovery · cheapest/best-fit · event management · transaction) and routes to the matching branch.
+  - Each **branch is its own canonical agent** — `createAgent(...)` from LangChain v1 (built on LangGraph), with a **scoped toolset** so a discovery branch can't move money, etc.
+  - The **confirm step is a real human-in-the-loop `interrupt()`** persisted by an in-memory `MemorySaver` checkpointer: an "ask"-mode write pauses the graph, returns the proposal + a `threadId`, and resumes via `POST /api/ai/chat/resume` when the user confirms/rejects.
+  - The **`execute` node** applies confirmed proposals through the existing `executeAction` ([backend/services/ai/agent/actions.js](backend/services/ai/agent/actions.js)), which re-validates ownership/balances via RLS — so "execute in the graph" never trusts graph state for money.
+- **Chat assistant** (floating panel — draggable by its header, Shift+Enter for a newline, plain-text replies) — it knows the current user's **role** (organiser/user/admin, injected each turn); branches call backend **read** tools (`search_events`, `list_available_events`, `get_my_hosted_events` & `get_event_details` — which report live **status**, **current price** and, for your own events, **revenue so far** — `get_my_joined_events`, `get_event_forecast`, `get_wallet`, `list_my_drafts`) and **write** tools that each create a confirm-gated proposal: events (`propose_update_event`, `propose_create_event`, `propose_invite_coorganiser`, `propose_cancel_event`, `propose_delete_draft`) and **money** (`propose_topup` = charge card into wallet, `propose_pledge` = buy tickets from wallet balance, and refunds via `propose_cancel_event`). Conversations are saved per user with a history list.
+- **Permission modes** — **Ask-permission** (each write pauses at the graph's `interrupt()`; confirm by button or by typing "confirm", dismiss to reject) vs **Auto-edit** (the graph's `execute` node applies writes inline, no pause). Both re-validate server-side against ownership + balances; created events are saved as **drafts**; money moves reuse the same RLS/RPC-enforced paths as the wallet & cancellation UIs (`topupWallet` / `cancelEventWithRefunds` services). "Delete this event" = cancel it (refunding backers) for a published event, or delete the draft for an unpublished one.
+  - _Checkpointer note:_ `MemorySaver` is in-process, so pending confirmations are lost on a backend restart / don't span multiple instances — a lost pending confirm just means the user re-asks (nothing unsafe executes because `execute` re-validates).
+- **Inline helpers** — "Suggest names/description" on Create Event, "Get AI revenue tips" on the analytics forecast card, and "Recommended for you" on the events page.
+- **Proactive advisor** — an opt-in background agent that periodically finds at-risk events (early-bird, near deadline, below threshold) and emails the organiser tailored suggestions. It only advises (never mutates). Enable with `AGENT_ADVISOR_ENABLED=true` (interval via `AGENT_ADVISOR_INTERVAL_MS`).
+- **Memory (learns & adapts)** — a per-user store the agent reads to personalise and writes to via a `remember` tool (interests/budget for attendees; venue/theme/pricing preferences for organisers). Users can view/clear it in the "What I remember" panel.
+
+Env keys (in `backend/.env`; set **at least one** provider to enable AI features):
+
+```
+ANTHROPIC_API_KEY=...     # Claude
+OPENAI_API_KEY=...        # GPT
+GEMINI_API_KEY=...        # Google Gemini (AI Studio, may start with AQ. or AIza)
+# AGENT_ADVISOR_ENABLED=true         # opt-in proactive advisor (off by default)
+# AGENT_ADVISOR_INTERVAL_MS=60000    # advisor scan cadence (default 1 hour)
+```
+
+AI-owned tables (all RLS owner-only): `AI_CHAT_CONVERSATIONS`, `AI_CHAT_MESSAGES`, `AI_USER_MEMORY`, and `NOTIFICATION_LOGS` (email audit + advisor de-dupe). The agent's internal knowledge base — how it should answer questions about the app — lives in [backend/services/ai/app-knowledge.md](backend/services/ai/app-knowledge.md); **keep that file updated alongside this README when the agent's behaviour or the app changes.**
+
 
 

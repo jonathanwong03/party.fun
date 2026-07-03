@@ -11,13 +11,20 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.71.0",
     "@google/genai": "^1.30.0",
+    "@langchain/anthropic": "^1.5.1",
+    "@langchain/core": "^1.2.1",
+    "@langchain/google-genai": "^2.2.0",
+    "@langchain/langgraph": "^1.4.7",
+    "@langchain/openai": "^1.5.3",
     "@supabase/supabase-js": "^2.45.0",
     "dotenv": "^16.4.5",
-    "openai": "^6.10.0",
     "express": "^5.2.1",
+    "langchain": "^1.5.2",
+    "openai": "^6.10.0",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "resend": "^6.12.4",
-    "stripe": "^22.2.2"
+    "stripe": "^22.2.2",
+    "zod": "^4.4.3"
   }
 }

@@ -3,7 +3,6 @@ import {
   createEvent,
   updateEvent,
   deleteEvent as removeEvent,
-  cancelEvent as cancelEventService,
   hideEvent as hideEventService,
   listDrafts,
   saveDraft,
@@ -13,8 +12,8 @@ import {
   inviteCoOrganiser,
   respondCoOrganiserInvite,
 } from '../services/eventService.js';
-import { notifyCoOrganiserInvite, notifyEventCreated, notifyEventCancelled, notifyEventUpdated } from '../services/notificationService.js';
-import { refundEventCardBookings } from '../services/stripeRefunds.js';
+import { cancelEventWithRefunds } from '../services/eventCancellationService.js';
+import { notifyCoOrganiserInvite, notifyEventCreated, notifyEventUpdated } from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 
 const fmtDateTime = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—');
@@ -254,31 +253,10 @@ export async function postHideEvent(req, res) {
 }
 
 export async function postCancelEvent(req, res) {
-  const eventId = req.params.eventId;
-  // Reason is optional in the UI; default it so the RPC's reason_required never trips.
-  const reason = (req.body?.reason ?? '').trim() || 'Cancelled by the organiser';
-  const result = await cancelEventService(req.supabase, eventId, reason);
+  const result = await cancelEventWithRefunds(req.supabase, req.user.id, req.params.eventId, req.body?.reason);
   if (result.error) {
     res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to cancel event.') });
     return;
   }
-
-  // Card-paid backers get a real Stripe refund to their card (wallet refunds done in the RPC).
-  await refundEventCardBookings(eventId);
-
-  // Fire-and-forget: email every refunded backer + the organiser. Runs after the
-  // cancel RPC so refundedAmount is set; get_event_backer_contacts is host-only.
-  const [{ data: ev }, { data: me }, { data: backers }] = await Promise.all([
-    req.supabase.from('EVENT').select('title').eq('id', eventId).single(),
-    req.supabase.from('USER').select('email, username').eq('id', req.user.id).single(),
-    req.supabase.rpc('get_event_backer_contacts', { p_event_id: eventId }),
-  ]);
-  notifyEventCancelled({
-    eventTitle: ev?.title ?? 'your event',
-    reason: 'organiser',
-    backers: (backers ?? []).map((b) => ({ email: b.email, username: b.username, role: b.role, method: b.paymentMethod, refundAmount: b.refundAmount })),
-    organiser: me?.email ? { email: me.email, username: me.username } : null,
-  });
-
   res.json({ status: 'ok' });
 }

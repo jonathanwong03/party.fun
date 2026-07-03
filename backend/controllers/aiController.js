@@ -3,7 +3,7 @@ import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/s
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
-import { runAgent } from '../services/ai/agent/runAgent.js';
+import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, formatMemory } from '../services/ai/memory.js';
 import { forecastForEvent } from '../services/forecastService.js';
@@ -120,16 +120,39 @@ const AGENT_SYSTEM = () => [
   '- get_event_details: full details for one event.',
   "- get_event_forecast: projected sales/revenue/costs for the user's OWN events (host only).",
   '',
+  '- get_wallet: the user\'s wallet balance, linked card, and recent transactions. Check this before proposing a top-up or a wallet-paid purchase.',
+  '- list_my_drafts: the user\'s unpublished event drafts (use to find a draftId before proposing to delete one).',
+  '',
   'WRITE tools (each creates a PROPOSAL the user confirms — they do NOT apply immediately):',
   "- propose_update_event: edit any fields (title, description, venue, address, dates, deadline, capacity, hype threshold, prices) of the user's OWN event. Pass only the fields to change.",
   '- propose_create_event: create a NEW event as a DRAFT. First ASK the user for the details; you MUST have the event date, start & end time and pledging deadline (pass as ISO 8601) plus a title before calling — do not create a draft with missing dates. It saves a draft the user reviews and publishes.',
   "- propose_invite_coorganiser: invite a co-organiser to the user's own event.",
+  '- propose_topup: add money to the wallet by charging the linked card. Requires a linked card.',
+  '- propose_pledge: buy ticket(s) to an event using the WALLET balance (a deduction). Not the user\'s own event.',
+  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event.',
+  '- propose_delete_draft: permanently delete one of the user\'s unpublished drafts.',
+  '',
+  'MONEY & DELETION SAFETY: top-ups, purchases (deductions) and refunds are all real money — only ever PROPOSE them; execution happens after the user confirms and re-validates balances/ownership server-side. "Delete this event" means cancel it (refunding backers) for a published event, or delete the draft for an unpublished one.',
   '',
   'MEMORY: call `remember` to save a durable preference you learn about the user (interests, budget, preferred venue/theme/timing, or an organiser\'s pricing/venue preferences). Personalise your help using what you already remember about them (shown below, if any). Do not re-remember something already known.',
   '',
   'When you call a propose_* tool, tell the user what you are proposing and that it needs confirmation; never claim it is already done.',
   "Distinguish \"all events\" (discovery — events to buy) from \"hosted events\" (the organiser's own). Keep replies short, friendly and practical.",
+  '',
+  'FORMATTING: reply in PLAIN TEXT only. Do NOT use markdown — no **bold**, no # headings, no bullet/asterisk characters, and no | tables |. Write short paragraphs and separate each paragraph with a blank line so replies are easy to read.',
 ].join('\n');
+
+// A one-line statement of who the current user is, prepended to the system prompt so
+// the agent always knows their role without a tool call.
+function roleLine(role) {
+  const r = String(role || 'user').toLowerCase();
+  const detail = r === 'admin'
+    ? 'an ADMIN who can manage (including cancel) any event on the platform'
+    : r === 'organiser'
+      ? 'an ORGANISER who can host, edit and cancel their own events, and can also join/buy tickets for other people\'s events'
+      : 'a regular USER who joins and buys tickets for events';
+  return `The current user's role is: ${r} — ${detail}.`;
+}
 
 // Title a new conversation from the opening message (first ~8 words).
 function makeTitle(text) {
@@ -137,43 +160,89 @@ function makeTitle(text) {
   return (words || 'New chat').slice(0, 60);
 }
 
-// POST /api/ai/chat — agentic chat. Persists into a conversation (creating one,
-// auto-titled, when none is supplied) and returns the conversationId so the UI
-// can keep appending to the same thread.
+// Persist chat turns (user + assistant) into a conversation, creating + auto-titling
+// one when needed. Returns the conversationId. Never throws.
+async function persistTurn(supabase, { conversationId, titleSeed, userText, reply, modelLabel }) {
+  let convoId = conversationId || null;
+  try {
+    if (!convoId) {
+      const { data: conv } = await supabase
+        .from('AI_CHAT_CONVERSATIONS')
+        .insert({ title: makeTitle(titleSeed) })
+        .select('id')
+        .single();
+      convoId = conv?.id ?? null;
+    }
+    if (convoId) {
+      const rows = [];
+      // Stored as 'chat user' (not 'user') to avoid confusion with the app's USER role.
+      if (userText) rows.push({ conversation_id: convoId, role: 'chat user', content: String(userText) });
+      if (reply) rows.push({ conversation_id: convoId, role: 'assistant', content: reply, model: modelLabel ?? null });
+      if (rows.length) await supabase.from('AI_CHAT_MESSAGES').insert(rows);
+      await supabase.from('AI_CHAT_CONVERSATIONS').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
+    }
+  } catch (e) {
+    console.warn('[ai] history persist failed:', e?.message || e);
+  }
+  return convoId;
+}
+
+const modelLabelOf = (result) => (result.model ? `${result.provider} · ${result.model}` : null);
+
+// POST /api/ai/chat — agentic chat (the LangGraph workflow). In 'ask' mode a write
+// returns status:'awaiting_confirmation' + proposals + a threadId; the UI confirms
+// via /chat/resume. In 'auto' mode writes execute inline. Returns conversationId +
+// threadId so the UI can keep appending and resume pending proposals.
 export async function chat(req, res) {
   if (!guard(req, res)) return;
-  const { messages, provider, model, conversationId } = req.body ?? {};
+  const { messages, provider, model, conversationId, mode } = req.body ?? {};
   const list = Array.isArray(messages) ? messages : [];
   const preferred = provider && model ? { provider, model } : undefined;
+  const runMode = mode === 'auto' ? 'auto' : 'ask';
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
   const memBlock = formatMemory(await loadMemory(req.supabase, req.user.id));
-  const system = memBlock ? `${AGENT_SYSTEM()}\n\n${memBlock}` : AGENT_SYSTEM();
-  const result = await runAgent({ system, messages: list, ctx, preferred });
+  const system = [AGENT_SYSTEM(), roleLine(req.user.role), memBlock].filter(Boolean).join('\n\n');
+  const result = await runGraph({ system, messages: list, ctx, preferred, mode: runMode });
 
   let convoId = conversationId || null;
   if (result?.available && result.reply) {
-    try {
-      if (!convoId) {
-        const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
-        const { data: conv } = await req.supabase
-          .from('AI_CHAT_CONVERSATIONS')
-          .insert({ title: makeTitle(firstUser?.content) })
-          .select('id')
-          .single();
-        convoId = conv?.id ?? null;
-      }
-      if (convoId) {
-        const lastUser = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
-        const rows = [];
-        // Stored as 'chat user' (not 'user') to avoid confusion with the app's USER role.
-        if (lastUser) rows.push({ conversation_id: convoId, role: 'chat user', content: String(lastUser.content) });
-        rows.push({ conversation_id: convoId, role: 'assistant', content: result.reply, model: result.model ? `${result.provider} · ${result.model}` : null });
-        await req.supabase.from('AI_CHAT_MESSAGES').insert(rows);
-        await req.supabase.from('AI_CHAT_CONVERSATIONS').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
-      }
-    } catch (e) {
-      console.warn('[ai] history persist failed:', e?.message || e);
-    }
+    const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+    const lastUser = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+    convoId = await persistTurn(req.supabase, {
+      conversationId: convoId,
+      titleSeed: firstUser?.content,
+      userText: lastUser?.content,
+      reply: result.reply,
+      modelLabel: modelLabelOf(result),
+    });
+  }
+
+  res.json({ ...result, conversationId: convoId });
+}
+
+// POST /api/ai/chat/resume — apply the user's decision (confirm/reject) on one
+// pending proposal, resuming the parked graph thread; execution re-validates
+// ownership/balances. Persists the execution summary to the conversation.
+export async function resumeChat(req, res) {
+  if (!guard(req, res)) return;
+  const { threadId, proposalId, decision, conversationId, provider, model } = req.body ?? {};
+  if (!threadId || !proposalId) {
+    return res.status(400).json({ status: 'error', message: 'threadId and proposalId are required.' });
+  }
+  const preferred = provider && model ? { provider, model } : undefined;
+  const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
+  const result = await resumeGraph({
+    system: `${AGENT_SYSTEM()}\n\n${roleLine(req.user.role)}`,
+    ctx,
+    preferred,
+    threadId,
+    proposalId,
+    decision: decision === 'reject' ? 'reject' : 'confirm',
+  });
+
+  let convoId = conversationId || null;
+  if (result?.available && result.reply) {
+    convoId = await persistTurn(req.supabase, { conversationId: convoId, reply: result.reply, modelLabel: modelLabelOf(result) });
   }
 
   res.json({ ...result, conversationId: convoId });

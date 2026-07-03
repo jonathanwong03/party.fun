@@ -2,7 +2,7 @@ import { adminClient } from '../../supabaseAdmin.js';
 import { mapEventRow } from '../../eventService.js';
 import { notifyAgentAdvice } from '../../notificationService.js';
 import { anyConfigured } from '../modelRouter.js';
-import { runAgent } from './runAgent.js';
+import { runGraph } from './eventGraph.js';
 import { loadMemory, formatMemory } from '../memory.js';
 
 // Proactive autonomy: on a schedule (no user prompt), a fully agentic run reviews
@@ -64,7 +64,7 @@ async function runOnce() {
       const memBlock = formatMemory(await loadMemory(admin, e.hostId));
       const system = memBlock ? `${ADVISOR_SYSTEM}\n\n${memBlock}` : ADVISOR_SYSTEM;
       const prompt = `Proactively review my event "${e.title}" (id ${e.id}). It's an early-bird event nearing its deadline and still below its hype threshold. Investigate it and tell me concrete, prioritised ways to boost ticket sales before the deadline.`;
-      const result = await runAgent({ system, messages: [{ role: 'user', content: prompt }], ctx });
+      const result = await runGraph({ system, messages: [{ role: 'user', content: prompt }], ctx, autonomous: true });
       if (!result?.available || !result.reply) continue;
 
       const { data: host } = await admin.from('USER').select('id, email, username').eq('id', e.hostId).single();
