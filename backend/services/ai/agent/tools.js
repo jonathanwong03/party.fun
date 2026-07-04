@@ -1,7 +1,9 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { forecastForEvent } from '../../forecastService.js';
-import { listDrafts, mapEventRow } from '../../eventService.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets } from '../../eventService.js';
+import { assessEvent } from '../../weatherService.js';
+import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
 
 // Agent tools. Definitions are provider-agnostic JSON Schemas; executors run
@@ -19,6 +21,50 @@ function hypePct(ev) {
   return threshold > 0 ? Math.min(100, Math.round((active / threshold) * 100)) : 0;
 }
 const tierPrice = (ev, name) => (ev.statuses ?? []).find((s) => s.statusName === name)?.price ?? null;
+
+// Today in Singapore, for the get_current_date tool and the past-event filter.
+function sgNow() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'long', hour12: false,
+  }).formatToParts(now).reduce((o, p) => ({ ...o, [p.type]: p.value }), {});
+  return {
+    now,
+    isoDate: `${parts.year}-${parts.month}-${parts.day}`,
+    time: `${parts.hour}:${parts.minute}`,
+    weekday: parts.weekday,
+    timezone: 'Asia/Singapore (SGT, UTC+8)',
+  };
+}
+
+// An event is "past" once its end (or, lacking that, its start) is before now — so
+// ended-but-not-yet-swept events never show up as buyable.
+function isPastEvent(ev, now = Date.now()) {
+  const end = ev.endDate ?? ev.startDate ?? null;
+  if (!end) return false;
+  const t = new Date(end).getTime();
+  return Number.isFinite(t) && t < now;
+}
+
+// A detail-rich event row so the agent (a RAG assistant) can answer questions about
+// date/time, venue, deadline and description without extra tool calls.
+function richRow(ev, ctx) {
+  return {
+    id: ev.id,
+    title: ev.title,
+    description: String(ev.description ?? '').slice(0, 300),
+    status: ev.status,
+    currentPrice: currentPrice(ev),
+    hypePct: hypePct(ev),
+    startDate: ev.startDate ?? null,
+    endDate: ev.endDate ?? null,
+    deadline: ev.deadline ?? ev.deadlineAt ?? null,
+    venue: ev.location ?? null,
+    address: ev.address ?? null,
+    mine: ctx ? ev.hostId === ctx.userId : undefined,
+  };
+}
 
 async function visibleEvents(ctx) {
   const { data, error } = await ctx.supabase.rpc('get_events');
@@ -48,6 +94,19 @@ async function hostedRevenueById(ctx) {
   }
 }
 
+// A rain warning to append to a create/edit proposal summary when the event's day
+// is likely wet. Uses Singapore-level weather (events don't store coordinates);
+// never throws and returns '' when the forecast is unavailable or fine.
+async function weatherNote(startISO, endISO) {
+  if (!startISO) return '';
+  try {
+    const w = await assessEvent({ startISO, endISO });
+    return w.status === 'ok' && w.willRain ? ` Heads up: ${w.summary}` : '';
+  } catch {
+    return '';
+  }
+}
+
 // Each agent tool is defined the idiomatic LangChain-JS way — the `tool()` factory
 // (the JS equivalent of Python's @tool) with a zod schema. The tool function is a
 // thin, never-throw adapter over the executor below; `ctx` (the user-scoped Supabase
@@ -58,7 +117,7 @@ const makeTool = (name, description, schema) =>
 // ── Read tools ────────────────────────────────────────────────────────────────
 export const searchEventsTool = makeTool(
   'search_events',
-  'Search events the user can see on party.fun. Returns matching events with id, title, the CURRENT price (the price on sale now, given each event\'s status/pricing) and hype. Use this to find events to recommend or to look one up by name.',
+  'Search events the user can see on party.fun. Returns matching events with full details — id, title, description, CURRENT price (the price on sale now), hype, status, start/end date-time, venue, address and pledging deadline. Use this to find events to recommend, to look one up by name (e.g. before editing it), or to answer detail questions. Excludes events that have already ended.',
   z.object({
     query: z.string().optional().describe('Keywords to match against title/description.'),
     maxPrice: z.number().optional().describe('Only events whose current price is at or below this price.'),
@@ -80,7 +139,7 @@ export const getEventForecastTool = makeTool(
 
 export const listAvailableEventsTool = makeTool(
   'list_available_events',
-  "The ALL EVENTS / discovery list: events the user can BUY right now — NOT their own, not cancelled/completed, and NOT already purchased by them. Each has the current buyable price. USE THIS for questions like 'cheapest/most expensive ticket I can buy'.",
+  "The ALL EVENTS / discovery list: events the user can BUY right now — NOT their own, not cancelled/completed, not already ended, and NOT already purchased by them. Each row has full details (current buyable price, status, hype, start/end date-time, venue, address, deadline, description). USE THIS for questions like 'cheapest/most expensive ticket I can buy' or 'what events can I attend'. Works the same for organisers — it returns other organisers' active events, never the caller's own.",
   z.object({
     query: z.string().optional().describe('Optional keywords to match against title/description.'),
     maxPrice: z.number().optional().describe('Optional: only events at or below this current price.'),
@@ -109,6 +168,34 @@ export const listMyDraftsTool = makeTool(
   'list_my_drafts',
   "The user's saved event DRAFTS (unpublished). Use this to find a draft's id before proposing to delete it.",
   z.object({}),
+);
+
+// ── Date ────────────────────────────────────────────────────────────────────────
+export const getCurrentDateTool = makeTool(
+  'get_current_date',
+  "Get TODAY'S date and current time in Singapore (SGT). Use this whenever you need to reason about dates — e.g. how far away an event is, whether a date is in the future, or to compute a start/end/deadline for a new event — and before checking the weather for a future event.",
+  z.object({}),
+);
+
+// ── Weather ─────────────────────────────────────────────────────────────────────
+export const getWeatherTool = makeTool(
+  'get_weather',
+  "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. Returns the precipitation probability and willRain (true when it is over 70%). Forecasts only reach ~10 days ahead. If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
+  z.object({
+    eventId: z.string().optional().describe('An event id to check (its date/time is used).'),
+    start: z.string().optional().describe('ISO 8601 start datetime (if no eventId).'),
+    end: z.string().optional().describe('ISO 8601 end datetime (optional).'),
+  }),
+);
+
+// ── Web research ────────────────────────────────────────────────────────────────
+export const researchEventIdeasTool = makeTool(
+  'research_event_ideas',
+  'Search the web for what university students are currently interested in, then recommend an event NAME, a DESCRIPTION, the rationale for why it suits them, and a suitable LOCATION (popular/convenient, ideally near the organiser\'s university). Use when an organiser asks what students want, for naming/description ideas, or where to host. Returns structured suggestions to present to the organiser.',
+  z.object({
+    theme: z.string().optional().describe('Optional angle or theme the organiser is considering (e.g. "music", "wellness", "networking").'),
+    audience: z.string().optional().describe('Optional audience note (e.g. "first-year students", "postgrads").'),
+  }),
 );
 
 // ── Memory ────────────────────────────────────────────────────────────────────
@@ -143,7 +230,7 @@ export const proposeUpdateEventTool = makeTool(
 
 export const proposeCreateEventTool = makeTool(
   'propose_create_event',
-  "PROPOSE creating a NEW event for the organiser as a DRAFT (it is NOT published — the user reviews and publishes it from Drafts). First ASK the user for the details. REQUIRED: title, plus startDate, endDate and deadline as ISO 8601 datetimes (e.g. 2026-08-15T19:00:00+08:00) — do not call this until you have the event's date, start & end time, and the pledging deadline. venue/prices/capacity are optional but recommended.",
+  "PROPOSE creating a NEW event for the organiser as a DRAFT (it is NOT published — the user reviews and publishes it from Drafts). First ASK the user for the details and recommend a pricing model. REQUIRED: title, plus startDate, endDate and deadline as ISO 8601 datetimes (e.g. 2026-08-15T19:00:00+08:00) — do not call this until you have the event's date, start & end time, and the pledging deadline. Choose pricingModel: 'tiered' (set earlyPrice + greenlitPrice) or 'hype' (set basePrice + maxPrice, price rises as tickets sell). venue/capacity/hypeThreshold are optional but recommended.",
   z.object({
     title: z.string(),
     description: z.string().optional(),
@@ -152,8 +239,11 @@ export const proposeCreateEventTool = makeTool(
     startDate: z.string().optional().describe('ISO 8601 datetime.'),
     endDate: z.string().optional().describe('ISO 8601 datetime.'),
     deadline: z.string().optional().describe('ISO 8601 datetime pledging closes.'),
-    earlyPrice: z.number().optional(),
-    greenlitPrice: z.number().optional(),
+    pricingModel: z.enum(['tiered', 'hype']).optional().describe("'tiered' = fixed early-bird then greenlit price; 'hype' = price rises from base to max as tickets sell. Defaults to tiered."),
+    earlyPrice: z.number().optional().describe('Tiered: early-bird price.'),
+    greenlitPrice: z.number().optional().describe('Tiered: greenlit price (must be higher than early-bird).'),
+    basePrice: z.number().optional().describe('Hype: starting price.'),
+    maxPrice: z.number().optional().describe('Hype: maximum price (must be higher than base).'),
     capacity: z.number().optional(),
     hypeThreshold: z.number().optional().describe('Tickets needed to greenlight.'),
     university: z.string().optional().describe('University code to restrict to (optional).'),
@@ -186,10 +276,10 @@ export const proposePledgeTool = makeTool(
 
 export const proposeCancelEventTool = makeTool(
   'propose_cancel_event',
-  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. Does NOT cancel — returns a proposal the user must confirm.',
+  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. A reason is REQUIRED — ask the organiser why before calling. Does NOT cancel — returns a proposal the user must confirm.',
   z.object({
     eventId: z.string().describe('The event id (must be hosted by the caller).'),
-    reason: z.string().optional().describe('Optional reason shown to backers.'),
+    reason: z.string().describe('REQUIRED reason for cancelling, shown to backers. Ask the organiser for it first.'),
   }),
 );
 
@@ -199,12 +289,23 @@ export const proposeDeleteDraftTool = makeTool(
   z.object({ draftId: z.string().describe('The draft id (from list_my_drafts).') }),
 );
 
+export const proposeGiveAwayTicketsTool = makeTool(
+  'propose_give_away_tickets',
+  "PROPOSE giving away some of the user's OWN tickets for an event they've joined. Give-aways are FINAL and non-refundable — the released spots return to the public pool. The user MUST specify how many (qty must be greater than 0 and at most the number they currently hold). Identify the event by its id (use get_my_joined_events / search_events to find it). Does NOT give away — returns a proposal the user must confirm.",
+  z.object({
+    eventId: z.string().describe('The event the user holds tickets for.'),
+    qty: z.number().describe('How many tickets to give away (> 0 and <= tickets currently held).'),
+  }),
+);
+
 // All tools + a by-name index for the graph to bind per-branch subsets.
 export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, listAvailableEventsTool,
-  getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool, rememberTool,
+  getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
+  getCurrentDateTool, getWeatherTool, researchEventIdeasTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
   proposeTopupTool, proposePledgeTool, proposeCancelEventTool, proposeDeleteDraftTool,
+  proposeGiveAwayTicketsTool,
 ];
 export const TOOLS_BY_NAME = Object.fromEntries(AGENT_TOOLS.map((t) => [t.name, t]));
 
@@ -213,13 +314,15 @@ export const EXECUTORS = {
     const q = String(args.query ?? '').toLowerCase().trim();
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const hypeOnly = !!args.hypeOnly;
+    const now = Date.now();
     const rows = (await visibleEvents(ctx))
       .filter((e) => e.status !== 'cancelled' && e.status !== 'completed')
+      .filter((e) => !isPastEvent(e, now))
       .filter((e) => (hypeOnly ? e.status === 'greenlit' : true))
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .slice(0, 15)
-      .map((e) => ({ id: e.id, title: e.title, currentPrice: currentPrice(e), hypePct: hypePct(e), status: e.status, mine: e.hostId === ctx.userId }));
+      .map((e) => richRow(e, ctx));
     return { count: rows.length, events: rows };
   },
 
@@ -233,7 +336,9 @@ export const EXECUTORS = {
       description: ev.description,
       status: ev.status, // early_bird | greenlit | completed | cancelled
       startDate: ev.startDate,
+      endDate: ev.endDate ?? null,
       deadline: ev.deadline ?? ev.deadlineAt ?? null,
+      venue: ev.location ?? null,
       address: ev.address,
       currentPrice: currentPrice(ev), // the price a buyer pays right now, given the status/pricing model
       ticketsSold: ev.active_ticket_count ?? 0,
@@ -278,12 +383,14 @@ export const EXECUTORS = {
     const q = String(args.query ?? '').toLowerCase().trim();
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const booked = await bookedEventIds(ctx);
+    const now = Date.now();
     const rows = (await visibleEvents(ctx))
       .filter((e) => e.hostId !== ctx.userId && e.status !== 'cancelled' && e.status !== 'completed')
+      .filter((e) => !isPastEvent(e, now))
       .filter((e) => !booked.has(e.id))
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
-      .map((e) => ({ id: e.id, title: e.title, currentPrice: currentPrice(e), status: e.status, hypePct: hypePct(e) }))
-      .filter((e) => (maxPrice != null ? e.currentPrice <= maxPrice : true));
+      .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
+      .map((e) => richRow(e, ctx));
     return { count: rows.length, events: rows };
   },
 
@@ -320,6 +427,43 @@ export const EXECUTORS = {
     };
   },
 
+  // ── Date ─────────────────────────────────────────────────────────────────────
+  async get_current_date() {
+    const d = sgNow();
+    return { date: d.isoDate, time: d.time, weekday: d.weekday, timezone: d.timezone };
+  },
+
+  // ── Weather ──────────────────────────────────────────────────────────────────
+  async get_weather(args, ctx) {
+    let startISO = args.start;
+    let endISO = args.end;
+    let lat;
+    let lon;
+    if (args.eventId) {
+      const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+      if (!ev) return { error: 'Event not found or not visible to you.' };
+      startISO = startISO || ev.startDate;
+      endISO = endISO || ev.endDate;
+      lat = ev.latitude;
+      lon = ev.longitude;
+    }
+    if (!startISO) return { error: 'Provide an eventId or a start date/time to check the weather.' };
+    // Uses the event's stored venue coordinates when known; Singapore fallback otherwise.
+    return await assessEvent({ lat, lon, startISO, endISO });
+  },
+
+  // ── Web research ─────────────────────────────────────────────────────────────
+  async research_event_ideas(args, ctx) {
+    let university = '';
+    try {
+      const { data } = await ctx.supabase.from('USER').select('university').eq('id', ctx.userId).single();
+      university = data?.university || '';
+    } catch {
+      /* university is optional — proceed without it */
+    }
+    return await researchEventIdeas({ theme: args.theme, audience: args.audience, university });
+  },
+
   // Learning: persist a durable preference about the user (executes immediately —
   // internal memory, not a user-facing write, so it never needs confirmation).
   async remember(args, ctx) {
@@ -352,13 +496,15 @@ export const EXECUTORS = {
       if (f === 'description') return 'Description (updated)';
       return `${label[f]} → ${payload[f]}`;
     });
+    // Only check weather when the edit changes the date (otherwise the note would be noise).
+    const rain = payload.startDate ? await weatherNote(payload.startDate, payload.endDate) : '';
     return {
       proposal: {
         id: `update_event:${ev.id}:${Date.now()}`,
         action: 'update_event',
         eventId: ev.id,
         title: ev.title,
-        summary: `Update "${ev.title}": ${parts.join(', ')}.`,
+        summary: `Update "${ev.title}": ${parts.join(', ')}.${rain}`,
         payload,
       },
     };
@@ -372,6 +518,15 @@ export const EXECUTORS = {
     if (!isValidDate(args.startDate) || !isValidDate(args.endDate) || !isValidDate(args.deadline)) {
       return { error: 'Ask the user for the event date, start & end time, and the pledging deadline, then pass them as ISO 8601 (e.g. 2026-08-15T19:00:00+08:00) — startDate, endDate and deadline are all required to draft the event.' };
     }
+    const pricingModel = args.pricingModel === 'hype' ? 'hype' : 'tiered';
+    if (pricingModel === 'hype') {
+      const base = Number(args.basePrice);
+      const max = Number(args.maxPrice);
+      if (!Number.isFinite(base) || !Number.isFinite(max)) return { error: 'Hype pricing needs a basePrice and a maxPrice.' };
+      if (max <= base) return { error: 'For hype pricing, maxPrice must be higher than basePrice.' };
+    } else if (args.earlyPrice != null && args.greenlitPrice != null && Number(args.greenlitPrice) < Number(args.earlyPrice)) {
+      return { error: 'For tiered pricing, the greenlit price must be at least the early-bird price.' };
+    }
     const payload = {
       title,
       description: args.description ?? '',
@@ -380,8 +535,11 @@ export const EXECUTORS = {
       startDate: args.startDate ?? '',
       endDate: args.endDate ?? '',
       deadline: args.deadline ?? '',
+      pricingModel,
       earlyPrice: args.earlyPrice ?? null,
       greenlitPrice: args.greenlitPrice ?? null,
+      basePrice: args.basePrice ?? null,
+      maxPrice: args.maxPrice ?? null,
       capacity: args.capacity ?? null,
       hypeThreshold: args.hypeThreshold ?? null,
       university: args.university ?? '',
@@ -389,14 +547,16 @@ export const EXECUTORS = {
     const bits = [];
     if (payload.venue) bits.push(`at ${payload.venue}`);
     if (payload.startDate) bits.push(`starting ${payload.startDate}`);
-    if (payload.earlyPrice != null) bits.push(`early-bird $${Number(payload.earlyPrice).toFixed(2)}`);
+    if (pricingModel === 'hype') bits.push(`hype pricing $${Number(payload.basePrice).toFixed(2)}→$${Number(payload.maxPrice).toFixed(2)}`);
+    else if (payload.earlyPrice != null) bits.push(`early-bird $${Number(payload.earlyPrice).toFixed(2)}`);
+    const rain = await weatherNote(payload.startDate, payload.endDate);
     return {
       proposal: {
         id: `create_event_draft:${Date.now()}`,
         action: 'create_event_draft',
         eventId: null,
         title,
-        summary: `Create a draft event "${title}"${bits.length ? ` (${bits.join(', ')})` : ''}. Review and publish it from your Drafts.`,
+        summary: `Create a draft event "${title}"${bits.length ? ` (${bits.join(', ')})` : ''}. Review and publish it from your Drafts.${rain}`,
         payload,
       },
     };
@@ -491,14 +651,45 @@ export const EXECUTORS = {
     if (ev.hostId !== ctx.userId) return { error: 'You can only cancel events you host.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be cancelled.' };
     const reason = String(args.reason ?? '').trim();
+    if (!reason) return { error: 'A reason is required to cancel a published event — ask the organiser why they want to cancel, then include it.' };
     return {
       proposal: {
         id: `cancel_event:${ev.id}:${Date.now()}`,
         action: 'cancel_event',
         eventId: ev.id,
         title: ev.title,
-        summary: `Cancel "${ev.title}" — the event closes and every backer is refunded${reason ? ` (reason: ${reason})` : ''}. This cannot be undone.`,
+        summary: `Cancel "${ev.title}" — the event closes and every backer is refunded (reason: ${reason}). This cannot be undone.`,
         payload: { reason },
+      },
+    };
+  },
+
+  async propose_give_away_tickets(args, ctx) {
+    const qty = Math.floor(Number(args.qty));
+    if (!Number.isFinite(qty) || qty <= 0) return { error: 'Specify how many tickets to give away (a whole number greater than 0).' };
+    let profile;
+    try {
+      profile = await getProfile(ctx.supabase);
+    } catch (e) {
+      return { error: e?.message ?? 'Unable to load your tickets.' };
+    }
+    // Find the caller's active, still-upcoming booking for this event (get_profile
+    // tickets carry bookingId/eventId/activeTicketCount/tab, but not the title).
+    const holdings = (profile?.tickets ?? []).filter((t) => t.eventId === args.eventId && Number(t.activeTicketCount ?? 0) > 0 && t.tab === 'upcoming');
+    if (holdings.length === 0) return { error: 'You do not hold any active tickets for that event (or it has already passed).' };
+    const booking = holdings[0];
+    const held = Number(booking.activeTicketCount ?? 0);
+    if (qty > held) return { error: `You only hold ${held} ticket${held === 1 ? '' : 's'} for that event — give away at most ${held}.` };
+    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const eventTitle = ev?.title ?? 'the event';
+    return {
+      proposal: {
+        id: `give_away:${booking.bookingId}:${Date.now()}`,
+        action: 'give_away',
+        eventId: args.eventId,
+        title: eventTitle,
+        summary: `Give away ${qty} of your ${held} ticket${held === 1 ? '' : 's'} for "${eventTitle}". This is final and non-refundable — the released spots return to the public pool.`,
+        payload: { bookingId: booking.bookingId, qty },
       },
     };
   },

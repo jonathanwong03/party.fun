@@ -1,28 +1,27 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
-import { __setProvidersForTests, __resetProvidersForTests, listConfiguredModels } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __resetGraphForTests } from './eventGraph.js';
+import { __resetProvidersForTests } from '../modelRouter.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { selectAtRisk } from './advisor.js';
+import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
+import { __setResearchCallForTests, __resetResearchCallForTests } from './research.js';
 
-afterEach(() => { __resetProvidersForTests(); __resetGraphForTests(); });
+afterEach(() => { __resetProvidersForTests(); __resetGraphForTests(); __resetForecastForTests(); __resetResearchCallForTests(); });
 
 // A fake branch agent: appends a fixed set of NEW messages onto the input list,
 // mimicking what createAgent returns from `.invoke({ messages })`.
 const fakeAgent = (newMessages) => ({ invoke: async ({ messages }) => ({ messages: [...messages, ...newMessages] }) });
 const allBranches = (agent) => ({ read_only: agent, discovery: agent, best_fit: agent, event_mgmt: agent, transaction: agent });
 const useAgents = (agent) => __setAgentsForTests(() => allBranches(agent));
-const useModel = () => __setBuildModelForTests(async () => ({ model: {}, provider: 'anthropic', modelId: 'mock' }));
+const useModel = () => __setBuildModelForTests(async () => ({ model: {}, provider: 'gemini', modelId: 'mock' }));
 const useClassify = (intent) => __setClassifyForTests(async () => intent);
 
 // Message helpers.
 const say = (text) => new AIMessage(text);
 const toolMsg = (obj, name = 'tool', id = 't1') => new ToolMessage({ content: JSON.stringify(obj), tool_call_id: id, name });
-
-// An unconfigured provider stub (for the modelRouter listConfiguredModels test).
-const unconfigured = () => ({ isConfigured: () => false, chatWithTools: async () => ({}) });
 
 const ctxWith = (events) => ({
   userId: 'u1',
@@ -54,7 +53,7 @@ test('runGraph runs the classified branch and returns the final answer', async (
   assert.equal(out.available, true);
   assert.equal(out.status, 'done');
   assert.match(out.reply, /music/i);
-  assert.equal(out.provider, 'anthropic');
+  assert.equal(out.provider, 'gemini');
 });
 
 test('classify routes to the matching branch agent', async () => {
@@ -330,10 +329,12 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 16 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 16);
+test('AGENT_TOOLS exposes all 20 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 20);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
+  assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
+  assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   // Every entry is a StructuredTool with a zod schema.
   assert.ok(AGENT_TOOLS.every((t) => typeof t.invoke === 'function' && t.schema));
 
@@ -344,7 +345,136 @@ test('AGENT_TOOLS exposes all 16 tools as tool()+zod objects, invokable end-to-e
   assert.equal(JSON.parse(raw).balance, 42);
 });
 
+// ── Weather + web-research tools ─────────────────────────────────────────────
+// A forecast day (Weather API shape) for a Singapore calendar date.
+const sgYmd = (iso) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(iso));
+const forecastDay = (ymd, percent) => {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return { displayDate: { year: y, month: m, day: d }, daytimeForecast: { precipitation: { probability: { percent } } }, nighttimeForecast: { precipitation: { probability: { percent: 0 } } } };
+};
+const inDaysIso = (n) => `${sgYmd(new Date(Date.now() + n * 86400000).toISOString())}T19:00:00+08:00`;
+
+test('get_weather warns when an event day is over 70% rain, resolving the event date by id', async () => {
+  const startISO = inDaysIso(3);
+  __setForecastForTests(async () => [forecastDay(sgYmd(startISO), 90)]);
+  const events = [{ id: 'e1', title: 'Picnic', status: 'early_bird', hostId: 'u1', startDate: startISO, endDate: startISO, statuses: [{ price: 5 }] }];
+  const out = await EXECUTORS.get_weather({ eventId: 'e1' }, ctxWith(events));
+  assert.equal(out.status, 'ok');
+  assert.equal(out.willRain, true);
+  assert.equal(out.precipitationProbability, 90);
+});
+
+test('get_weather stays quiet when the forecast is fine', async () => {
+  const start = inDaysIso(2);
+  __setForecastForTests(async () => [forecastDay(sgYmd(start), 20)]);
+  const out = await EXECUTORS.get_weather({ start }, ctxWith([]));
+  assert.equal(out.status, 'ok');
+  assert.equal(out.willRain, false);
+});
+
+test('research_event_ideas returns structured suggestions from the (mocked) web search', async () => {
+  __setResearchCallForTests(async () => JSON.stringify({
+    trends: ['run clubs', 'matcha'],
+    suggestedName: 'Sunrise Run & Matcha Social',
+    suggestedDescription: 'A dawn 5k followed by matcha and mingling.',
+    rationale: 'Taps the wellness + run-club trend among students.',
+    suggestedLocation: 'East Coast Park, near SMU',
+  }));
+  const out = await EXECUTORS.research_event_ideas({ theme: 'wellness' }, ctxFull({ user: { university: 'SMU' } }));
+  assert.equal(out.source, 'web');
+  assert.equal(out.suggestedName, 'Sunrise Run & Matcha Social');
+  assert.deepEqual(out.trends, ['run clubs', 'matcha']);
+  assert.match(out.suggestedLocation, /SMU/);
+});
+
+test('get_current_date reports today in Singapore', async () => {
+  const out = await EXECUTORS.get_current_date({}, ctxWith([]));
+  const todaySg = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  assert.equal(out.date, todaySg);
+  assert.match(out.timezone, /Singapore/);
+});
+
+// ── Give-away tickets tool ───────────────────────────────────────────────────
+// ctx whose get_profile RPC returns the caller's ticket holdings, get_events the events.
+const giveAwayCtx = (tickets, events = []) => ({
+  userId: 'u1', role: 'user',
+  supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { tickets } : events, error: null }) },
+});
+
+test('propose_give_away_tickets proposes releasing N of the held tickets', async () => {
+  const ctx = giveAwayCtx(
+    [{ bookingId: '5', eventId: 'e1', activeTicketCount: 3, tab: 'upcoming' }],
+    [{ id: 'e1', title: 'Live Gig', hostId: 'org1', status: 'greenlit' }],
+  );
+  const out = await EXECUTORS.propose_give_away_tickets({ eventId: 'e1', qty: 2 }, ctx);
+  assert.equal(out.proposal.action, 'give_away');
+  assert.equal(out.proposal.payload.bookingId, '5');
+  assert.equal(out.proposal.payload.qty, 2);
+  assert.match(out.proposal.summary, /2 of your 3/);
+});
+
+test('propose_give_away_tickets rejects giving away more than held', async () => {
+  const ctx = giveAwayCtx([{ bookingId: '5', eventId: 'e1', activeTicketCount: 3, tab: 'upcoming' }], [{ id: 'e1', title: 'Gig' }]);
+  const out = await EXECUTORS.propose_give_away_tickets({ eventId: 'e1', qty: 9 }, ctx);
+  assert.match(out.error, /only hold 3/);
+});
+
+test('propose_give_away_tickets errors when the user holds none for that event', async () => {
+  const ctx = giveAwayCtx([{ bookingId: '5', eventId: 'other', activeTicketCount: 1, tab: 'upcoming' }], []);
+  const out = await EXECUTORS.propose_give_away_tickets({ eventId: 'e1', qty: 1 }, ctx);
+  assert.match(out.error, /do not hold/);
+});
+
+// ── Hype-pricing draft creation ──────────────────────────────────────────────
+test('propose_create_event supports hype pricing (base < max)', async () => {
+  const args = { title: 'Rooftop Rave', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 10, maxPrice: 25 };
+  const out = await EXECUTORS.propose_create_event(args, ctxWith([]));
+  assert.equal(out.proposal.action, 'create_event_draft');
+  assert.equal(out.proposal.payload.pricingModel, 'hype');
+  assert.match(out.proposal.summary, /hype pricing \$10\.00→\$25\.00/);
+});
+
+test('propose_create_event rejects hype pricing when max is not above base', async () => {
+  const args = { title: 'X', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 20, maxPrice: 10 };
+  const out = await EXECUTORS.propose_create_event(args, ctxWith([]));
+  assert.match(out.error, /maxPrice must be higher/);
+});
+
+// ── Scope guard (off-topic filter) ───────────────────────────────────────────
+test('off-topic questions are refused by the guard before any branch runs', async () => {
+  useModel();
+  __setGuardForTests(async () => false);
+  let branchCalled = false;
+  __setAgentsForTests(() => allBranches({ invoke: async ({ messages }) => { branchCalled = true; return { messages }; } }));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'what is 2+2?' }], ctx: ctxWith([]) });
+  assert.equal(out.reply, OFF_TOPIC_REPLY);
+  assert.equal(branchCalled, false);
+});
+
+test('on-topic questions pass the guard through to a branch', async () => {
+  useModel(); useClassify('discovery'); __setGuardForTests(async () => true);
+  useAgents(fakeAgent([say('Here are some events for you.')]));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'show me events' }], ctx: ctxWith([]) });
+  assert.match(out.reply, /events/i);
+});
+
 // ── New executeAction branches (deterministic, re-validated) ─────────────────
+test('executeAction give_away releases tickets via the give-away service', async () => {
+  let called = null;
+  const sb = { rpc: async (name, args) => {
+    if (name === 'give_away_tickets') { called = args; return { data: { status: 'ok' }, error: null }; }
+    if (name === 'get_events') return { data: [], error: null };
+    if (name === 'get_profile') return { data: { tickets: [] }, error: null };
+    return { data: null, error: null };
+  } };
+  // eventIdForBooking reads BOOKINGS; stub .from().select().eq().single().
+  sb.from = () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { eventId: 'e1' }, error: null }) }) }) });
+  const out = await executeAction({ sb, user: { id: 'u1' }, action: 'give_away', payload: { bookingId: '5', qty: 2 } });
+  assert.equal(out.status, 'ok');
+  assert.equal(called.p_booking_id, 5);
+  assert.equal(called.p_quantity, 2);
+});
+
 test('executeAction topup fails safe when Stripe is not configured', async () => {
   const out = await executeAction({ sb: {}, user: { id: 'u1' }, action: 'topup', payload: { amount: 20 } });
   assert.equal(out.error, 'stripe_disabled');
@@ -400,14 +530,3 @@ test('advisor selectAtRisk picks open, near-deadline, below-threshold events', (
   assert.deepEqual(picked, ['r1']);
 });
 
-test('listConfiguredModels reflects only configured providers', async () => {
-  __setProvidersForTests({
-    anthropic: { isConfigured: () => true, chatWithTools: async () => ({}) },
-    openai: unconfigured(),
-    gemini: unconfigured(),
-  });
-  const models = listConfiguredModels();
-  assert.ok(models.length >= 1);
-  assert.ok(models.every((m) => m.provider === 'anthropic'));
-  assert.ok(models.some((m) => m.tier === 'premium'));
-});

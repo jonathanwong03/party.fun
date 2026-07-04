@@ -52,6 +52,8 @@ export type EventItem = {
   time: string;
   location: string;
   address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
   description: string;
   image: string;
   price: number;

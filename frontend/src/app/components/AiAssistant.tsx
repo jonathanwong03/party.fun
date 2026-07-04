@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft, Brain } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import {
-  sendChat, resumeChat, fetchAiModels,
+  sendChat, resumeChat, fetchAiAvailability,
   fetchConversations, fetchConversation, deleteConversation,
   fetchMemories, deleteMemory, clearMemories,
-  type ChatMessage, type AiModel, type AgentProposal, type AiConversation, type AiMemory,
+  type ChatMessage, type AgentProposal, type AiConversation, type AiMemory,
 } from '../api';
 
-type Turn = ChatMessage & { via?: string; proposals?: AgentProposal[]; threadId?: string };
+type Turn = ChatMessage & { proposals?: AgentProposal[]; threadId?: string };
 type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: string };
 
 // Per-action confirmation-card label; `danger` tints money/irreversible actions.
@@ -32,14 +31,16 @@ function renderReply(content: string): string[] {
     .replace(/`([^`]+)`/g, '$1')       // `code`
     .replace(/^#{1,6}\s*/gm, '')       // # headings
     .replace(/^\s*[-*]\s+/gm, '')      // - / * bullet markers
-    .replace(/\*/g, '');               // stray asterisks
+    .replace(/\*/g, '')                // stray asterisks
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{20E3}]/gu, '') // emojis
+    .replace(/[ \t]{2,}/g, ' ');       // collapse gaps left by stripped emojis
   return cleaned.split(/\n+/).map((p) => p.trim()).filter(Boolean);
 }
 
 // Floating AI agent: a launcher + chat panel. The model calls backend tools in a
-// loop; a dropdown picks the provider/model. Conversations are saved per user —
-// "New chat" starts a thread, the history list reopens past ones. `onDataChanged`
-// refreshes the app's data after a write so edits show instantly.
+// loop. Conversations are saved per user — "New chat" starts a thread, the history
+// list reopens past ones. `onDataChanged` refreshes the app's data after a write so
+// edits show instantly.
 export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
@@ -50,9 +51,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   const [memories, setMemories] = useState<AiMemory[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
-  const [models, setModels] = useState<AiModel[]>([]);
-  const [picked, setPicked] = useState('auto'); // 'auto' = router chooses; else `${provider}|${model}`
-  const [mode, setMode] = useState<'ask' | 'auto'>('ask'); // ask = confirm each write; auto = apply immediately
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null); // null = anchored bottom-right
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -87,8 +85,8 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   useEffect(() => {
     if (!open) return;
     let ignore = false;
-    fetchAiModels()
-      .then((r) => { if (!ignore) { if (!r.available) setHidden(true); else setModels(r.models ?? []); } })
+    fetchAiAvailability()
+      .then((r) => { if (!ignore && !r.available) setHidden(true); })
       .catch(() => {});
     return () => { ignore = true; };
   }, [open]);
@@ -115,7 +113,7 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   async function loadConversation(id: string) {
     try {
       const r = await fetchConversation(id);
-      setMessages((r.messages ?? []).map((m) => ({ role: m.role, content: m.content, via: m.model || undefined })));
+      setMessages((r.messages ?? []).map((m) => ({ role: m.role, content: m.content })));
       setConversationId(id);
       setActions({});
       setView('chat');
@@ -140,11 +138,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
     try { await clearMemories(); } catch { /* ignore */ }
     setMemories([]);
   }
-
-  const pickedModel = () => {
-    const [provider, model] = picked && picked !== 'auto' ? picked.split('|') : [];
-    return provider && model ? { provider, model } : undefined;
-  };
 
   // Pending (un-acted) proposals from the most recent assistant message that has any,
   // together with that message's graph threadId (needed to resume/confirm them).
@@ -176,19 +169,14 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
     setInput('');
     setBusy(true);
     try {
-      // Auto mode: the graph executes writes inline (no confirmation round-trip).
       const res = await sendChat(
         next.map(({ role, content }) => ({ role, content })),
-        pickedModel(),
         conversationId,
-        mode,
       );
       if (!res.available) { setHidden(true); return; }
       if (res.conversationId) setConversationId(res.conversationId);
-      const via = res.model ? `${res.provider} · ${res.model}` : undefined;
-      // In auto mode writes already ran — don't render confirmation cards; just refresh.
-      const proposals = mode === 'auto' ? [] : res.proposals;
-      setMessages([...next, { role: 'assistant', content: res.reply ?? 'Sorry, I had trouble answering.', via, proposals, threadId: res.threadId }]);
+      // Every write is a proposal the user must confirm via a card.
+      setMessages([...next, { role: 'assistant', content: res.reply ?? 'Sorry, I had trouble answering.', proposals: res.proposals, threadId: res.threadId }]);
       if (res.results?.length) onDataChanged?.();
     } catch {
       setMessages([...next, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
@@ -202,7 +190,7 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
     if (!threadId) { setActions((s) => ({ ...s, [p.id]: { status: 'error', message: 'This proposal has expired — please ask again.' } })); return; }
     setActions((s) => ({ ...s, [p.id]: { status: 'busy' } }));
     try {
-      const res = await resumeChat(threadId, p.id, decision, conversationId, pickedModel());
+      const res = await resumeChat(threadId, p.id, decision, conversationId);
       if (res.conversationId) setConversationId(res.conversationId);
       if (decision === 'reject') {
         setActions((s) => ({ ...s, [p.id]: { status: 'done', message: 'Dismissed.' } }));
@@ -253,19 +241,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
         <div className="flex items-center gap-1.5">
           {view === 'chat' && (
             <>
-              {models.length > 0 && (
-                <Select value={picked} onValueChange={setPicked}>
-                  <SelectTrigger size="sm" className="text-xs" style={{ background: 'var(--surface)', maxWidth: 140 }}>
-                    <SelectValue placeholder="Auto" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">Auto</SelectItem>
-                    {models.map((m) => (
-                      <SelectItem key={`${m.provider}|${m.model}`} value={`${m.provider}|${m.model}`}>{m.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              )}
               <button onClick={newChat} title="New chat" className={iconBtn} style={muted}><Plus size={17} /></button>
               <button onClick={openHistory} title="Past conversations" className={iconBtn} style={muted}><History size={16} /></button>
               <button onClick={openMemory} title="What I remember about you" className={iconBtn} style={muted}><Brain size={16} /></button>
@@ -277,25 +252,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
           <button onClick={() => setOpen(false)} className={iconBtn} style={muted}><X size={18} /></button>
         </div>
       </div>
-
-      {view === 'chat' && (
-        <div className="flex items-center gap-2 border-b px-4 py-2 text-xs" style={{ borderColor: 'var(--border)' }}>
-          <span style={muted}>Mode</span>
-          <div className="flex gap-1 rounded-lg p-0.5" style={{ background: 'var(--surface-2)' }}>
-            {(['ask', 'auto'] as const).map((m) => (
-              <button
-                key={m}
-                onClick={() => setMode(m)}
-                className="rounded-md px-2 py-0.5 transition"
-                style={{ background: mode === m ? '#ff4d2e' : 'transparent', color: mode === m ? '#fff' : 'var(--muted-foreground)', fontWeight: 600 }}
-                title={m === 'ask' ? 'Ask for permission before each change' : 'Apply changes immediately'}
-              >
-                {m === 'ask' ? 'Ask permission' : 'Auto-edit'}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {view === 'history' ? (
         <div className="flex-1 overflow-y-auto px-2 py-2">
@@ -347,7 +303,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
                     m.content
                   )}
                 </div>
-                {m.via && <div className="mt-0.5 px-1 text-[10px]" style={muted}>via {m.via}</div>}
                 {(m.proposals ?? []).map((p) => {
                   const st = actions[p.id] ?? { status: 'idle' };
                   const meta = actionMeta(p.action);

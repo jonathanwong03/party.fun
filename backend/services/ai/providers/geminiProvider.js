@@ -25,7 +25,9 @@ export const geminiProvider = {
       parts: [{ text: m.content }],
     }));
 
-    const config = { maxOutputTokens: maxTokens };
+    // Disable "thinking": Gemini Flash models otherwise spend the output budget on
+    // hidden reasoning, returning empty text on small-budget calls (e.g. classify).
+    const config = { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } };
     if (system) config.systemInstruction = system;
     if (jsonSchema) config.responseMimeType = 'application/json';
 
@@ -58,7 +60,7 @@ export const geminiProvider = {
       }
     }
 
-    const config = { maxOutputTokens: maxTokens };
+    const config = { maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } };
     if (system) config.systemInstruction = system;
     if (tools?.length) {
       config.tools = [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.parameters })) }];

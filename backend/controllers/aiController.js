@@ -1,4 +1,4 @@
-import { anyConfigured, listConfiguredModels } from '../services/ai/modelRouter.js';
+import { anyConfigured } from '../services/ai/modelRouter.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
@@ -122,24 +122,35 @@ const AGENT_SYSTEM = () => [
   '',
   '- get_wallet: the user\'s wallet balance, linked card, and recent transactions. Check this before proposing a top-up or a wallet-paid purchase.',
   '- list_my_drafts: the user\'s unpublished event drafts (use to find a draftId before proposing to delete one).',
+  '- get_current_date: today\'s date & time in Singapore. Call it whenever you reason about dates (how soon an event is, whether a date is in the future, computing a new event\'s dates) and before checking future weather.',
+  '- get_weather: the rain forecast for an event\'s date (by eventId or a start date). If it reports willRain (over 70% chance), warn that it is not ideal for an OUTDOOR event and suggest an indoor venue or another date. Forecasts only reach ~10 days ahead.',
+  '- research_event_ideas: searches the web for what university students are into now and suggests an event name, description, why it fits, and a good location (ideally near the organiser\'s university). Use it when an organiser asks what students want, for naming/description help, or where to host.',
+  '- search_events / list_available_events return FULL details (date/time, venue, address, deadline, description, price) — use them to answer detail questions and to find an event\'s id before editing it. list_available_events is the events the user can ATTEND (never their own, never already-ended).',
   '',
-  'WRITE tools (each creates a PROPOSAL the user confirms — they do NOT apply immediately):',
-  "- propose_update_event: edit any fields (title, description, venue, address, dates, deadline, capacity, hype threshold, prices) of the user's OWN event. Pass only the fields to change.",
-  '- propose_create_event: create a NEW event as a DRAFT. First ASK the user for the details; you MUST have the event date, start & end time and pledging deadline (pass as ISO 8601) plus a title before calling — do not create a draft with missing dates. It saves a draft the user reviews and publishes.',
+  'WRITE tools (each creates a PROPOSAL the user confirms — they do NOT apply immediately; there is no auto-apply mode, so ALWAYS wait for confirmation):',
+  "- propose_update_event: EDIT one of the user's OWN existing events IN PLACE. To change a field (e.g. an early-bird price), first find the event with get_my_hosted_events or search_events, then call this with its eventId and ONLY the fields to change. NEVER create a new event to make an edit.",
+  '- propose_create_event: create a NEW event as a DRAFT. Follow the create flow: ask the theme (or research one), use research_event_ideas for name/description/location, RECOMMEND a pricing model (tiered vs hype) with brief pros/cons, and only draft after the organiser confirms. You MUST have a title + start/end/deadline (ISO 8601). Pass pricingModel plus matching prices (tiered: earlyPrice+greenlitPrice; hype: basePrice+maxPrice). It saves a draft the user reviews and publishes.',
   "- propose_invite_coorganiser: invite a co-organiser to the user's own event.",
   '- propose_topup: add money to the wallet by charging the linked card. Requires a linked card.',
   '- propose_pledge: buy ticket(s) to an event using the WALLET balance (a deduction). Not the user\'s own event.',
-  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event.',
+  '- propose_give_away_tickets: give away some of the user\'s OWN tickets for an event they joined. They MUST say how many (more than 0, at most what they hold). Final and non-refundable — the released spots return to the public pool.',
+  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event. A REASON is REQUIRED: ask the organiser why before proposing.',
   '- propose_delete_draft: permanently delete one of the user\'s unpublished drafts.',
   '',
-  'MONEY & DELETION SAFETY: top-ups, purchases (deductions) and refunds are all real money — only ever PROPOSE them; execution happens after the user confirms and re-validates balances/ownership server-side. "Delete this event" means cancel it (refunding backers) for a published event, or delete the draft for an unpublished one.',
+  'PRICING MODELS (help the organiser choose): TIERED = a fixed early-bird price until the early allocation sells out, then a fixed greenlit price — predictable and simplest. HYPE = each ticket\'s price rises from a base price toward a max price as more sell — rewards early buyers and can earn more when demand is high. The model is LOCKED once the event is created.',
+  '',
+  'MONEY & DELETION SAFETY: top-ups, purchases (deductions), give-aways and refunds are all irreversible — only ever PROPOSE them; execution happens after the user confirms and re-validates balances/ownership server-side. "Delete this event" means cancel it with a reason (refunding backers) for a published event, or delete the draft for an unpublished one.',
   '',
   'MEMORY: call `remember` to save a durable preference you learn about the user (interests, budget, preferred venue/theme/timing, or an organiser\'s pricing/venue preferences). Personalise your help using what you already remember about them (shown below, if any). Do not re-remember something already known.',
   '',
-  'When you call a propose_* tool, tell the user what you are proposing and that it needs confirmation; never claim it is already done.',
+  'CREATING & EDITING: you CAN create, edit, cancel and delete events for an organiser — do it, never say you cannot. propose_create_event saves the event as a DRAFT (it is NOT published) that the organiser reviews and publishes from their Drafts; always tell them it was saved to Drafts. propose_update_event edits an existing event IN PLACE (never recreate it). Every write pauses for the organiser to confirm before anything happens.',
+  '',
+  'When you call a propose_* tool, tell the user what you are proposing and that it needs their confirmation; never claim it is already done.',
   "Distinguish \"all events\" (discovery — events to buy) from \"hosted events\" (the organiser's own). Keep replies short, friendly and practical.",
   '',
-  'FORMATTING: reply in PLAIN TEXT only. Do NOT use markdown — no **bold**, no # headings, no bullet/asterisk characters, and no | tables |. Write short paragraphs and separate each paragraph with a blank line so replies are easy to read.',
+  'SCOPE: You are ONLY an events assistant for party.fun. You help with discovering/buying events, wallet/top-ups, hosting (create/edit/cancel), event ideas, and the weather for an event. If asked anything unrelated to events or party.fun (e.g. what to wear, general trivia, coding, personal advice), politely say you can only help with events on party.fun and offer an events-related next step — do NOT answer the off-topic question. Still respond warmly to greetings, thanks and small pleasantries.',
+  '',
+  'FORMATTING: reply in PLAIN TEXT only. Do NOT use markdown — no **bold**, no # headings, no bullet/asterisk characters, and no | tables |. Do NOT use emojis. Write short paragraphs and separate each paragraph with a blank line so replies are easy to read.',
 ].join('\n');
 
 // A one-line statement of who the current user is, prepended to the system prompt so
@@ -152,6 +163,16 @@ function roleLine(role) {
       ? 'an ORGANISER who can host, edit and cancel their own events, and can also join/buy tickets for other people\'s events'
       : 'a regular USER who joins and buys tickets for events';
   return `The current user's role is: ${r} — ${detail}.`;
+}
+
+// Today's date/time in Singapore, prepended so the agent always knows "now" (for
+// reasoning about how far off events are, computing new dates, and future weather).
+function dateLine() {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', weekday: 'long', hour12: false,
+  }).formatToParts(new Date()).reduce((o, x) => ({ ...o, [x.type]: x.value }), {});
+  return `Today's date is ${p.weekday}, ${p.year}-${p.month}-${p.day} and the current time is ${p.hour}:${p.minute} (Singapore time, SGT UTC+8).`;
 }
 
 // Title a new conversation from the opening message (first ~8 words).
@@ -195,14 +216,13 @@ const modelLabelOf = (result) => (result.model ? `${result.provider} · ${result
 // threadId so the UI can keep appending and resume pending proposals.
 export async function chat(req, res) {
   if (!guard(req, res)) return;
-  const { messages, provider, model, conversationId, mode } = req.body ?? {};
+  const { messages, conversationId } = req.body ?? {};
   const list = Array.isArray(messages) ? messages : [];
-  const preferred = provider && model ? { provider, model } : undefined;
-  const runMode = mode === 'auto' ? 'auto' : 'ask';
+  // Every write always pauses for confirmation — no auto-apply mode.
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
   const memBlock = formatMemory(await loadMemory(req.supabase, req.user.id));
-  const system = [AGENT_SYSTEM(), roleLine(req.user.role), memBlock].filter(Boolean).join('\n\n');
-  const result = await runGraph({ system, messages: list, ctx, preferred, mode: runMode });
+  const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock].filter(Boolean).join('\n\n');
+  const result = await runGraph({ system, messages: list, ctx, mode: 'ask' });
 
   let convoId = conversationId || null;
   if (result?.available && result.reply) {
@@ -225,16 +245,14 @@ export async function chat(req, res) {
 // ownership/balances. Persists the execution summary to the conversation.
 export async function resumeChat(req, res) {
   if (!guard(req, res)) return;
-  const { threadId, proposalId, decision, conversationId, provider, model } = req.body ?? {};
+  const { threadId, proposalId, decision, conversationId } = req.body ?? {};
   if (!threadId || !proposalId) {
     return res.status(400).json({ status: 'error', message: 'threadId and proposalId are required.' });
   }
-  const preferred = provider && model ? { provider, model } : undefined;
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
   const result = await resumeGraph({
-    system: `${AGENT_SYSTEM()}\n\n${roleLine(req.user.role)}`,
+    system: `${AGENT_SYSTEM()}\n\n${roleLine(req.user.role)}\n\n${dateLine()}`,
     ctx,
-    preferred,
     threadId,
     proposalId,
     decision: decision === 'reject' ? 'reject' : 'confirm',
@@ -304,9 +322,9 @@ export async function clearMemory(req, res) {
   res.json({ status: 'ok' });
 }
 
-// GET /api/ai/models — configured provider/model options for the UI picker.
+// GET /api/ai/models — whether AI features are enabled (a Gemini key is configured).
 export function models(_req, res) {
-  res.json({ available: anyConfigured(), models: listConfiguredModels() });
+  res.json({ available: anyConfigured() });
 }
 
 // POST /api/ai/execute-action — run a user-confirmed agent proposal (a write).

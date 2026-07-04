@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   Image as ImageIcon,
@@ -6,7 +6,7 @@ import {
   X,
   Sparkles,
 } from "lucide-react";
-import { uploadEventImage, suggestEventCopy } from "../api";
+import { uploadEventImage, suggestEventCopy, fetchWeather, type WeatherAssessment } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -123,6 +123,29 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
   const [inviteError, setInviteError] = useState<string | null>(null);
   const imageRef = useRef<HTMLInputElement>(null);
 
+  // Weather warning: the venue coordinates come straight from the AddressPicker
+  // (exact); the rain check runs whenever a valid date/time is set. Falls back to
+  // Singapore-level weather when no place has been picked yet (e.g. editing).
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    source?.latitude != null && source?.longitude != null ? { lat: source.latitude, lng: source.longitude } : null,
+  );
+  const [weather, setWeather] = useState<WeatherAssessment | null>(null);
+  useEffect(() => {
+    if (dateError(date) || timeError(start)) {
+      setWeather(null);
+      return;
+    }
+    const startISO = inputToIso(date, start);
+    const endISO = inputToIso(endDate || date, end || start);
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetchWeather({ lat: coords?.lat, lng: coords?.lng, start: startISO, end: endISO })
+        .then((w) => { if (!cancelled) setWeather(w); })
+        .catch(() => { if (!cancelled) setWeather(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [date, start, endDate, end, coords]);
+
   const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -220,6 +243,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       deadlineAt: inputToIso(deadlineDate, deadlineTime),
       location: venue,
       address,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
       description,
       image,
       price: num(ebPrice),
@@ -269,6 +294,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       endDate,
       location: venue,
       address,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
       description,
       image,
       price: num(ebPrice),
@@ -335,6 +362,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       description,
       location: venue,
       address,
+      latitude: coords?.lat ?? existing.latitude ?? null,
+      longitude: coords?.lng ?? existing.longitude ?? null,
       date,
       time: start,
       endTime: end,
@@ -612,6 +641,15 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     />
                   </Field>
                 </div>
+                {weather?.status === "ok" && weather.willRain && (
+                  <div
+                    className="mt-3 flex items-start gap-2 rounded-lg p-3 text-xs"
+                    style={{ background: "rgba(255,77,46,0.08)", border: "1px solid rgba(255,77,46,0.35)", color: "#ffb4a3" }}
+                  >
+                    <AlertTriangle size={16} style={{ marginTop: 1, flexShrink: 0 }} />
+                    <span>{weather.summary}</span>
+                  </div>
+                )}
               </Section>
 
               <Section title="Location">
@@ -629,6 +667,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                       value={address}
                       onChange={setAddress}
                       onValidChange={(v) => setAddressValid(v)}
+                      onSelect={(s) => setCoords({ lat: s.lat, lng: s.lng })}
                       error={!!errOf("address")}
                     />
                   </Field>{" "}

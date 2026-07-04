@@ -1,4 +1,4 @@
-import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createPledge, deleteDraft, listDrafts } from '../../eventService.js';
+import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createPledge, deleteDraft, listDrafts, giveAwayTickets } from '../../eventService.js';
 import { notifyEventUpdated, notifyCoOrganiserInvite, notifyPledgeConfirmed } from '../../notificationService.js';
 import { topupWallet } from '../../walletService.js';
 import { cancelEventWithRefunds } from '../../eventCancellationService.js';
@@ -7,7 +7,7 @@ import { cancelEventWithRefunds } from '../../eventCancellationService.js';
 // (user-scoped) Supabase client so RLS + the RPCs re-enforce ownership/validation;
 // we also re-check ownership here. Never trusts the proposal blindly.
 
-const ACTIONS = new Set(['update_event', 'create_event_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft']);
+const ACTIONS = new Set(['update_event', 'create_event_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft', 'give_away']);
 const NEEDS_EVENT = new Set(['update_event', 'invite_coorganiser', 'cancel_event']); // create_event_draft/topup/delete_draft have no event; pledge validates its own
 
 const ERROR_MESSAGES = {
@@ -42,6 +42,10 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
     const p = payload ?? {};
     const title = String(p.title ?? '').trim();
     if (!title) return { error: 'title_required', message: 'An event title is required.' };
+    const isHype = p.pricingModel === 'hype';
+    // Draft payload mirrors what the Create Event form writes so it seeds/publishes
+    // correctly. For hype pricing the early-bird status slot carries the base price
+    // and the greenlit slot the max price (matching how the form reads a draft).
     const draft = {
       title,
       description: p.description ?? '',
@@ -53,11 +57,18 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
       maxCapacity: p.capacity ?? 0,
       hypeThreshold: p.hypeThreshold ?? 0,
       restrictedUniversity: p.university ?? '',
-      hypeDrivenPricing: false,
-      statuses: [
-        { statusName: 'early_bird', price: p.earlyPrice ?? 0, qty: p.hypeThreshold ?? 0 },
-        { statusName: 'greenlit', price: p.greenlitPrice ?? 0, qty: p.capacity ?? 0 },
-      ],
+      hypeDrivenPricing: isHype,
+      basePrice: isHype ? (p.basePrice ?? 0) : null,
+      maxPrice: isHype ? (p.maxPrice ?? 0) : null,
+      statuses: isHype
+        ? [
+          { statusName: 'early_bird', price: p.basePrice ?? 0, qty: p.hypeThreshold ?? 0 },
+          { statusName: 'greenlit', price: p.maxPrice ?? 0, qty: p.capacity ?? 0 },
+        ]
+        : [
+          { statusName: 'early_bird', price: p.earlyPrice ?? 0, qty: p.hypeThreshold ?? 0 },
+          { statusName: 'greenlit', price: p.greenlitPrice ?? 0, qty: p.capacity ?? 0 },
+        ],
     };
     try {
       const saved = await saveDraft(sb, user.id, draft);
@@ -119,6 +130,21 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
 
     const spent = result.amount != null ? ` — $${Number(result.amount).toFixed(2)} deducted` : '';
     return { status: 'ok', message: `Bought ${qty} ticket${qty > 1 ? 's' : ''} for "${result.event?.title ?? 'the event'}"${spent}.`, event: result.event };
+  }
+
+  // ── Give away the user's OWN tickets (release to the public pool; final) ──────
+  if (action === 'give_away') {
+    const bookingId = payload?.bookingId;
+    const qty = Math.floor(Number(payload?.qty ?? 0));
+    if (!bookingId || qty <= 0) return { error: 'bad_request', message: 'Missing booking or a valid quantity.' };
+    let result;
+    try {
+      result = await giveAwayTickets(sb, user.id, Number(bookingId), qty);
+    } catch (e) {
+      return { error: 'error', message: e?.message ?? 'Unable to give away tickets.' };
+    }
+    if (result?.error) return { error: result.error, message: msg(result.error, 'Unable to give away tickets.') };
+    return { status: 'ok', message: `Gave away ${qty} ticket${qty > 1 ? 's' : ''} — the released spots return to the public pool.`, event: result.event };
   }
 
   // ── Actions that operate on an existing, owned event ─────────────────────────

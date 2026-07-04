@@ -143,6 +143,29 @@ async function apiFetch<T>(
   return response.json() as Promise<T>;
 }
 
+// ── Weather (rain warning for event dates) ────────────────────────────────────
+export type WeatherAssessment = {
+  status: 'ok' | 'past' | 'beyond_horizon' | 'unavailable';
+  precipitationProbability: number | null;
+  willRain: boolean;
+  summary: string;
+};
+
+// Rain assessment for an event window. Pass an eventId (uses the event's stored
+// date) OR exact coords + ISO start/end (the Create/Edit form, which has the venue
+// coordinates). Returns 'unavailable'/'past'/'beyond_horizon' when no warning applies.
+export async function fetchWeather(
+  params: { eventId?: string; lat?: number; lng?: number; start?: string; end?: string },
+): Promise<WeatherAssessment> {
+  const q = new URLSearchParams();
+  if (params.eventId) q.set('eventId', params.eventId);
+  if (params.lat != null) q.set('lat', String(params.lat));
+  if (params.lng != null) q.set('lon', String(params.lng));
+  if (params.start) q.set('start', params.start);
+  if (params.end) q.set('end', params.end);
+  return apiFetch<WeatherAssessment>(`/api/weather?${q.toString()}`);
+}
+
 // ── Auth (Supabase, unchanged) ────────────────────────────────────────────────
 export async function loginWithGoogleRequest(): Promise<void> {
   const { error } = await supabase.auth.signInWithOAuth({
@@ -697,7 +720,7 @@ export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> 
   return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
 }
 
-// ── AI agent (multi-provider; all responses tolerate {available:false}) ────
+// ── AI agent (Gemini; all responses tolerate {available:false}) ────
 
 export type EventCopySuggestions = { available: boolean; names?: string[]; descriptions?: string[] };
 export type RevenueTip = { title: string; detail: string; impact: 'high' | 'medium' | 'low' };
@@ -709,10 +732,8 @@ export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 export type AgentProposal = { id: string; action: string; eventId: string; title: string; summary: string; payload?: Record<string, unknown> };
 export type AgentResult = { proposalId: string; action: string; ok: boolean; message?: string; status?: string };
 export type ChatStatus = 'awaiting_confirmation' | 'done';
-export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; provider?: string; model?: string; conversationId?: string | null };
+export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
 export type ActionResult = { status?: string; message?: string };
-export type AiModel = { provider: string; model: string; label: string; tier?: string };
-export type AiModels = { available: boolean; models: AiModel[] };
 
 export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {
   return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
@@ -730,24 +751,25 @@ export function askAssistant(question: string, history: ChatMessage[] = []): Pro
   return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
 }
 
-export function sendChat(messages: ChatMessage[], model?: { provider: string; model: string }, conversationId?: string | null, mode: 'ask' | 'auto' = 'ask'): Promise<ChatReply> {
-  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null, mode, ...(model ?? {}) }) });
+export function sendChat(messages: ChatMessage[], conversationId?: string | null): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null }) });
 }
 
 // Confirm/reject one pending proposal, resuming the parked graph thread.
-export function resumeChat(threadId: string, proposalId: string, decision: 'confirm' | 'reject', conversationId?: string | null, model?: { provider: string; model: string }): Promise<ChatReply> {
-  return apiFetch<ChatReply>('/api/ai/chat/resume', { method: 'POST', body: JSON.stringify({ threadId, proposalId, decision, conversationId: conversationId ?? null, ...(model ?? {}) }) });
+export function resumeChat(threadId: string, proposalId: string, decision: 'confirm' | 'reject', conversationId?: string | null): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat/resume', { method: 'POST', body: JSON.stringify({ threadId, proposalId, decision, conversationId: conversationId ?? null }) });
 }
 
-export function fetchAiModels(): Promise<AiModels> {
-  return apiFetch<AiModels>('/api/ai/models');
+// Whether AI features are enabled (a Gemini key is configured on the backend).
+export function fetchAiAvailability(): Promise<{ available: boolean }> {
+  return apiFetch<{ available: boolean }>('/api/ai/models');
 }
 
 export function executeAiAction(action: string, eventId: string, payload?: Record<string, unknown>): Promise<ActionResult> {
   return apiFetch<ActionResult>('/api/ai/execute-action', { method: 'POST', body: JSON.stringify({ action, eventId, payload }) });
 }
 
-export type StoredChatMessage = { role: 'user' | 'assistant'; content: string; model?: string | null };
+export type StoredChatMessage = { role: 'user' | 'assistant'; content: string };
 export type AiConversation = { id: string; title: string; updatedAt: string };
 
 export function fetchConversations(): Promise<{ conversations: AiConversation[] }> {

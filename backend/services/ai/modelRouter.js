@@ -1,16 +1,11 @@
-import { anthropicProvider } from './providers/anthropicProvider.js';
-import { openaiProvider } from './providers/openaiProvider.js';
 import { geminiProvider } from './providers/geminiProvider.js';
 
-// Multi-provider router. Each cost tier has an ordered list of {provider, model}
-// candidates; runTier tries them in order, skipping unconfigured providers and
-// falling through on error/refusal. Model IDs come from env with documented
-// defaults — Anthropic IDs are exact; OpenAI/Gemini IDs are placeholders to
-// confirm against each provider's current catalog at wire-up time.
+// Gemini-only router. Each cost tier resolves to a single {provider, model}
+// candidate; the tier helpers keep their ordered-list shape (a list of one) so
+// the generic runners and the LangGraph model builder stay unchanged. The model
+// ID comes from env with a free-tier default (gemini-2.5-flash-lite).
 
 const PROVIDERS = {
-  anthropic: anthropicProvider,
-  openai: openaiProvider,
   gemini: geminiProvider,
 };
 
@@ -21,18 +16,14 @@ export function __resetProvidersForTests() { dependencies.providers = PROVIDERS;
 
 const env = (name, fallback) => process.env[name] || fallback;
 
+// One free-tier Gemini Flash model drives every tier. `gemini-2.5-flash-lite` has
+// the largest free daily quota (~1000/day; Pro models need billing). Override with
+// AI_GEMINI_MODEL if needed.
 function tierConfig() {
+  const model = env('AI_GEMINI_MODEL', 'gemini-2.5-flash-lite');
   return {
-    cheap: [
-      { provider: 'anthropic', model: env('AI_ANTHROPIC_CHEAP', 'claude-haiku-4-5') },
-      { provider: 'openai', model: env('AI_OPENAI_CHEAP', 'gpt-4o-mini') },
-      { provider: 'gemini', model: env('AI_GEMINI_CHEAP', 'gemini-1.5-flash') },
-    ],
-    premium: [
-      { provider: 'anthropic', model: env('AI_ANTHROPIC_PREMIUM', 'claude-opus-4-8') },
-      { provider: 'openai', model: env('AI_OPENAI_PREMIUM', 'gpt-4o') },
-      { provider: 'gemini', model: env('AI_GEMINI_PREMIUM', 'gemini-1.5-pro') },
-    ],
+    cheap: [{ provider: 'gemini', model }],
+    premium: [{ provider: 'gemini', model }],
   };
 }
 
@@ -40,25 +31,6 @@ function tierConfig() {
 // return {available:false} (a 200, not a 500) so the UI hides AI features.
 export function anyConfigured() {
   return Object.values(dependencies.providers).some((p) => p?.isConfigured?.());
-}
-
-const PROVIDER_LABEL = { anthropic: 'Claude', openai: 'GPT', gemini: 'Gemini' };
-
-// Configured (provider, model) pairs across both tiers, for the UI model picker.
-export function listConfiguredModels() {
-  const cfg = tierConfig();
-  const seen = new Set();
-  const out = [];
-  for (const tier of Object.keys(cfg)) {
-    for (const { provider, model } of cfg[tier]) {
-      const impl = dependencies.providers[provider];
-      const key = `${provider}:${model}`;
-      if (!impl?.isConfigured?.() || seen.has(key)) continue;
-      seen.add(key);
-      out.push({ provider, model, tier, label: `${PROVIDER_LABEL[provider] ?? provider} · ${model}` });
-    }
-  }
-  return out;
 }
 
 // Ordered candidate list for a tier: the user-picked {provider, model} first (if

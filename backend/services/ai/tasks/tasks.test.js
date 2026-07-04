@@ -9,20 +9,15 @@ import { chat } from './chat.js';
 
 afterEach(() => __resetProvidersForTests());
 
-// A single mock provider (keyed as `anthropic`, the first candidate in every tier)
-// that returns a canned text response per call.
+// The single Gemini mock provider that returns a canned text response per call.
 function withResponse(text) {
   __setProvidersForTests({
-    anthropic: { isConfigured: () => true, generate: async ({ model }) => ({ text, provider: 'mock', model }) },
-    openai: { isConfigured: () => false, generate: async () => ({}) },
-    gemini: { isConfigured: () => false, generate: async () => ({}) },
+    gemini: { isConfigured: () => true, generate: async ({ model }) => ({ text, provider: 'mock', model }) },
   });
 }
 
 function withNoProvider() {
   __setProvidersForTests({
-    anthropic: { isConfigured: () => false, generate: async () => ({}) },
-    openai: { isConfigured: () => false, generate: async () => ({}) },
     gemini: { isConfigured: () => false, generate: async () => ({}) },
   });
 }
