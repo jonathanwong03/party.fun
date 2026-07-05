@@ -4,10 +4,24 @@ import {
   getEventAttendees,
   getEventAttendeesPrivate,
 } from '../services/eventService.js';
+import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 
 export async function listEvents(req, res) {
   const events = await findEvents(req.supabase, req.user?.id ?? null);
   res.json(events);
+}
+
+// GET /events/search?q= — semantic ranking of event ids by meaning (vector search).
+// Returns { ids } best-first; the client reorders its list and falls back to
+// substring matching when this is empty (embeddings off, anon, or no match).
+export async function searchEventsSemantic(req, res) {
+  const q = String(req.query.q ?? '').trim();
+  if (!q || !isEmbeddingEnabled()) return res.json({ ids: [] });
+  const vec = await embedText(q, { taskType: 'RETRIEVAL_QUERY' });
+  if (!vec) return res.json({ ids: [] });
+  const { data, error } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 50 });
+  if (error) return res.json({ ids: [] });
+  res.json({ ids: (data ?? []).map((r) => r.eventId) });
 }
 
 export async function getEvent(req, res) {

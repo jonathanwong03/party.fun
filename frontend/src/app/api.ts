@@ -749,6 +749,12 @@ export function fetchEventRecommendations(interests: string): Promise<EventRecom
   return apiFetch<EventRecommendations>('/api/ai/recommend-events', { method: 'POST', body: JSON.stringify({ interests }) });
 }
 
+// Semantic (vector) ranking of event ids for the All Events search bar. Returns
+// best-first ids; empty when embeddings are off / no match (caller falls back to substring).
+export function fetchSemanticEventIds(q: string): Promise<{ ids: string[] }> {
+  return apiFetch<{ ids: string[] }>(`/api/events/search?q=${encodeURIComponent(q)}`);
+}
+
 export function askAssistant(question: string, history: ChatMessage[] = []): Promise<AssistantAnswer> {
   return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
 }

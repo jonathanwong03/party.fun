@@ -5,6 +5,7 @@ import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
+import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../embeddingService.js';
 
 // Agent tools. Definitions are provider-agnostic JSON Schemas; executors run
 // server-side scoped to the calling user via ctx = { supabase, userId, role }.
@@ -126,6 +127,19 @@ async function visibleEvents(ctx) {
   // so every executor's `.status` read (filters, details, proposals) works.
   return (data ?? []).map((e) => ({ ...e, status: e.derived_status ?? e.status ?? 'early_bird' }));
 }
+
+// Rank event ids by SEMANTIC similarity to a free-text query (embed → match_events
+// RPC). Returns [{eventId, similarity}] best-first, or [] when embeddings are off /
+// unavailable so callers can fall back to keyword/price logic.
+async function semanticMatch(ctx, query, { count = 40, exclude = null } = {}) {
+  if (!isEmbeddingEnabled() || !String(query ?? '').trim()) return [];
+  const vec = await embedText(query, { taskType: 'RETRIEVAL_QUERY' });
+  if (!vec) return [];
+  const { data, error } = await ctx.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: count, p_exclude: exclude });
+  if (error) return [];
+  return (data ?? []).map((r) => ({ eventId: r.eventId, similarity: r.similarity }));
+}
+const sim2 = (s) => Math.round(Number(s) * 100) / 100;
 
 // Net revenue-so-far per event the caller HOSTS, keyed by eventId (host-only RPC).
 // Returns an empty map on any error/unexpected shape so callers can degrade gracefully.
@@ -249,6 +263,31 @@ export const researchEventIdeasTool = makeTool(
     theme: z.string().optional().describe('Optional angle or theme the organiser is considering (e.g. "music", "wellness", "networking").'),
     audience: z.string().optional().describe('Optional audience note (e.g. "first-year students", "postgrads").'),
   }),
+);
+
+// ── Semantic (vector) tools ───────────────────────────────────────────────────
+export const recommendEventsTool = makeTool(
+  'recommend_events',
+  "Recommend events that best match the user's stated interests, ranked by MEANING (semantic similarity), not just keyword overlap. Use this for 'what event suits me', 'recommend something for me', 'best event for my interests'. Only returns events the user can actually attend (not their own, open, future, not already purchased).",
+  z.object({
+    interests: z.string().describe("The user's interests, e.g. 'gaming', 'live music and food', 'networking with founders'."),
+    maxPrice: z.number().optional().describe('Only events at or below this price.'),
+  }),
+);
+
+export const semanticSearchEventsTool = makeTool(
+  'semantic_search_events',
+  'Search the events the user can attend by MEANING (semantic similarity), not exact words — e.g. "chill outdoor night" finds a sunset picnic. Use for vague/thematic buyer searches. (Use search_events only to look up a specific event by its exact name.)',
+  z.object({
+    query: z.string().describe('A free-text description of what the user is looking for.'),
+    maxPrice: z.number().optional(),
+  }),
+);
+
+export const findSimilarEventsTool = makeTool(
+  'find_similar_events',
+  'Find events most similar in theme to a given event ("more like this"). Returns other visible events ranked by semantic similarity.',
+  z.object({ eventId: z.string().describe('The reference event — its id OR name.') }),
 );
 
 // ── Memory ────────────────────────────────────────────────────────────────────
@@ -377,7 +416,8 @@ export const proposeGiveAwayTicketsTool = makeTool(
 export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
   getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
-  getCurrentDateTool, getWeatherTool, researchEventIdeasTool, rememberTool,
+  getCurrentDateTool, getWeatherTool, researchEventIdeasTool,
+  recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
   proposeTopupTool, proposePledgeTool, proposeCancelEventTool, proposeDeleteDraftTool,
   proposeEditDraftTool, proposeGiveAwayTicketsTool,
@@ -572,6 +612,51 @@ export const EXECUTORS = {
       /* university is optional — proceed without it */
     }
     return await researchEventIdeas({ theme: args.theme, audience: args.audience, university });
+  },
+
+  // ── Semantic (vector) tools ──────────────────────────────────────────────────
+  async recommend_events(args, ctx) {
+    const interests = String(args.interests ?? '').trim();
+    const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
+    const attendable = (await attendableEvents(ctx)).filter((e) => (maxPrice == null || currentPrice(e) <= maxPrice));
+    const byId = new Map(attendable.map((e) => [e.id, e]));
+    const ranked = (await semanticMatch(ctx, interests, { count: 40 })).filter((r) => byId.has(r.eventId));
+    if (ranked.length) {
+      const rows = ranked.map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 5);
+      return { count: rows.length, interests, semantic: true, events: rows };
+    }
+    // Fallback (no embeddings): cheapest attendable events first.
+    const rows = [...attendable].sort((a, b) => currentPrice(a) - currentPrice(b)).slice(0, 5).map((e) => richRow(e, ctx));
+    return { count: rows.length, interests, semantic: false, events: rows };
+  },
+
+  async semantic_search_events(args, ctx) {
+    const query = String(args.query ?? '').trim();
+    if (!query) return { count: 0, events: [] };
+    const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
+    const attendable = (await attendableEvents(ctx)).filter((e) => (maxPrice == null || currentPrice(e) <= maxPrice));
+    const byId = new Map(attendable.map((e) => [e.id, e]));
+    const ranked = (await semanticMatch(ctx, query, { count: 40 })).filter((r) => byId.has(r.eventId));
+    if (ranked.length) {
+      const rows = ranked.map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 10);
+      return { count: rows.length, semantic: true, events: rows };
+    }
+    // Fallback: substring match within attendable events.
+    const q = query.toLowerCase();
+    const rows = attendable.filter((e) => `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q)).slice(0, 10).map((e) => richRow(e, ctx));
+    return { count: rows.length, semantic: false, events: rows };
+  },
+
+  async find_similar_events(args, ctx) {
+    const visible = await visibleEvents(ctx);
+    const ev = findEvent(visible, args.eventId);
+    if (!ev) return { error: 'Event not found or not visible to you.' };
+    const text = [ev.title, ev.description, ev.location].filter(Boolean).join('\n');
+    const ranked = await semanticMatch(ctx, text, { count: 10, exclude: ev.id });
+    if (!ranked.length) return { reference: ev.title, semantic: false, events: [] };
+    const byId = new Map(visible.map((e) => [e.id, e]));
+    const rows = ranked.filter((r) => byId.has(r.eventId)).map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 5);
+    return { reference: ev.title, semantic: true, events: rows };
   },
 
   // Learning: persist a durable preference about the user (executes immediately —

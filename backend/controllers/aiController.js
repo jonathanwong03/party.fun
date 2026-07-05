@@ -1,4 +1,5 @@
 import { anyConfigured } from '../services/ai/modelRouter.js';
+import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
@@ -77,8 +78,8 @@ export async function recommendEvents(req, res) {
   const { data: rows, error } = await req.supabase.rpc('get_events');
   if (error) return res.status(400).json({ status: 'error', message: error.message });
 
-  const candidates = (rows ?? [])
-    .filter((e) => e.hostId !== req.user.id && e.status !== 'cancelled' && e.status !== 'completed')
+  let candidates = (rows ?? [])
+    .filter((e) => e.hostId !== req.user.id && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
     .map((e) => {
       const prices = (e.statuses ?? []).map((s) => Number(s.price)).filter((n) => Number.isFinite(n));
       const cheapest = prices.length ? Math.min(...prices) : 0;
@@ -91,8 +92,23 @@ export async function recommendEvents(req, res) {
         cheapestPrice: cheapest,
         hypePct: threshold > 0 ? Math.min(100, Math.round((active / threshold) * 100)) : 0,
       };
-    })
-    .slice(0, 40);
+    });
+
+  // Semantic pre-ranking: order candidates by embedding similarity to the interests,
+  // then let the LLM pick/reason over the closest ones. Falls back to the raw list.
+  if (interests && String(interests).trim() && isEmbeddingEnabled()) {
+    const vec = await embedText(String(interests), { taskType: 'RETRIEVAL_QUERY' });
+    if (vec) {
+      const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 40 });
+      const order = new Map((matches ?? []).map((m, i) => [m.eventId, i]));
+      if (order.size) {
+        candidates = candidates
+          .filter((c) => order.has(c.id))
+          .sort((a, b) => order.get(a.id) - order.get(b.id));
+      }
+    }
+  }
+  candidates = candidates.slice(0, 40);
 
   res.json(await recommendEventsTask({ interests, candidates }));
 }
@@ -104,7 +120,7 @@ export async function ask(req, res) {
   if (!question || !String(question).trim()) {
     return res.status(400).json({ status: 'error', message: 'Question is required.' });
   }
-  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [] }));
+  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [], supabase: req.supabase }));
 }
 
 const AGENT_SYSTEM = () => [

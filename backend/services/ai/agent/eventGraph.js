@@ -46,8 +46,8 @@ export const BRANCH_TOOLS = {
   // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
-  discovery: withPersonal('list_available_events', 'research_event_ideas', 'remember'),
-  best_fit: withPersonal('list_available_events', 'research_event_ideas', 'remember'),
+  discovery: withPersonal('list_available_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
+  best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'research_event_ideas', 'remember'),
   event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
@@ -55,7 +55,7 @@ export const BRANCH_TOOLS = {
 const DIRECTIVES = {
   read_only: 'INTENT: read-only question. Answer using your read tools (events, wallet, forecast). Do not propose changes unless the user explicitly asks.',
   discovery: 'INTENT: event discovery. Use list_available_events / search_events and present a short, scannable list with prices.',
-  best_fit: 'INTENT: best-fit / cheapest. Use list_available_events, then rank candidates by price, match to the stated interests, hype/popularity and date; recommend the best few and say why.',
+  best_fit: "INTENT: best-fit / recommendation. When the user gives INTERESTS (e.g. 'I'm into gaming'), call recommend_events (semantic — ranks by meaning, so 'gaming' matches an arcade/esports night even without the word). For a vague thematic search use semantic_search_events; for 'events like X' use find_similar_events. Present the top few with a short why; when purely price-driven, fall back to list_available_events sorted by price. Trust the semantic ranking over literal keyword matches.",
   event_mgmt: "INTENT: manage the user's own events. You CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
     + "CREATE (autonomous research → full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"

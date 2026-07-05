@@ -8,6 +8,7 @@ import { executeAction } from './actions.js';
 import { selectAtRisk } from './advisor.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
 import { __setResearchCallForTests, __resetResearchCallForTests } from './research.js';
+import { __setEmbedForTests, __resetEmbedForTests } from '../embeddingService.js';
 
 afterEach(() => { __resetProvidersForTests(); __resetGraphForTests(); __resetForecastForTests(); __resetResearchCallForTests(); });
 
@@ -407,13 +408,14 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 22 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 22);
+test('AGENT_TOOLS exposes all 25 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 25);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));
+  assert.ok(names.includes('recommend_events') && names.includes('semantic_search_events') && names.includes('find_similar_events'));
   // Every entry is a StructuredTool with a zod schema.
   assert.ok(AGENT_TOOLS.every((t) => typeof t.invoke === 'function' && t.schema));
 
@@ -546,6 +548,44 @@ test('propose_create_event rejects hype pricing when max is not above base', asy
   const args = { title: 'X', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 20, maxPrice: 10 };
   const out = await EXECUTORS.propose_create_event(args, ctxWith([]));
   assert.match(out.error, /maxPrice must be higher/);
+});
+
+// ── Semantic (vector) tools ──────────────────────────────────────────────────
+test('recommend_events ranks attendable events by semantic similarity', async () => {
+  process.env.GEMINI_API_KEY = 'test-key';
+  __setEmbedForTests(async () => [0.1, 0.2, 0.3]);
+  try {
+    const events = [
+      { id: 'e1', title: 'Retro Arcade & Esports Night', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 9 }] },
+      { id: 'e2', title: 'Wine Appreciation', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 14 }] },
+    ];
+    const ctx = {
+      userId: 'u1', role: 'user',
+      supabase: { rpc: async (name) => {
+        if (name === 'get_profile') return { data: { tickets: [] }, error: null };
+        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.92 }, { eventId: 'e2', similarity: 0.31 }], error: null };
+        return { data: events, error: null };
+      } },
+    };
+    const out = await EXECUTORS.recommend_events({ interests: 'gaming' }, ctx);
+    assert.equal(out.semantic, true);
+    assert.equal(out.events[0].id, 'e1'); // arcade/esports ranks first for "gaming"
+  } finally {
+    __resetEmbedForTests();
+    delete process.env.GEMINI_API_KEY;
+  }
+});
+
+test('recommend_events falls back to cheapest when embeddings are unavailable', async () => {
+  delete process.env.GEMINI_API_KEY; // embeddings off
+  const events = [
+    { id: 'e1', title: 'Pricey', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 20 }] },
+    { id: 'e2', title: 'Cheap', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
+  ];
+  const ctx = { userId: 'u1', role: 'user', supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { tickets: [] } : events, error: null }) } };
+  const out = await EXECUTORS.recommend_events({ interests: 'anything' }, ctx);
+  assert.equal(out.semantic, false);
+  assert.equal(out.events[0].id, 'e2'); // cheapest first
 });
 
 // ── Scope guard (off-topic filter) ───────────────────────────────────────────
