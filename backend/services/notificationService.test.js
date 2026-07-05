@@ -2,6 +2,7 @@ import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   notifyPledgeConfirmed,
+  notifyEventCompleted,
   dependencies,
   __resetNotificationDependenciesForTests,
 } from './notificationService.js';
@@ -97,5 +98,43 @@ describe('notifyPledgeConfirmed', () => {
     });
 
     assert.match(templateArgs, /\$20\.23/);
+  });
+});
+
+describe('notifyEventCompleted', () => {
+  const logs = [];
+  const originalSendEmail = dependencies.sendEmail;
+  let lastHtml = null;
+
+  beforeEach(() => {
+    logs.length = 0;
+    lastHtml = null;
+    __resetNotificationDependenciesForTests();
+    dependencies.insertNotificationLog = async (row) => { logs.push(row); };
+    dependencies.sendEmail = async ({ html }) => { lastHtml = html; return { success: true, mock: true, messageId: 'mock-msg' }; };
+  });
+
+  afterEach(() => {
+    dependencies.sendEmail = originalSendEmail;
+    __resetNotificationDependenciesForTests();
+  });
+
+  it('emails the organiser the revenue generated', async () => {
+    await notifyEventCompleted({
+      organiser: { userId: 'org-1', email: 'host@smu.edu.sg', username: 'hostie' },
+      eventTitle: 'Hackathon Makers Night',
+      revenue: 2042,
+      eventId: 'event-9',
+    });
+
+    assert.equal(logs.length, 1);
+    assert.equal(logs[0].notification_type, 'event_completed');
+    assert.equal(logs[0].recipient_email, 'host@smu.edu.sg');
+    assert.match(lastHtml, /\$2042\.00/);
+  });
+
+  it('skips silently when the organiser has no email', async () => {
+    await notifyEventCompleted({ organiser: null, eventTitle: 'X', revenue: 100, eventId: 'e' });
+    assert.equal(logs.length, 0);
   });
 });

@@ -23,9 +23,13 @@ export type Quote = {
   qty: number;
   lines: QuoteLine[];
   subtotal: number;
-  total: number;
+  total: number;        // ticket total (GST-exclusive)
   subtotalText: string;
   totalText: string;
+  gst: number;          // 9% GST on the ticket total
+  grandTotal: number;   // total payable = total + gst
+  gstText: string;
+  grandTotalText: string;
   pricingModel?: 'hype_driven' | 'static';
 };
 
@@ -139,6 +143,31 @@ async function apiFetch<T>(
   return response.json() as Promise<T>;
 }
 
+// ── Weather (rain warning for event dates) ────────────────────────────────────
+export type WeatherAssessment = {
+  status: 'ok' | 'past' | 'beyond_horizon' | 'unavailable';
+  precipitationProbability: number | null;
+  willRain: boolean;
+  summary: string;
+  days?: { date: string; probability: number | null; willRain: boolean }[]; // per-day breakdown across the event
+  rainyDays?: string[]; // the days (YYYY-MM-DD) with > 70% rain probability
+};
+
+// Rain assessment for an event window. Pass an eventId (uses the event's stored
+// date) OR exact coords + ISO start/end (the Create/Edit form, which has the venue
+// coordinates). Returns 'unavailable'/'past'/'beyond_horizon' when no warning applies.
+export async function fetchWeather(
+  params: { eventId?: string; lat?: number; lng?: number; start?: string; end?: string },
+): Promise<WeatherAssessment> {
+  const q = new URLSearchParams();
+  if (params.eventId) q.set('eventId', params.eventId);
+  if (params.lat != null) q.set('lat', String(params.lat));
+  if (params.lng != null) q.set('lon', String(params.lng));
+  if (params.start) q.set('start', params.start);
+  if (params.end) q.set('end', params.end);
+  return apiFetch<WeatherAssessment>(`/api/weather?${q.toString()}`);
+}
+
 // ── Auth (Supabase, unchanged) ────────────────────────────────────────────────
 export async function loginWithGoogleRequest(): Promise<void> {
   const { error } = await supabase.auth.signInWithOAuth({
@@ -148,6 +177,43 @@ export async function loginWithGoogleRequest(): Promise<void> {
     },
   });
   if (error) throw new Error(error.message);
+}
+
+export async function loginWithFacebookRequest(): Promise<void> {
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: "facebook",
+    options: {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    },
+  });
+  if (error) throw new Error(error.message);
+}
+
+// Phone sign-in (custom backend OTP). Step 1: the backend matches the phone against
+// USER.contact and sends a 6-digit code via Twilio (redirected to the SMS override number).
+export async function requestPhoneOtp(phone: string): Promise<void> {
+  return postPublic('/api/phone-login/request', { phone: phone.trim() });
+}
+
+// Step 2: the backend verifies the code and returns a one-time magic-link token; we exchange
+// it for a Supabase session, then load the profile.
+export async function verifyPhoneOtp(phone: string, code: string): Promise<AuthUser> {
+  const response = await fetch('/api/phone-login/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ phone: phone.trim(), code: code.trim() }),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+  const { tokenHash } = (await response.json()) as { email: string; tokenHash: string };
+  const { error } = await supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' });
+  if (error) throw new Error(error.message);
+  const user = await fetchCurrentUser();
+  if (!user) throw new Error("Could not load your profile.");
+  return user;
 }
 
 // Load the signed-in user's profile (or null if no session). `onboarded` is false
@@ -383,8 +449,21 @@ async function postPublic(path: string, body: unknown): Promise<void> {
 }
 
 // Emails a 6-digit code (via Resend → the override inbox in dev) for any email in the DB.
-export function requestPasswordReset(email: string): Promise<void> {
-  return postPublic('/api/password-reset/request', { email: email.trim() });
+// `identifier` is an email (email channel) or a phone number (SMS channel). Returns the
+// resolved account email so the rest of the reset flow stays email-keyed.
+export async function requestPasswordReset(identifier: string, channel: 'email' | 'sms' = 'email'): Promise<{ email: string }> {
+  const response = await fetch('/api/password-reset/request', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: identifier.trim(), channel }),
+  });
+  if (!response.ok) {
+    let message = `Request failed (${response.status}).`;
+    try { message = (await response.json()).message || message; } catch { /* keep default */ }
+    throw new Error(message);
+  }
+  const data = (await response.json()) as { email: string };
+  return { email: data.email };
 }
 
 // Verifies the 6-digit code for that email.
@@ -506,10 +585,13 @@ export function fetchQuote(
 }
 
 // ── User writes ───────────────────────────────────────────────────────────────
-export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet'): Promise<MutationResponse> {
+// `attemptId` is a per-checkout UUID reused across retries — the backend keys both the Stripe
+// charge and the booking on it, so a retry can never double-charge. Callers should generate it
+// once per checkout attempt (not per retry) and pass the same value on every retry.
+export function createPledge(_role: Role, eventId: string, qty: number, _amount: number, paymentMethod: 'wallet' | 'card' = 'wallet', attemptId?: string): Promise<MutationResponse> {
   return apiFetch<MutationResponse>(`/api/checkout/${eventId}/pledge`, {
     method: 'POST',
-    body: JSON.stringify({ qty, paymentMethod }),
+    body: JSON.stringify({ qty, paymentMethod, attemptId: attemptId ?? crypto.randomUUID() }),
   });
 }
 
@@ -527,8 +609,8 @@ export function createSetupIntent(): Promise<{ clientSecret: string }> {
 export function saveCard(paymentMethodId: string): Promise<{ card: { brand: string | null; last4: string | null } }> {
   return apiFetch('/api/wallet/card', { method: 'POST', body: JSON.stringify({ paymentMethodId }) });
 }
-export function topUpWallet(amount: number): Promise<{ balance: number }> {
-  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount }) });
+export function topUpWallet(amount: number, attemptId?: string): Promise<{ balance: number }> {
+  return apiFetch('/api/wallet/topup', { method: 'POST', body: JSON.stringify({ amount, attemptId: attemptId ?? crypto.randomUUID() }) });
 }
 
 export function giveAwayTickets(_role: Role, bookingId: string, quantity: number): Promise<MutationResponse> {
@@ -603,10 +685,12 @@ export type AnalyticsData = {
     perEvent: { title: string; ticketsSold: number; capacity: number; projected: number; revenue: number }[];
     pledgesByDay: DayCount[];
     totals: { events: number; revenue: number; attendees: number };
+    past: { tickets: number; revenue: number; profit: number };
   } | null;
   user: {
     pledgesByDay: DayCount[];
     spendByMonth: { month: string; amount: number }[];
+    spendByDay: { day: string; amount: number }[];
     totals: { joined: number; upcoming: number; spent: number };
   };
   platform?: {
@@ -617,6 +701,98 @@ export type AnalyticsData = {
 
 export function fetchAnalytics(): Promise<AnalyticsData> {
   return apiFetch<AnalyticsData>("/api/analytics");
+}
+
+// Backend-local ticket revenue forecast. `available:false` lets the dashboard degrade gracefully.
+export type RevenueForecast = {
+  available: boolean;
+  attractiveness?: number;
+  projectedTicketsSold?: number;
+  avgTicketPrice?: number;
+  projectedRevenue?: number;
+  dailySales?: { dayOffset: number; tickets: number }[];
+  dailyRevenue?: { dayOffset: number; revenue: number }[];
+  breakdown?: Record<string, number>;
+  operationalCosts?: { category: string; cost: number }[];
+  totalOperationalCost?: number;
+  estimatedNet?: number;
+};
+
+export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> {
+  return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
+}
+
+// ── AI agent (Gemini; all responses tolerate {available:false}) ────
+
+export type EventCopySuggestions = { available: boolean; names?: string[]; descriptions?: string[] };
+export type RevenueTip = { title: string; detail: string; impact: 'high' | 'medium' | 'low' };
+export type RevenueTips = { available: boolean; tips?: RevenueTip[] };
+export type EventRecommendation = { eventId: string; title: string; cheapestPrice: number | null; reason: string };
+export type EventRecommendations = { available: boolean; recommendations?: EventRecommendation[] };
+export type AssistantAnswer = { available: boolean; answer?: string };
+export type ChatMessage = { role: 'user' | 'assistant'; content: string };
+export type AgentProposal = { id: string; action: string; eventId: string; title: string; summary: string; payload?: Record<string, unknown> };
+export type AgentResult = { proposalId: string; action: string; ok: boolean; message?: string; status?: string };
+export type ChatStatus = 'awaiting_confirmation' | 'done';
+export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
+export type ActionResult = { status?: string; message?: string };
+
+export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {
+  return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
+}
+
+export function fetchRevenueTips(eventId: string): Promise<RevenueTips> {
+  return apiFetch<RevenueTips>(`/api/ai/revenue-tips/${eventId}`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export function fetchEventRecommendations(interests: string): Promise<EventRecommendations> {
+  return apiFetch<EventRecommendations>('/api/ai/recommend-events', { method: 'POST', body: JSON.stringify({ interests }) });
+}
+
+export function askAssistant(question: string, history: ChatMessage[] = []): Promise<AssistantAnswer> {
+  return apiFetch<AssistantAnswer>('/api/ai/ask', { method: 'POST', body: JSON.stringify({ question, history }) });
+}
+
+export function sendChat(messages: ChatMessage[], conversationId?: string | null): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat', { method: 'POST', body: JSON.stringify({ messages, conversationId: conversationId ?? null }) });
+}
+
+// Confirm/reject one pending proposal, resuming the parked graph thread.
+export function resumeChat(threadId: string, proposalId: string, decision: 'confirm' | 'reject', conversationId?: string | null): Promise<ChatReply> {
+  return apiFetch<ChatReply>('/api/ai/chat/resume', { method: 'POST', body: JSON.stringify({ threadId, proposalId, decision, conversationId: conversationId ?? null }) });
+}
+
+// Whether AI features are enabled (a Gemini key is configured on the backend).
+export function fetchAiAvailability(): Promise<{ available: boolean }> {
+  return apiFetch<{ available: boolean }>('/api/ai/models');
+}
+
+export function executeAiAction(action: string, eventId: string, payload?: Record<string, unknown>): Promise<ActionResult> {
+  return apiFetch<ActionResult>('/api/ai/execute-action', { method: 'POST', body: JSON.stringify({ action, eventId, payload }) });
+}
+
+export type StoredChatMessage = { role: 'user' | 'assistant'; content: string };
+export type AiConversation = { id: string; title: string; updatedAt: string };
+
+export function fetchConversations(): Promise<{ conversations: AiConversation[] }> {
+  return apiFetch<{ conversations: AiConversation[] }>('/api/ai/conversations');
+}
+export function fetchConversation(id: string): Promise<{ messages: StoredChatMessage[] }> {
+  return apiFetch<{ messages: StoredChatMessage[] }>(`/api/ai/conversations/${id}`);
+}
+export function deleteConversation(id: string): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>(`/api/ai/conversations/${id}`, { method: 'DELETE' });
+}
+
+export type AiMemory = { id: number; content: string; category?: string | null };
+export function fetchMemories(): Promise<{ memories: AiMemory[] }> {
+  return apiFetch<{ memories: AiMemory[] }>('/api/ai/memory');
+}
+export function deleteMemory(id: number): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>(`/api/ai/memory/${id}`, { method: 'DELETE' });
+}
+export function clearMemories(): Promise<{ status?: string }> {
+  return apiFetch<{ status?: string }>('/api/ai/memory', { method: 'DELETE' });
 }
 
 // ── Attendees & ticket check-in (organiser) ───────────────────────────────────

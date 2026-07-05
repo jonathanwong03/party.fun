@@ -260,6 +260,42 @@ export function eventCancelledOrganiserTemplate({ organiserName, eventTitle, rea
   `);
 }
 
+export function eventCompletedTemplate({ organiserName, eventTitle, revenue }) {
+  const formattedRevenue = Number(revenue || 0).toFixed(2);
+  return emailShell(`
+    ${h1('Event Complete 🎉')}
+    ${greet(organiserName, 'organiser')}
+    ${p(`Your event <strong>${eventTitle}</strong> has wrapped up. Here's the revenue generated from ticket sales, paid out to your wallet.`)}
+    ${detailsBox('Revenue Summary',
+      row('Event', eventTitle) +
+      row('Revenue from ticket sales', `$${formattedRevenue}`, '#29e07a'),
+    )}
+    ${p('Operational costs are handled outside party.fun and are not deducted here.')}
+    ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
+  `);
+}
+
+export function agentAdviceTemplate({ organiserName, eventTitle, advice = '', proposals = [] }) {
+  const body = escapeHtml(String(advice).trim()).replace(/\n{2,}/g, '</p><p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#e5e7eb;">').replace(/\n/g, '<br>');
+  const suggestions = (proposals ?? []).length
+    ? `<div style="background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:16px 20px;margin-bottom:30px;">
+        <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.5px;color:#ff4d2e;font-weight:700;margin-bottom:10px;font-family:${FONT};">Suggested actions (open the app to apply)</div>
+        <ul style="margin:0;padding-left:18px;">${proposals.map((pr) => `<li style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#e5e7eb;">${escapeHtml(pr.summary ?? '')}</li>`).join('')}</ul>
+      </div>`
+    : '';
+  return emailShell(`
+    ${h1('A few ways to boost your event 🚀')}
+    ${greet(organiserName, 'organiser')}
+    ${p(`Your event <strong>${eventTitle}</strong> is approaching its deadline and hasn't reached its hype threshold yet. Here's what the party.fun assistant suggests:`)}
+    <div style="background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:20px 24px;margin-bottom:30px;">
+      <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#e5e7eb;">${body}</p>
+    </div>
+    ${suggestions}
+    ${p('Open your dashboard to make changes — or ask the in-app assistant and it can apply them for you (with your confirmation).')}
+    ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
+  `);
+}
+
 export function ticketsGivenAwayTemplate({ userName, role, eventTitle, qty, allGivenAway }) {
   const note = allGivenAway
     ? `You've given away <strong>all</strong> your tickets, so you will <strong>no longer be able to attend ${eventTitle}</strong>. The released spots have returned to the public pool.`

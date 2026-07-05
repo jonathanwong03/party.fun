@@ -7,11 +7,15 @@ import eventRoutes from './routes/eventRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import notificationRoutes from './routes/notificationRoutes.js';
 import passwordResetRoutes from './routes/passwordResetRoutes.js';
+import phoneLoginRoutes from './routes/phoneLoginRoutes.js';
 import walletRoutes from './routes/walletRoutes.js';
 import analyticsRoutes from './routes/analyticsRoutes.js';
 import ticketsRoutes from './routes/ticketsRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
+import aiRoutes from './routes/aiRoutes.js';
+import weatherRoutes from './routes/weatherRoutes.js';
 import { startDeadlineScheduler } from './services/deadlineScheduler.js';
+import { startAgentAdvisor } from './services/ai/agent/advisor.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -36,10 +40,13 @@ app.use('/api/confirmation', confirmationRoutes);
 app.use('/api/hosted-events', organiserRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/password-reset', passwordResetRoutes);
+app.use('/api/phone-login', phoneLoginRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/tickets', ticketsRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/ai', aiRoutes);
+app.use('/api/weather', weatherRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({
@@ -57,6 +64,7 @@ app.use((err, _req, res, _next) => {
 const server = app.listen(PORT, () => {
   console.log(`API server running at http://localhost:${PORT}`);
   startDeadlineScheduler();
+  startAgentAdvisor();
 });
 
 server.on('error', (err) => {

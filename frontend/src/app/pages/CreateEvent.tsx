@@ -1,11 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ChevronLeft,
   Image as ImageIcon,
   AlertTriangle,
   X,
+  Sparkles,
 } from "lucide-react";
-import { uploadEventImage } from "../api";
+import { uploadEventImage, suggestEventCopy, fetchWeather, type WeatherAssessment } from "../api";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
@@ -122,6 +123,29 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
   const [inviteError, setInviteError] = useState<string | null>(null);
   const imageRef = useRef<HTMLInputElement>(null);
 
+  // Weather warning: the venue coordinates come straight from the AddressPicker
+  // (exact); the rain check runs whenever a valid date/time is set. Falls back to
+  // Singapore-level weather when no place has been picked yet (e.g. editing).
+  const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(
+    source?.latitude != null && source?.longitude != null ? { lat: source.latitude, lng: source.longitude } : null,
+  );
+  const [weather, setWeather] = useState<WeatherAssessment | null>(null);
+  useEffect(() => {
+    if (dateError(date) || timeError(start)) {
+      setWeather(null);
+      return;
+    }
+    const startISO = inputToIso(date, start);
+    const endISO = inputToIso(endDate || date, end || start);
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetchWeather({ lat: coords?.lat, lng: coords?.lng, start: startISO, end: endISO })
+        .then((w) => { if (!cancelled) setWeather(w); })
+        .catch(() => { if (!cancelled) setWeather(null); });
+    }, 400);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [date, start, endDate, end, coords]);
+
   const handleImageFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -219,6 +243,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       deadlineAt: inputToIso(deadlineDate, deadlineTime),
       location: venue,
       address,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
       description,
       image,
       price: num(ebPrice),
@@ -268,6 +294,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       endDate,
       location: venue,
       address,
+      latitude: coords?.lat ?? null,
+      longitude: coords?.lng ?? null,
       description,
       image,
       price: num(ebPrice),
@@ -334,6 +362,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       description,
       location: venue,
       address,
+      latitude: coords?.lat ?? existing.latitude ?? null,
+      longitude: coords?.lng ?? existing.longitude ?? null,
       date,
       time: start,
       endTime: end,
@@ -464,6 +494,12 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     style={errStyle(errOf("description"))}
                   />
                 </Field>
+                <AiCopyHelper
+                  title={title}
+                  theme={description}
+                  onPickName={setTitle}
+                  onPickDescription={setDescription}
+                />
                 <Field label="Event image / banner" error={imageError}>
                   <input
                     ref={imageRef}
@@ -605,6 +641,15 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     />
                   </Field>
                 </div>
+                {weather?.status === "ok" && weather.willRain && (
+                  <div
+                    className="mt-3 flex items-start gap-2 rounded-lg p-3 text-xs"
+                    style={{ background: "rgba(255,77,46,0.08)", border: "1px solid rgba(255,77,46,0.35)", color: "#ffb4a3" }}
+                  >
+                    <AlertTriangle size={16} style={{ marginTop: 1, flexShrink: 0 }} />
+                    <span>{weather.summary}</span>
+                  </div>
+                )}
               </Section>
 
               <Section title="Location">
@@ -622,6 +667,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                       value={address}
                       onChange={setAddress}
                       onValidChange={(v) => setAddressValid(v)}
+                      onSelect={(s) => setCoords({ lat: s.lat, lng: s.lng })}
                       error={!!errOf("address")}
                     />
                   </Field>{" "}
@@ -659,7 +705,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                 <PricingModeSelector
                   mode={pricingMode}
                   onChange={setPricingMode}
-                  disabled={locked}
+                  disabled={isEdit}
+                  lockedAfterCreation={isEdit}
                 />
                 <div
                   className="mb-8 text-xs"
@@ -886,6 +933,80 @@ const fieldStyle: React.CSSProperties = {
   height: 42,
 };
 
+// Inline AI helper: suggest event names + descriptions from the current draft.
+// Hides itself if the backend reports no AI provider is configured.
+function AiCopyHelper({
+  title,
+  theme,
+  onPickName,
+  onPickDescription,
+}: {
+  title: string;
+  theme: string;
+  onPickName: (v: string) => void;
+  onPickDescription: (v: string) => void;
+}) {
+  const [names, setNames] = useState<string[]>([]);
+  const [descriptions, setDescriptions] = useState<string[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [hidden, setHidden] = useState(false);
+
+  async function generate() {
+    if (loading) return;
+    setLoading(true);
+    try {
+      const res = await suggestEventCopy({ title, theme });
+      if (!res.available) { setHidden(true); return; }
+      setNames(res.names ?? []);
+      setDescriptions(res.descriptions ?? []);
+    } catch {
+      // leave as-is; user can retry
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (hidden) return null;
+
+  return (
+    <div className="mt-2 rounded-xl p-3" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
+      <button
+        type="button"
+        onClick={generate}
+        disabled={loading}
+        className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+        style={{ background: "#ff4d2e" }}
+      >
+        <Sparkles size={14} /> {loading ? "Thinking…" : "Suggest names & description with AI"}
+      </button>
+      {names.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Name ideas</div>
+          <div className="mt-1 flex flex-wrap gap-2">
+            {names.map((n, i) => (
+              <button key={i} type="button" onClick={() => onPickName(n)} className="rounded-full px-2.5 py-1 text-xs transition hover:opacity-80" style={{ background: "rgba(255,255,255,0.06)", color: "var(--foreground)" }}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      {descriptions.length > 0 && (
+        <div className="mt-3">
+          <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Descriptions</div>
+          <div className="mt-1 space-y-2">
+            {descriptions.map((d, i) => (
+              <button key={i} type="button" onClick={() => onPickDescription(d)} className="block w-full rounded-lg px-3 py-2 text-left text-xs transition hover:opacity-80" style={{ background: "rgba(255,255,255,0.06)", color: "var(--foreground)" }}>
+                {d}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Section({
   title,
   children,
@@ -935,10 +1056,12 @@ function PricingModeSelector({
   mode,
   onChange,
   disabled,
+  lockedAfterCreation,
 }: {
   mode: "static" | "hype";
   onChange: (m: "static" | "hype") => void;
   disabled?: boolean;
+  lockedAfterCreation?: boolean;
 }) {
   const option = (
     value: "static" | "hype",
@@ -985,7 +1108,9 @@ function PricingModeSelector({
       </div>
       {disabled && (
         <p className="mt-2 text-xs" style={{ color: "var(--muted-foreground)" }}>
-          Pricing system is locked after the event is greenlit.
+          {lockedAfterCreation
+            ? "Pricing model is locked after event creation. You may still edit prices and capacities before the event is greenlit."
+            : "Pricing system is locked after the event is greenlit."}
         </p>
       )}
     </div>

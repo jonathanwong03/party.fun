@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus, Mail } from 'lucide-react';
+import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus, Mail, AlertTriangle } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
 import { HypeMeter } from '../components/HypeMeter';
@@ -9,7 +9,7 @@ import { HowToGetThere } from '../components/HowToGetThere';
 import { getActiveStatus, statusStageLabel, type EventItem, type Role, type Route } from '../components/types';
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
-import { fetchAttendees, fetchQuote, type Attendee } from '../api';
+import { fetchAttendees, fetchQuote, fetchWeather, type Attendee, type WeatherAssessment } from '../api';
 import { formatEventLocation } from '../components/eventDisplay';
 import { universityLabel } from '../components/universities';
 
@@ -25,6 +25,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   const [giveAwayQty, setGiveAwayQty] = useState(1);
   const [buyQty, setBuyQty] = useState(1);
   const [pledgeEstimate, setPledgeEstimate] = useState<string | null>(null);
+  const [weather, setWeather] = useState<WeatherAssessment | null>(null);
 
   const event = events.find((e) => e.id === id);
   const alreadyPurchased = !!event && !!purchasedEventIds?.has(event.id);
@@ -45,6 +46,19 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
       .catch(() => { if (!ignore) setPledgeEstimate(null); });
     return () => { ignore = true; };
   }, [event, event?.id, event?.hypeDrivenPricing, event?.activeTicketCount, buyQty, role, showOptOut, showCancelledCard, showOwnEvent, alreadyPurchased, unavailable]);
+
+  // Rain warning for upcoming events (Singapore-level forecast, ~10-day horizon).
+  useEffect(() => {
+    if (!event || (event.status !== 'early_bird' && event.status !== 'greenlit')) {
+      setWeather(null);
+      return;
+    }
+    let ignore = false;
+    fetchWeather({ eventId: event.id })
+      .then((w) => { if (!ignore) setWeather(w); })
+      .catch(() => { if (!ignore) setWeather(null); });
+    return () => { ignore = true; };
+  }, [event?.id, event?.status]);
 
   if (!event) {
     return (
@@ -94,6 +108,16 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
           </div>
         </div>
       </div>
+
+      {weather?.status === 'ok' && weather.willRain && (
+        <div
+          className="mb-6 flex items-start gap-2 rounded-xl p-4 text-sm"
+          style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.35)', color: '#ffb4a3' }}
+        >
+          <AlertTriangle size={18} style={{ marginTop: 1, flexShrink: 0 }} />
+          <span>{weather.summary}</span>
+        </div>
+      )}
 
       <div className="grid gap-8 lg:grid-cols-[1fr_380px]">
         <div className="space-y-8">
