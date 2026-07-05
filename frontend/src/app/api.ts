@@ -716,10 +716,16 @@ export type RevenueForecast = {
   operationalCosts?: { category: string; cost: number }[];
   totalOperationalCost?: number;
   estimatedNet?: number;
+  benchmark?: { similarCount: number; avgSellThroughPct: number; examples: { title: string; sellThroughPct: number }[] } | null;
 };
 
 export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> {
   return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
+}
+
+// Personalised "For You" event ids (taste profile: interests + joined events).
+export function fetchForYou(): Promise<{ ids: string[] }> {
+  return apiFetch<{ ids: string[] }>('/api/ai/for-you', { method: 'POST', body: JSON.stringify({}) });
 }
 
 // ── AI agent (Gemini; all responses tolerate {available:false}) ────

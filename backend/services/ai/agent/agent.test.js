@@ -680,7 +680,11 @@ test('remember tool stores a durable fact and skips duplicates', async () => {
     supabase: {
       from: () => ({
         select: () => ({ order: () => ({ limit: () => ({ eq: async () => ({ data: rows, error: null }) }) }) }),
-        insert: async (row) => { rows.push({ id: rows.length + 1, ...row }); return { error: null }; },
+        insert: (row) => {
+          const saved = { id: rows.length + 1, ...row };
+          rows.push(saved);
+          return { select: () => ({ single: async () => ({ data: { id: saved.id }, error: null }) }) };
+        },
       }),
     },
   };

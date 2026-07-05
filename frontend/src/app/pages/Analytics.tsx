@@ -373,6 +373,16 @@ function ForecastBody({ fc }: { fc: RevenueForecast }) {
       <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>
         Projected {fc.projectedTicketsSold ?? 0} tickets sold @ avg ${(fc.avgTicketPrice ?? 0).toFixed(2)}.
       </div>
+      {fc.benchmark && (
+        <div className="flex items-start gap-2 rounded-xl p-3 text-xs" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--foreground)' }}>
+          <TrendingUp size={14} style={{ marginTop: 1, flexShrink: 0, color: '#4d8dff' }} />
+          <span>
+            Benchmark: {fc.benchmark.similarCount} similar past event{fc.benchmark.similarCount === 1 ? '' : 's'} sold about{' '}
+            <strong>{fc.benchmark.avgSellThroughPct}%</strong> of capacity
+            {fc.benchmark.examples?.length ? ` (e.g. ${fc.benchmark.examples.map((x) => `${x.title} ${x.sellThroughPct}%`).join(', ')})` : ''}.
+          </span>
+        </div>
+      )}
       {costs.length > 0 && (
         <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
           <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>

@@ -494,6 +494,7 @@ export const EXECUTORS = {
       estimatedNet: f.estimatedNet,
       projectedProfit: f.estimatedNet, // profit = revenue − operational costs (an estimate; costs are NOT charged by the app)
       operationalCosts: f.operationalCosts,
+      benchmark: f.benchmark ?? null, // similar past events' real sell-through, for grounding advice
     };
   },
 

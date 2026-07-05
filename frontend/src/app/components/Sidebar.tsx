@@ -103,8 +103,9 @@ export function Sidebar({
             ))}
           </div>
         </nav>
-        <div
-          className="m-3 rounded-[14px] p-3"
+        <button
+          onClick={() => handleClick({ name: 'faq' })}
+          className="m-3 rounded-[14px] p-3 text-left transition hover:bg-white/5"
           style={{
             background: '#14141b',
             borderWidth: '0.609px',
@@ -116,9 +117,9 @@ export function Sidebar({
             Need help?
           </div>
           <div className="text-sm underline" style={{ color: '#f5f5f7', fontWeight: 500 }}>
-            {isOrganiser ? 'Read the organiser guide' : 'Read the attendee guide'}
+            See the commonly asked questions
           </div>
-        </div>
+        </button>
       </aside>
     </>
   );

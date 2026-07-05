@@ -7,6 +7,7 @@ import { dirname, join } from 'path';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { eventEmbeddingText, eventEmbeddingHash } from '../services/ai/eventEmbeddings.js';
+import { embedMemory } from '../services/ai/memory.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -54,11 +55,23 @@ async function backfillDocs(admin) {
   console.log(`Doc chunks embedded: ${done}`);
 }
 
+async function backfillMemories(admin) {
+  const { data: rows } = await admin.from('AI_USER_MEMORY').select('id, content, embedding');
+  let done = 0;
+  for (const m of rows ?? []) {
+    if (m.embedding) continue; // already embedded
+    await embedMemory(admin, m.id, m.content);
+    done += 1;
+  }
+  console.log(`Memories embedded: ${done}`);
+}
+
 async function main() {
   if (!isEmbeddingEnabled()) { console.error('GEMINI_API_KEY not set — cannot embed.'); process.exit(1); }
   const admin = adminClient();
   await backfillEvents(admin);
   await backfillDocs(admin);
+  await backfillMemories(admin);
   console.log('Backfill complete.');
   process.exit(0);
 }

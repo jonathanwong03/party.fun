@@ -6,7 +6,7 @@ import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/rec
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { executeAction } from '../services/ai/agent/actions.js';
-import { loadMemory, formatMemory } from '../services/ai/memory.js';
+import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -111,6 +111,27 @@ export async function recommendEvents(req, res) {
   candidates = candidates.slice(0, 40);
 
   res.json(await recommendEventsTask({ interests, candidates }));
+}
+
+// POST /api/ai/for-you — a personalised event feed from the user's taste profile
+// (remembered interests + the titles of events they've joined) → semantic match.
+// Returns { ids } best-first (excluding events they already joined). Empty when
+// there's no history/interests or embeddings are off.
+export async function forYou(req, res) {
+  if (!isEmbeddingEnabled()) return res.json({ ids: [] });
+  const [memories, profileRes, eventsRes] = await Promise.all([
+    loadMemory(req.supabase, req.user.id),
+    req.supabase.rpc('get_profile'),
+    req.supabase.rpc('get_events'),
+  ]);
+  const joined = new Set((profileRes.data?.tickets ?? []).map((t) => t.eventId));
+  const joinedTitles = (eventsRes.data ?? []).filter((e) => joined.has(e.id)).map((e) => e.title);
+  const profileText = [...memories.map((m) => m.content), ...joinedTitles].filter(Boolean).join('\n');
+  if (!profileText.trim()) return res.json({ ids: [] });
+  const vec = await embedText(profileText, { taskType: 'RETRIEVAL_QUERY' });
+  if (!vec) return res.json({ ids: [] });
+  const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 20 });
+  res.json({ ids: (matches ?? []).map((m) => m.eventId).filter((id) => !joined.has(id)) });
 }
 
 // POST /api/ai/ask
@@ -242,7 +263,9 @@ export async function chat(req, res) {
   const list = Array.isArray(messages) ? messages : [];
   // Every write always pauses for confirmation — no auto-apply mode.
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
-  const memBlock = formatMemory(await loadMemory(req.supabase, req.user.id));
+  // Recall only the memories relevant to THIS turn (vector match; falls back to all).
+  const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+  const memBlock = formatMemory(await loadRelevantMemory(req.supabase, req.user.id, lastUserMsg?.content));
   const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock].filter(Boolean).join('\n\n');
   const result = await runGraph({ system, messages: list, ctx, mode: 'ask' });
 
