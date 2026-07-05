@@ -43,8 +43,11 @@ const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
 
 export const BRANCH_TOOLS = {
   read_only: withPersonal('search_events', 'list_available_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
-  discovery: withPersonal('search_events', 'list_available_events', 'research_event_ideas', 'remember'),
-  best_fit: withPersonal('list_available_events', 'search_events', 'research_event_ideas', 'remember'),
+  // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
+  // which excludes the caller's own events, already-purchased ones, and past events. search_events
+  // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
+  discovery: withPersonal('list_available_events', 'research_event_ideas', 'remember'),
+  best_fit: withPersonal('list_available_events', 'research_event_ideas', 'remember'),
   event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
@@ -56,9 +59,9 @@ const DIRECTIVES = {
   event_mgmt: "INTENT: manage the user's own events. You CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
     + "CREATE (autonomous research → full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
-    + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — a REASON is required, so ask the organiser why first; it refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
+    + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
-  transaction: "INTENT: wallet/ticket action. For BUYING tickets: ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+  transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). Then ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -103,15 +106,26 @@ async function defaultClassify(text) {
 // and refuses anything unrelated (math, trivia, coding, general advice) up front.
 export const OFF_TOPIC_REPLY = "I'm the party.fun events assistant, so I can only help with things on party.fun — finding and buying event tickets, your wallet, and hosting or managing your own events. I can't help with that one, but I'd be glad to help you discover an event or plan one.";
 
-const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel)\b/i;
+const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
 const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
 // Short mid-flow continuations / confirmations — always on-topic (never block these).
 const AFFIRMATION_RX = /^(yes|yeah|yep|yup|sure|ok|okay|k|go\sahead|do\sit|sounds?\sgood|please|confirm|proceed|that\sone|the\s(first|second|third|last)\sone|first|second|third|either|both|whatever\syou\sthink|you\sdecide|any|no|nope|not\sreally)\b/i;
+// A short answer to the agent's own question — a bare number/quantity or a one-word reply
+// (e.g. "3", "3 tickets", "$20"). These are continuations of an on-topic flow, never off-topic.
+const SHORT_ANSWER_RX = /^\$?\d[\d.,]*\s*(tickets?|ticket|pax|people|persons?|x)?[.!]?$/i;
+
+// Synchronous fast-path: obviously in-scope (or a short continuation answer) → allow
+// without an LLM call. Exported so it can be unit-tested.
+export function guardAllows(text) {
+  const t = String(text || '').trim();
+  if (!t) return true;
+  return ON_TOPIC_RX.test(t) || GREETING_RX.test(t) || AFFIRMATION_RX.test(t) || SHORT_ANSWER_RX.test(t);
+}
 
 async function defaultGuard(text) {
   const t = String(text || '').trim();
   if (!t) return true; // empty → let classify handle it
-  if (ON_TOPIC_RX.test(t) || GREETING_RX.test(t) || AFFIRMATION_RX.test(t)) return true; // obvious in-scope fast-path
+  if (guardAllows(t)) return true; // obvious in-scope / short-answer fast-path
   try {
     const res = await runTier('cheap', {
       system: 'You gate an events-app assistant (party.fun). Decide if the user\'s latest message is IN SCOPE. In scope = anything about events, tickets, pledging, the wallet, hosting/organising events, event weather or dates, OR a greeting/thanks/pleasantry, OR asking what the assistant can do. Out of scope = general knowledge, math, coding, trivia, personal or unrelated topics. Reply with ONLY one word: on_topic or off_topic.',

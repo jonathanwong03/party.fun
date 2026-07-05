@@ -55,12 +55,16 @@ function isFutureStart(ev, now = Date.now()) {
   return Number.isFinite(t) && t > now;
 }
 
-// Event ids the caller currently holds ACTIVE tickets for — mirrors the UI's
-// "Tickets already purchased" (get_profile.myEventIds). Used to exclude from buyable.
+// Event ids the UI shows as "Tickets already purchased" — a booking in the
+// 'upcoming' OR 'cancelled' tab (matches App.tsx purchasedEventIds: active AND
+// buyer-cancelled / given-away purchases both block re-buying). NOTE: get_profile's
+// `myEventIds` counts ACTIVE tickets only, so it MISSES events whose tickets were
+// all given away (status given_away → tab 'cancelled') — we must use the tabs.
 async function purchasedEventIds(ctx) {
   try {
     const profile = await getProfile(ctx.supabase);
-    return new Set((profile?.myEventIds ?? []).map(String));
+    const tickets = profile?.tickets ?? [];
+    return new Set(tickets.filter((t) => t.tab === 'upcoming' || t.tab === 'cancelled').map((t) => String(t.eventId)));
   } catch {
     return new Set();
   }
@@ -78,6 +82,22 @@ async function attendableEvents(ctx) {
     && (e.status === 'early_bird' || e.status === 'greenlit')
     && !purchased.has(String(e.id))
     && isFutureStart(e, now));
+}
+
+// Resolve an event reference that may be an id OR a name/slug (users say "late-night
+// supper crawl", the model sometimes passes "late-night-supper-crawl") to the event.
+const normName = (s) => String(s ?? '').toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+function findEvent(events, ref) {
+  const r = String(ref ?? '').trim();
+  if (!r) return null;
+  let ev = (events ?? []).find((e) => e.id === r); // exact id (uuid)
+  if (ev) return ev;
+  const nr = normName(r);
+  if (!nr) return null;
+  ev = events.find((e) => normName(e.title) === nr); // exact name, hyphen/space/case-insensitive
+  if (ev) return ev;
+  const sub = events.filter((e) => normName(e.title).includes(nr) || nr.includes(normName(e.title)));
+  return sub[0] ?? null; // best substring match
 }
 
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
@@ -155,7 +175,7 @@ export const searchEventsTool = makeTool(
 export const getEventDetailsTool = makeTool(
   'get_event_details',
   "Get full details for one event the user can see, by its id: its current STATUS (early_bird/greenlit/completed/cancelled), the CURRENT PRICE a buyer pays now, tiers, tickets sold vs hype threshold, and — for the user's OWN event — the net revenue so far.",
-  z.object({ eventId: z.string().describe('The event id.') }),
+  z.object({ eventId: z.string().describe('The event id OR its name (either works).') }),
 );
 
 export const getEventForecastTool = makeTool(
@@ -167,7 +187,7 @@ export const getEventForecastTool = makeTool(
 export const getEventAttendeesTool = makeTool(
   'get_event_attendees',
   "List who is attending an event — the distinct people holding active tickets (their name/username) and the count. Use for questions like 'who is coming to my event?' or 'how many backers does X have?'.",
-  z.object({ eventId: z.string().describe('The event id.') }),
+  z.object({ eventId: z.string().describe('The event id OR its name (either works).') }),
 );
 
 export const listAvailableEventsTool = makeTool(
@@ -215,7 +235,7 @@ export const getWeatherTool = makeTool(
   'get_weather',
   "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. Returns the precipitation probability and willRain (true when it is over 70%). Forecasts only reach ~10 days ahead. If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
   z.object({
-    eventId: z.string().optional().describe('An event id to check (its date/time is used).'),
+    eventId: z.string().optional().describe('An event id OR name to check (its date/time is used).'),
     start: z.string().optional().describe('ISO 8601 start datetime (if no eventId).'),
     end: z.string().optional().describe('ISO 8601 end datetime (optional).'),
   }),
@@ -246,7 +266,7 @@ export const proposeUpdateEventTool = makeTool(
   'propose_update_event',
   "PROPOSE editing one of the organiser's OWN events. Provide ONLY the fields to change. Does NOT apply the change — returns a proposal to confirm. Editable: title, description, venue, address, startDate, endDate, deadline (ISO 8601 datetimes), maxCapacity, hypeThreshold, earlyPrice, greenlitPrice.",
   z.object({
-    eventId: z.string().describe('The event id (must be hosted by the caller).'),
+    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
     title: z.string().optional(),
     description: z.string().optional(),
     venue: z.string().optional(),
@@ -287,7 +307,7 @@ export const proposeInviteCoorganiserTool = makeTool(
   'propose_invite_coorganiser',
   "PROPOSE inviting a co-organiser to one of the organiser's OWN events. Does NOT send the invite — returns a proposal the user must confirm.",
   z.object({
-    eventId: z.string().describe('The event id (must be hosted by the caller).'),
+    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
     identifier: z.string().describe('Email or username of the organiser to invite.'),
   }),
 );
@@ -302,17 +322,17 @@ export const proposePledgeTool = makeTool(
   'propose_pledge',
   "PROPOSE buying ticket(s) to an event using the user's WALLET balance (a deduction). Does NOT charge — returns a proposal the user must confirm. Cannot be their own event.",
   z.object({
-    eventId: z.string().describe('The event to buy into.'),
+    eventId: z.string().describe('The event to buy into — its id OR name (either works).'),
     qty: z.number().optional().describe('Number of tickets (>= 1). Defaults to 1.'),
   }),
 );
 
 export const proposeCancelEventTool = makeTool(
   'propose_cancel_event',
-  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. A reason is REQUIRED — ask the organiser why before calling. Does NOT cancel — returns a proposal the user must confirm.',
+  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. A reason is OPTIONAL — if the organiser gives one, pass it as-is (any reason is fine, even informal); if they do not, proceed without it. Does NOT cancel — returns a proposal the user must confirm.',
   z.object({
-    eventId: z.string().describe('The event id (must be hosted by the caller).'),
-    reason: z.string().describe('REQUIRED reason for cancelling, shown to backers. Ask the organiser for it first.'),
+    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
+    reason: z.string().optional().describe('Optional reason shown to backers. Pass whatever the organiser gives; leave empty if none.'),
   }),
 );
 
@@ -348,7 +368,7 @@ export const proposeGiveAwayTicketsTool = makeTool(
   'propose_give_away_tickets',
   "PROPOSE giving away some of the user's OWN tickets for an event they've joined. Give-aways are FINAL and non-refundable — the released spots return to the public pool. The user MUST specify how many (qty must be greater than 0 and at most the number they currently hold). Identify the event by its id (use get_my_joined_events / search_events to find it). Does NOT give away — returns a proposal the user must confirm.",
   z.object({
-    eventId: z.string().describe('The event the user holds tickets for.'),
+    eventId: z.string().describe('The event the user holds tickets for — id OR name.'),
     qty: z.number().describe('How many tickets to give away (> 0 and <= tickets currently held).'),
   }),
 );
@@ -382,7 +402,7 @@ export const EXECUTORS = {
   },
 
   async get_event_details(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const mine = ev.hostId === ctx.userId;
     const details = {
@@ -411,9 +431,12 @@ export const EXECUTORS = {
   },
 
   async get_event_forecast(args, ctx) {
+    // Resolve id-or-name to the real event id before forecasting.
+    const ref = findEvent(await visibleEvents(ctx), args.eventId);
+    if (!ref) return { error: 'Event not found or not visible to you.' };
     let result;
     try {
-      result = await forecastForEvent(args.eventId);
+      result = await forecastForEvent(ref.id);
     } catch (e) {
       return { error: e.message };
     }
@@ -435,16 +458,16 @@ export const EXECUTORS = {
   },
 
   async get_event_attendees(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
     let attendees;
     try {
-      attendees = await getEventAttendees(ctx.supabase, args.eventId);
+      attendees = await getEventAttendees(ctx.supabase, ev.id);
     } catch (e) {
       return { error: e?.message ?? 'Unable to load attendees.' };
     }
     return {
-      eventId: args.eventId,
+      eventId: ev.id,
       title: ev.title,
       attendeeCount: attendees.length, // distinct people holding active tickets (one buyer of many tickets = one attendee)
       attendees: attendees.map((a) => ({ name: a.name ?? a.username ?? null, username: a.username ?? null })),
@@ -527,7 +550,7 @@ export const EXECUTORS = {
     let lat;
     let lon;
     if (args.eventId) {
-      const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+      const ev = findEvent(await visibleEvents(ctx), args.eventId);
       if (!ev) return { error: 'Event not found or not visible to you.' };
       startISO = startISO || ev.startDate;
       endISO = endISO || ev.endDate;
@@ -563,7 +586,7 @@ export const EXECUTORS = {
 
   // ── Proposal tools (write actions; validate only, never mutate) ──────────────
   async propose_update_event(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
     // Owners AND accepted co-organisers can edit (mirrors the update_event RPC's can_manage_event check).
     if (ev.hostId !== ctx.userId && !ev.isCoOrganiser) return { error: 'You can only edit events you host or co-organise.' };
@@ -659,7 +682,7 @@ export const EXECUTORS = {
   },
 
   async propose_invite_coorganiser(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
     if (ev.hostId !== ctx.userId) return { error: 'Only the event owner can invite co-organisers.' };
     const identifier = String(args.identifier ?? '').trim();
@@ -723,9 +746,10 @@ export const EXECUTORS = {
 
   async propose_pledge(args, ctx) {
     // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
-    const ev = (await attendableEvents(ctx)).find((e) => e.id === args.eventId);
+    // Accepts an event id OR name (findEvent resolves both).
+    const ev = findEvent(await attendableEvents(ctx), args.eventId);
     if (!ev) {
-      const seen = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+      const seen = findEvent(await visibleEvents(ctx), args.eventId);
       if (!seen) return { error: 'Event not found or not visible to you.' };
       if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
       if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
@@ -758,19 +782,18 @@ export const EXECUTORS = {
   },
 
   async propose_cancel_event(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
     if (ev.hostId !== ctx.userId) return { error: 'You can only cancel events you host.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be cancelled.' };
     const reason = String(args.reason ?? '').trim();
-    if (!reason) return { error: 'A reason is required to cancel a published event — ask the organiser why they want to cancel, then include it.' };
     return {
       proposal: {
         id: `cancel_event:${ev.id}:${Date.now()}`,
         action: 'cancel_event',
         eventId: ev.id,
         title: ev.title,
-        summary: `Cancel "${ev.title}" — the event closes and every backer is refunded (reason: ${reason}). This cannot be undone.`,
+        summary: `Cancel "${ev.title}" — the event closes and every backer is refunded ${reason ? `(reason: ${reason})` : '(no reason given)'}. This cannot be undone.`,
         payload: { reason },
       },
     };
@@ -785,20 +808,22 @@ export const EXECUTORS = {
     } catch (e) {
       return { error: e?.message ?? 'Unable to load your tickets.' };
     }
+    // Resolve the event (id OR name) so we can match holdings by its real id.
+    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    if (!ev) return { error: 'Event not found or not visible to you.' };
     // Find the caller's active, still-upcoming booking for this event (get_profile
     // tickets carry bookingId/eventId/activeTicketCount/tab, but not the title).
-    const holdings = (profile?.tickets ?? []).filter((t) => t.eventId === args.eventId && Number(t.activeTicketCount ?? 0) > 0 && t.tab === 'upcoming');
+    const holdings = (profile?.tickets ?? []).filter((t) => t.eventId === ev.id && Number(t.activeTicketCount ?? 0) > 0 && t.tab === 'upcoming');
     if (holdings.length === 0) return { error: 'You do not hold any active tickets for that event (or it has already passed).' };
     const booking = holdings[0];
     const held = Number(booking.activeTicketCount ?? 0);
     if (qty > held) return { error: `You only hold ${held} ticket${held === 1 ? '' : 's'} for that event — give away at most ${held}.` };
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
-    const eventTitle = ev?.title ?? 'the event';
+    const eventTitle = ev.title ?? 'the event';
     return {
       proposal: {
         id: `give_away:${booking.bookingId}:${Date.now()}`,
         action: 'give_away',
-        eventId: args.eventId,
+        eventId: ev.id,
         title: eventTitle,
         summary: `Give away ${qty} of your ${held} ticket${held === 1 ? '' : 's'} for "${eventTitle}". This is final and non-refundable — the released spots return to the public pool.`,
         payload: { bookingId: booking.bookingId, qty },

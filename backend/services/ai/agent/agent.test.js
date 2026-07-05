@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { __resetProvidersForTests } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, guardAllows, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { selectAtRisk } from './advisor.js';
@@ -231,18 +231,24 @@ test('propose_create_event drafts an event and requires title + dates', async ()
   assert.match(noDates.error, /deadline/i);
 });
 
-test('list_available_events excludes own, purchased and already-started events', async () => {
+test('list_available_events excludes own, purchased, given-away and already-started events', async () => {
   const events = [
     { id: 'e1', title: 'Buyable', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] },
     { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
-    { id: 'e3', title: 'Already bought', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 8 }] },
+    { id: 'e3', title: 'Held tickets', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 8 }] },
     { id: 'e4', title: 'Already started', status: 'early_bird', hostId: 'other', startDate: inDaysIso(-1), statuses: [{ price: 7 }] },
+    { id: 'e5', title: 'Gave away all', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 6 }] },
   ];
-  // get_profile.myEventIds marks e3 as already purchased (matches the UI's source).
+  // Matches the UI: a booking in the 'upcoming' (active) OR 'cancelled' (given-away) tab
+  // means "already purchased" and can't be bought again. e3 = active, e5 = all given away.
+  const tickets = [
+    { eventId: 'e3', tab: 'upcoming', activeTicketCount: 1 },
+    { eventId: 'e5', tab: 'cancelled', activeTicketCount: 0 },
+  ];
   const ctx = {
     userId: 'u1',
     role: 'user',
-    supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { myEventIds: ['e3'] } : events, error: null }) },
+    supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { tickets } : events, error: null }) },
   };
   const out = await EXECUTORS.list_available_events({}, ctx);
   assert.deepEqual(out.events.map((e) => e.id), ['e1']);
@@ -319,11 +325,35 @@ test('propose_pledge proposes a wallet purchase, blocks own event, guides top-up
   assert.match(short.error, /short|top up/i);
 });
 
-test('propose_cancel_event proposes a refund/cancel for own event only', async () => {
+test('event tools resolve an event by NAME or slug, not just id', async () => {
+  const events = [{ id: 'e1', title: 'Late-Night Supper Crawl', description: 'yum', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 9 }] }];
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  // Details by exact name.
+  const d = await EXECUTORS.get_event_details({ eventId: 'Late-Night Supper Crawl' }, ctx);
+  assert.equal(d.id, 'e1');
+  // Pledge using the plain-spoken name.
+  const p1 = await EXECUTORS.propose_pledge({ eventId: 'late-night supper crawl', qty: 2 }, ctx);
+  assert.equal(p1.proposal.eventId, 'e1');
+  // Pledge using a hyphenated slug (how the model sometimes passes it).
+  const p2 = await EXECUTORS.propose_pledge({ eventId: 'Late-Night-Supper-Crawl', qty: 1 }, ctx);
+  assert.equal(p2.proposal.eventId, 'e1');
+  // A nonsense reference still errors.
+  const bad = await EXECUTORS.get_event_details({ eventId: 'totally made up event' }, ctx);
+  assert.ok(bad.error);
+});
+
+test('propose_cancel_event proposes a refund/cancel for own event only, reason optional', async () => {
   const own = [{ id: 'e1', title: 'My Gig', status: 'greenlit', hostId: 'u1', statuses: [] }];
   const ok = await EXECUTORS.propose_cancel_event({ eventId: 'e1', reason: 'venue fell through' }, ctxWith(own));
   assert.equal(ok.proposal.action, 'cancel_event');
   assert.match(ok.proposal.summary, /refunded/i);
+  // Any informal reason is accepted as-is.
+  const informal = await EXECUTORS.propose_cancel_event({ eventId: 'e1', reason: 'it is not nice' }, ctxWith(own));
+  assert.match(informal.proposal.summary, /it is not nice/);
+  // No reason at all → still a proposal (reason is optional), noting none was given.
+  const noReason = await EXECUTORS.propose_cancel_event({ eventId: 'e1' }, ctxWith(own));
+  assert.equal(noReason.proposal.action, 'cancel_event');
+  assert.match(noReason.proposal.summary, /no reason given/i);
   const notMine = [{ id: 'e1', title: 'Theirs', status: 'greenlit', hostId: 'other', statuses: [] }];
   const blocked = await EXECUTORS.propose_cancel_event({ eventId: 'e1' }, ctxWith(notMine));
   assert.ok(blocked.error);
@@ -469,7 +499,10 @@ test('propose_give_away_tickets rejects giving away more than held', async () =>
 });
 
 test('propose_give_away_tickets errors when the user holds none for that event', async () => {
-  const ctx = giveAwayCtx([{ bookingId: '5', eventId: 'other', activeTicketCount: 1, tab: 'upcoming' }], []);
+  const ctx = giveAwayCtx(
+    [{ bookingId: '5', eventId: 'other', activeTicketCount: 1, tab: 'upcoming' }],
+    [{ id: 'e1', title: 'Gig', hostId: 'org1', status: 'greenlit' }],
+  );
   const out = await EXECUTORS.propose_give_away_tickets({ eventId: 'e1', qty: 1 }, ctx);
   assert.match(out.error, /do not hold/);
 });
@@ -540,6 +573,18 @@ test('scope guard judges ONLY the latest user message (not prior on-topic turns)
     ctx: ctxWith([]),
   });
   assert.equal(seen, 'what is 2+2?');
+});
+
+test('guardAllows lets short/continuation answers through, still blocks off-topic questions', () => {
+  // Short answers to the agent's own question (e.g. "how many tickets?") must pass.
+  assert.equal(guardAllows('3'), true);
+  assert.equal(guardAllows('3 tickets'), true);
+  assert.equal(guardAllows('card'), true);
+  assert.equal(guardAllows('wallet'), true);
+  assert.equal(guardAllows('yes'), true);
+  // A full off-topic question is NOT fast-pathed (falls through to the LLM guard).
+  assert.equal(guardAllows('what is 2+2?'), false);
+  assert.equal(guardAllows('write me a poem about cats'), false);
 });
 
 test('on-topic questions pass the guard through to a branch', async () => {
