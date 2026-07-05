@@ -55,6 +55,16 @@ The assistant stays **strictly on-topic** (enforced by the scope guard): it only
 The assistant always knows the **current user's role** (organiser / user / admin), injected into its context each turn. `get_my_hosted_events` and `get_event_details` report each event's **live status** (early_bird/greenlit/completed/cancelled), the **current price** a buyer pays now (status- and hype-aware), and — for the organiser's own events — the **net revenue so far**. Replies are written in plain text (no markdown), as short paragraphs separated by blank lines.
 
 ## Other
-- **University gating:** some events are restricted to a university; users only see events they're eligible to join.
-- **Co-organisers:** an organiser can invite co-organisers to help manage an event.
+- **University gating:** some events are restricted to a university; users only see events they're eligible to join (`get_events` is RLS-scoped, so the assistant only ever sees eligible events — it will not surface a restricted event to an ineligible user).
+- **Co-organisers:** an organiser can invite co-organisers to help manage an event. A co-organiser is an organiser account invited to a specific event; they **can edit** the event and **view attendees**, but **cannot cancel, delete, or invite** — only the owner can. Only the owner invites/revokes co-organisers.
 - **Analytics:** organisers see projected ticket sales/revenue, itemised estimated operational costs (these are paid outside party.fun), and past-event totals.
+
+## Agent operating principles (what the assistant must always respect)
+- **Backend is the source of truth.** The assistant proposes; Supabase RLS + the Postgres RPCs + wallet/Stripe logic decide and validate. It must never invent event, ticket, wallet or payment state — it answers strictly from tool results.
+- **Attendable events** (what a user can buy/attend, matching the All Events page): hosted by **someone else**, status `early_bird` or `greenlit`, starting **strictly in the future** (once an event starts you can no longer attend it), and the user does **not already hold active tickets** for it. `list_available_events` and `propose_pledge` both enforce this.
+- **Pricing model is LOCKED after creation** — the assistant never proposes switching tiered↔hype on an existing event.
+- **Ticket states:** a ticket is `active`, `given_away`, `refunded`, or `used`. A user **cannot buy more tickets** for an event while they still hold active tickets; after giving all of them away, they may buy again if spots remain. `get_my_joined_events` reports, per event, how many tickets the user still holds (upcoming / past / cancelled).
+- **Buying tickets:** the assistant pays from the **wallet**. It asks how many + payment preference, states the total and the wallet balance; if the wallet is short it offers a **card top-up** (charges the linked card into the wallet) then pledges — or, if no card is linked, asks the user to link one. It cannot run card entry / 3-D Secure itself.
+- **Forecasts are estimates**, and **operational costs are NOT charged through party.fun** (they're for planning). The assistant can suggest concrete edits (prices, hype threshold, capacity, dates, description) to improve projected revenue/profit.
+- **Never promise email delivery.** Emails may be sent for account/pledge/give-away/create/cancel/greenlit/refund/reset events, but a send failing does not mean the underlying action failed.
+- **Dates:** the assistant knows today's date (Singapore, injected each turn + `get_current_date`) and only ever proposes event dates strictly **after today**.

@@ -3,7 +3,7 @@ import { geminiProvider } from './providers/geminiProvider.js';
 // Gemini-only router. Each cost tier resolves to a single {provider, model}
 // candidate; the tier helpers keep their ordered-list shape (a list of one) so
 // the generic runners and the LangGraph model builder stay unchanged. The model
-// ID comes from env with a free-tier default (gemini-2.5-flash-lite).
+// ID comes from env with a default (gemini-2.5-flash).
 
 const PROVIDERS = {
   gemini: geminiProvider,
@@ -16,11 +16,10 @@ export function __resetProvidersForTests() { dependencies.providers = PROVIDERS;
 
 const env = (name, fallback) => process.env[name] || fallback;
 
-// One free-tier Gemini Flash model drives every tier. `gemini-2.5-flash-lite` has
-// the largest free daily quota (~1000/day; Pro models need billing). Override with
-// AI_GEMINI_MODEL if needed.
+// One Gemini Flash model drives every tier. `gemini-2.5-flash` is stable (far fewer
+// 503s than flash-lite) and cheap with billing enabled. Override with AI_GEMINI_MODEL.
 function tierConfig() {
-  const model = env('AI_GEMINI_MODEL', 'gemini-2.5-flash-lite');
+  const model = env('AI_GEMINI_MODEL', 'gemini-2.5-flash');
   return {
     cheap: [{ provider: 'gemini', model }],
     premium: [{ provider: 'gemini', model }],

@@ -20,6 +20,19 @@ test('assessEvent flags rain over 70% as willRain', async () => {
   assert.equal(out.precipitationProbability, 85);
 });
 
+test('assessEvent scans every day of a multi-day event and flags the wet ones', async () => {
+  const start = inDaysIso(3);
+  const mid = inDaysIso(4);
+  const end = inDaysIso(5);
+  __setForecastForTests(async () => [day(sgYmd(start), 20), day(sgYmd(mid), 90), day(sgYmd(end), 40)]);
+  const out = await assessEvent({ startISO: start, endISO: end });
+  assert.equal(out.status, 'ok');
+  assert.equal(out.willRain, true);
+  assert.equal(out.precipitationProbability, 90);
+  assert.equal(out.days.length, 3);
+  assert.deepEqual(out.rainyDays, [sgYmd(mid)]); // only the middle day is > 70%
+});
+
 test('assessEvent treats 70% or below as fine (strictly over 70)', async () => {
   const start = inDaysIso(3);
   __setForecastForTests(async () => [day(sgYmd(start), 70)]);

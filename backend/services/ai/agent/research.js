@@ -8,7 +8,7 @@
 import { runTier } from '../modelRouter.js';
 
 const geminiKey = () => process.env.GEMINI_API_KEY;
-const RESEARCH_MODEL = () => process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash-lite';
+const RESEARCH_MODEL = () => process.env.AI_GEMINI_MODEL || 'gemini-2.5-flash';
 
 function buildPrompt({ theme, audience, university }) {
   const who = audience ? `university students (${audience})` : 'university students';

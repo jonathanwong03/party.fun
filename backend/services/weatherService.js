@@ -40,6 +40,20 @@ function sgYmd(iso) {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 
+// Inclusive list of YYYY-MM-DD calendar days from startYmd to endYmd, capped to
+// `cap` days. (Singapore has no DST, so plain UTC date arithmetic on the labels is safe.)
+function daysInRange(startYmd, endYmd, cap) {
+  const out = [];
+  const d = new Date(`${startYmd}T00:00:00Z`);
+  const end = new Date(`${(endYmd && endYmd >= startYmd) ? endYmd : startYmd}T00:00:00Z`);
+  const fmt = new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' });
+  while (d <= end && out.length < cap) {
+    out.push(fmt.format(d));
+    d.setUTCDate(d.getUTCDate() + 1);
+  }
+  return out;
+}
+
 // The YYYY-MM-DD a Weather API forecastDay refers to (it carries a displayDate,
 // with the interval as a fallback).
 function dayYmd(day) {
@@ -97,34 +111,35 @@ export async function assessEvent({ lat, lon, startISO, endISO } = {}) {
     return { status: 'unavailable', precipitationProbability: null, willRain: false, summary: 'Weather forecast is not configured.' };
   }
 
-  // The set of calendar days the event spans (start..end), capped for safety.
+  // Every calendar day the event spans (start..end inclusive), capped to the horizon.
   const endYmd = endISO ? sgYmd(endISO) : startYmd;
-  const wanted = new Set([startYmd, endYmd].filter(Boolean));
+  const wantedList = daysInRange(startYmd, endYmd, HORIZON_DAYS + 1);
   const byYmd = new Map(days.map((d) => [dayYmd(d), d]).filter(([k]) => k));
 
+  const perDay = []; // { date, probability, willRain } for each spanned day we have a forecast for
   const probs = [];
-  let anyMatched = false;
-  for (const ymd of wanted) {
+  for (const ymd of wantedList) {
     const day = byYmd.get(ymd);
     if (!day) continue;
-    anyMatched = true;
     const p = dayPrecipProb(day);
+    perDay.push({ date: ymd, probability: p, willRain: p != null && p > RAIN_THRESHOLD_PCT });
     if (p != null) probs.push(p);
   }
 
-  if (!anyMatched) {
-    return { status: 'beyond_horizon', precipitationProbability: null, willRain: false, summary: `That date is more than ${HORIZON_DAYS} days away, which is too far out for a reliable forecast.` };
+  if (perDay.length === 0) {
+    return { status: 'beyond_horizon', precipitationProbability: null, willRain: false, days: [], rainyDays: [], summary: `That date is more than ${HORIZON_DAYS} days away, which is too far out for a reliable forecast.` };
   }
 
   const probability = probs.length ? Math.max(...probs) : null;
   const willRain = probability != null && probability > RAIN_THRESHOLD_PCT;
+  const rainyDays = perDay.filter((d) => d.willRain).map((d) => d.date);
   const summary = probability == null
-    ? 'Forecast found, but no precipitation reading is available for that day.'
+    ? 'Forecast found, but no precipitation reading is available for those days.'
     : willRain
-      ? `High chance of rain (${probability}%) around that time — not ideal for an outdoor event; consider an indoor venue or another date.`
-      : `Weather looks fine (${probability}% chance of rain) for that time.`;
+      ? `High chance of rain (up to ${probability}%) on ${rainyDays.length > 1 ? `${rainyDays.length} of the event days (${rainyDays.join(', ')})` : rainyDays[0]} — not ideal for an outdoor event; consider an indoor venue or another date.`
+      : `Weather looks fine (up to ${probability}% chance of rain) across the event.`;
 
-  return { status: 'ok', precipitationProbability: probability, willRain, summary };
+  return { status: 'ok', precipitationProbability: probability, willRain, days: perDay, rainyDays, summary };
 }
 
 export const WEATHER = { RAIN_THRESHOLD_PCT, HORIZON_DAYS, SINGAPORE };

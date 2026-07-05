@@ -231,22 +231,32 @@ test('propose_create_event drafts an event and requires title + dates', async ()
   assert.match(noDates.error, /deadline/i);
 });
 
-test('list_available_events excludes own + purchased events', async () => {
+test('list_available_events excludes own, purchased and already-started events', async () => {
   const events = [
-    { id: 'e1', title: 'Buyable', status: 'early_bird', hostId: 'other', statuses: [{ price: 10 }] },
-    { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', statuses: [{ price: 5 }] },
-    { id: 'e3', title: 'Already bought', status: 'early_bird', hostId: 'other', statuses: [{ price: 8 }] },
+    { id: 'e1', title: 'Buyable', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] },
+    { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
+    { id: 'e3', title: 'Already bought', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 8 }] },
+    { id: 'e4', title: 'Already started', status: 'early_bird', hostId: 'other', startDate: inDaysIso(-1), statuses: [{ price: 7 }] },
   ];
+  // get_profile.myEventIds marks e3 as already purchased (matches the UI's source).
   const ctx = {
     userId: 'u1',
     role: 'user',
-    supabase: {
-      rpc: async () => ({ data: events, error: null }),
-      from: () => ({ select: () => ({ eq: () => ({ is: async () => ({ data: [{ eventId: 'e3' }], error: null }) }) }) }),
-    },
+    supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { myEventIds: ['e3'] } : events, error: null }) },
   };
   const out = await EXECUTORS.list_available_events({}, ctx);
   assert.deepEqual(out.events.map((e) => e.id), ['e1']);
+});
+
+test('list_available_events reads derived_status (the real get_events field), not status', async () => {
+  // get_events returns the live status as `derived_status`; the tool must honour it.
+  const events = [
+    { id: 'e1', title: 'Open', derived_status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] },
+    { id: 'e2', title: 'Cancelled', derived_status: 'cancelled', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
+  ];
+  const ctx = { userId: 'u1', role: 'user', supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { myEventIds: [] } : events, error: null }) } };
+  const out = await EXECUTORS.list_available_events({}, ctx);
+  assert.deepEqual(out.events.map((e) => e.id), ['e1']); // non-empty, and the cancelled one is excluded
 });
 
 test('propose_invite_coorganiser returns a proposal for own event', async () => {
@@ -290,17 +300,23 @@ test('propose_topup returns a topup proposal, errors without a linked card', asy
   assert.ok(badAmount.error);
 });
 
-test('propose_pledge proposes a wallet purchase, blocks own event', async () => {
+test('propose_pledge proposes a wallet purchase, blocks own event, guides top-up when short', async () => {
   const events = [
-    { id: 'e1', title: 'Gala', status: 'early_bird', hostId: 'other', statuses: [{ price: 10 }] },
-    { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', statuses: [{ price: 5 }] },
+    { id: 'e1', title: 'Gala', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] },
+    { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
   ];
-  const ok = await EXECUTORS.propose_pledge({ eventId: 'e1', qty: 2 }, ctxWith(events));
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  const ok = await EXECUTORS.propose_pledge({ eventId: 'e1', qty: 2 }, ctx);
   assert.equal(ok.proposal.action, 'pledge');
   assert.equal(ok.proposal.payload.qty, 2);
   assert.match(ok.proposal.summary, /\$20\.00/);
-  const own = await EXECUTORS.propose_pledge({ eventId: 'e2' }, ctxWith(events));
+  const own = await EXECUTORS.propose_pledge({ eventId: 'e2' }, ctx);
   assert.ok(own.error);
+  // Wallet too low → guidance to top up by card, no proposal.
+  const poor = ctxFull({ events, user: { walletBalance: 5, cardLast4: '4242' } });
+  const short = await EXECUTORS.propose_pledge({ eventId: 'e1', qty: 2 }, poor);
+  assert.ok(short.error);
+  assert.match(short.error, /short|top up/i);
 });
 
 test('propose_cancel_event proposes a refund/cancel for own event only', async () => {
@@ -322,6 +338,38 @@ test('propose_delete_draft proposes deleting an existing draft only', async () =
   assert.ok(missing.error);
 });
 
+test('propose_edit_draft proposes editing an existing draft, needs a field, errors if missing', async () => {
+  const ctx = ctxFull({ drafts: [{ id: 'd1', title: 'My Draft', location: 'Hall' }] });
+  const ok = await EXECUTORS.propose_edit_draft({ draftId: 'd1', earlyPrice: 8 }, ctx);
+  assert.equal(ok.proposal.action, 'edit_draft');
+  assert.equal(ok.proposal.payload.draftId, 'd1');
+  assert.equal(ok.proposal.payload.updates.earlyPrice, 8);
+  const noFields = await EXECUTORS.propose_edit_draft({ draftId: 'd1' }, ctx);
+  assert.ok(noFields.error);
+  const missing = await EXECUTORS.propose_edit_draft({ draftId: 'nope', title: 'X' }, ctx);
+  assert.ok(missing.error);
+});
+
+test('executeAction edit_draft re-saves the merged draft payload', async () => {
+  const draftId = '11111111-1111-1111-1111-111111111111';
+  let saved = null;
+  const sb = {
+    from: (table) => {
+      if (table === 'EVENT_DRAFTS') {
+        return {
+          select: () => ({ order: async () => ({ data: [{ id: draftId, payload: { title: 'Old', location: 'Hall', statuses: [{ statusName: 'early_bird', price: 5, qty: 10 }, { statusName: 'greenlit', price: 8, qty: 20 }] } }], error: null }) }),
+          update: (vals) => ({ eq: () => ({ select: () => ({ single: async () => { saved = vals; return { data: { id: draftId, payload: vals.payload }, error: null }; } }) }) }),
+        };
+      }
+      return { select: () => ({}) };
+    },
+  };
+  const out = await executeAction({ sb, user: { id: 'u1' }, action: 'edit_draft', payload: { draftId, updates: { title: 'New', earlyPrice: 3 } } });
+  assert.equal(out.status, 'ok');
+  assert.equal(saved.payload.title, 'New');
+  assert.equal(saved.payload.statuses.find((s) => s.statusName === 'early_bird').price, 3);
+});
+
 test('get_wallet returns balance, card and recent transactions', async () => {
   const out = await EXECUTORS.get_wallet({}, ctxFull({ user: { walletBalance: 42, cardBrand: 'visa', cardLast4: '4242' } }));
   assert.equal(out.balance, 42);
@@ -329,12 +377,13 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 20 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 20);
+test('AGENT_TOOLS exposes all 22 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 22);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
+  assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));
   // Every entry is a StructuredTool with a zod schema.
   assert.ok(AGENT_TOOLS.every((t) => typeof t.invoke === 'function' && t.schema));
 
@@ -425,6 +474,32 @@ test('propose_give_away_tickets errors when the user holds none for that event',
   assert.match(out.error, /do not hold/);
 });
 
+test('get_my_joined_events groups by tab with ticket counts', async () => {
+  const events = [
+    { id: 'e1', title: 'Upcoming Gig', status: 'greenlit', hostId: 'other', statuses: [{ price: 10 }] },
+    { id: 'e2', title: 'Past Show', status: 'completed', hostId: 'other', statuses: [{ price: 8 }] },
+  ];
+  const tickets = [
+    { eventId: 'e1', activeTicketCount: 2, tab: 'upcoming' },
+    { eventId: 'e2', activeTicketCount: 1, tab: 'past' },
+  ];
+  const ctx = { userId: 'u1', role: 'user', supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { tickets } : events, error: null }) } };
+  const out = await EXECUTORS.get_my_joined_events({}, ctx);
+  assert.equal(out.counts.upcoming, 1);
+  assert.equal(out.upcoming[0].title, 'Upcoming Gig');
+  assert.equal(out.upcoming[0].ticketsHeld, 2);
+  assert.equal(out.past[0].ticketsHeld, 1);
+});
+
+test('get_event_attendees returns the attendee count and names', async () => {
+  const events = [{ id: 'e1', title: 'Gig', status: 'greenlit', hostId: 'u1', statuses: [] }];
+  const attendees = [{ name: 'Alice', username: 'alice' }, { name: 'Bob', username: 'bob' }];
+  const ctx = { userId: 'u1', role: 'user', supabase: { rpc: async (name) => ({ data: name === 'get_event_attendees' ? attendees : events, error: null }) } };
+  const out = await EXECUTORS.get_event_attendees({ eventId: 'e1' }, ctx);
+  assert.equal(out.attendeeCount, 2);
+  assert.equal(out.attendees[0].name, 'Alice');
+});
+
 // ── Hype-pricing draft creation ──────────────────────────────────────────────
 test('propose_create_event supports hype pricing (base < max)', async () => {
   const args = { title: 'Rooftop Rave', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 10, maxPrice: 25 };
@@ -449,6 +524,22 @@ test('off-topic questions are refused by the guard before any branch runs', asyn
   const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'what is 2+2?' }], ctx: ctxWith([]) });
   assert.equal(out.reply, OFF_TOPIC_REPLY);
   assert.equal(branchCalled, false);
+});
+
+test('scope guard judges ONLY the latest user message (not prior on-topic turns)', async () => {
+  useModel(); useClassify('read_only'); useAgents(fakeAgent([say('ok')]));
+  let seen = null;
+  __setGuardForTests(async (text) => { seen = text; return true; });
+  await runGraph({
+    system: 's',
+    messages: [
+      { role: 'user', content: 'what are the cheapest events?' },
+      { role: 'assistant', content: 'Here are a few.' },
+      { role: 'user', content: 'what is 2+2?' },
+    ],
+    ctx: ctxWith([]),
+  });
+  assert.equal(seen, 'what is 2+2?');
 });
 
 test('on-topic questions pass the guard through to a branch', async () => {

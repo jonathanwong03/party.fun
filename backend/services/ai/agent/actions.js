@@ -7,7 +7,33 @@ import { cancelEventWithRefunds } from '../../eventCancellationService.js';
 // (user-scoped) Supabase client so RLS + the RPCs re-enforce ownership/validation;
 // we also re-check ownership here. Never trusts the proposal blindly.
 
-const ACTIONS = new Set(['update_event', 'create_event_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft', 'give_away']);
+const ACTIONS = new Set(['update_event', 'create_event_draft', 'edit_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft', 'give_away']);
+
+// Apply friendly field updates onto a stored draft payload (same field→shape mapping
+// create_event_draft uses), so an AI draft edit re-saves in the shape the form expects.
+function applyDraftUpdates(payload, u = {}) {
+  const p = { ...payload };
+  p.statuses = Array.isArray(payload.statuses)
+    ? payload.statuses.map((s) => ({ ...s }))
+    : [{ statusName: 'early_bird', price: 0, qty: 0 }, { statusName: 'greenlit', price: 0, qty: 0 }];
+  const eb = p.statuses.find((s) => s.statusName === 'early_bird') ?? p.statuses[0];
+  const gl = p.statuses.find((s) => s.statusName === 'greenlit') ?? p.statuses[1];
+  if (u.title !== undefined) p.title = u.title;
+  if (u.description !== undefined) p.description = u.description;
+  if (u.venue !== undefined) p.location = u.venue;
+  if (u.address !== undefined) p.address = u.address;
+  if (u.startDate !== undefined) p.startsAt = u.startDate;
+  if (u.endDate !== undefined) p.endsAt = u.endDate;
+  if (u.deadline !== undefined) p.deadlineAt = u.deadline;
+  if (u.capacity !== undefined) { p.maxCapacity = u.capacity; if (gl) gl.qty = u.capacity; }
+  if (u.hypeThreshold !== undefined) { p.hypeThreshold = u.hypeThreshold; if (eb) eb.qty = u.hypeThreshold; }
+  if (u.pricingModel !== undefined) p.hypeDrivenPricing = u.pricingModel === 'hype';
+  if (u.earlyPrice !== undefined && eb) eb.price = u.earlyPrice;
+  if (u.greenlitPrice !== undefined && gl) gl.price = u.greenlitPrice;
+  if (u.basePrice !== undefined) { p.basePrice = u.basePrice; if (p.hypeDrivenPricing && eb) eb.price = u.basePrice; }
+  if (u.maxPrice !== undefined) { p.maxPrice = u.maxPrice; if (p.hypeDrivenPricing && gl) gl.price = u.maxPrice; }
+  return p;
+}
 const NEEDS_EVENT = new Set(['update_event', 'invite_coorganiser', 'cancel_event']); // create_event_draft/topup/delete_draft have no event; pledge validates its own
 
 const ERROR_MESSAGES = {
@@ -97,6 +123,23 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
     return { status: 'ok', message: `Deleted the draft "${draft.title || '(untitled draft)'}".` };
   }
 
+  // ── Edit an unpublished draft (re-save the merged payload; RLS owner-only) ────
+  if (action === 'edit_draft') {
+    const draftId = String(payload?.draftId ?? '').trim();
+    if (!draftId) return { error: 'bad_request', message: 'Missing draft id.' };
+    let drafts;
+    try { drafts = await listDrafts(sb); } catch (e) { return { error: 'error', message: e?.message ?? 'Unable to load drafts.' }; }
+    const draft = drafts.find((d) => d.id === draftId);
+    if (!draft) return { error: 'not_found', message: 'Draft not found.' };
+    const merged = applyDraftUpdates(draft, payload?.updates ?? {});
+    try {
+      await saveDraft(sb, user.id, { ...merged, id: draftId });
+    } catch (e) {
+      return { error: 'error', message: e?.message ?? 'Unable to update the draft.' };
+    }
+    return { status: 'ok', message: `Updated the draft "${merged.title || '(untitled draft)'}".` };
+  }
+
   // ── Buy tickets with the wallet (a deduction; NOT the caller's own event) ─────
   if (action === 'pledge') {
     if (!eventId) return { error: 'bad_request', message: 'Missing event id.' };
@@ -153,7 +196,11 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
   if (error) return { error: 'error', message: error.message };
   const row = (rows ?? []).find((r) => r.id === eventId);
   if (!row) return { error: 'not_found', message: 'Event not found.' };
-  if (row.hostId !== user.id) return { error: 'not_owner', message: ERROR_MESSAGES.not_owner };
+  // Editing is allowed for owners AND accepted co-organisers (matches the update_event
+  // RPC's can_manage_event check); inviting and cancelling stay owner-only.
+  const ownerOnly = action === 'invite_coorganiser' || action === 'cancel_event';
+  const canManage = row.hostId === user.id || row.isCoOrganiser;
+  if (ownerOnly ? row.hostId !== user.id : !canManage) return { error: 'not_owner', message: ERROR_MESSAGES.not_owner };
   const item = mapEventRow(row, user.id);
   if (item.status === 'cancelled' || item.status === 'completed') {
     return { error: 'locked', message: 'This event can no longer be edited.' };

@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft, Brain } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft } from 'lucide-react';
 import {
   sendChat, resumeChat, fetchAiAvailability,
   fetchConversations, fetchConversation, deleteConversation,
-  fetchMemories, deleteMemory, clearMemories,
-  type ChatMessage, type AgentProposal, type AiConversation, type AiMemory,
+  type ChatMessage, type AgentProposal, type AiConversation,
 } from '../api';
 
 type Turn = ChatMessage & { proposals?: AgentProposal[]; threadId?: string };
@@ -14,6 +13,7 @@ type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: strin
 const ACTION_META: Record<string, { label: string; danger?: boolean }> = {
   update_event: { label: 'Edit event' },
   create_event_draft: { label: 'Create draft' },
+  edit_draft: { label: 'Edit draft' },
   invite_coorganiser: { label: 'Invite co-organiser' },
   topup: { label: 'Wallet top-up', danger: true },
   pledge: { label: 'Buy tickets (wallet)', danger: true },
@@ -44,11 +44,10 @@ function renderReply(content: string): string[] {
 export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
-  const [view, setView] = useState<'chat' | 'history' | 'memory'>('chat');
+  const [view, setView] = useState<'chat' | 'history'>('chat');
   const [messages, setMessages] = useState<Turn[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<AiConversation[]>([]);
-  const [memories, setMemories] = useState<AiMemory[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
   const [actions, setActions] = useState<Record<string, ActionState>>({});
@@ -124,19 +123,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
     try { await deleteConversation(id); } catch { /* ignore */ }
     setConversations((c) => c.filter((x) => x.id !== id));
     if (id === conversationId) newChat();
-  }
-
-  async function openMemory() {
-    setView('memory');
-    try { const r = await fetchMemories(); setMemories(r.memories ?? []); } catch { setMemories([]); }
-  }
-  async function forget(id: number) {
-    try { await deleteMemory(id); } catch { /* ignore */ }
-    setMemories((m) => m.filter((x) => x.id !== id));
-  }
-  async function forgetAll() {
-    try { await clearMemories(); } catch { /* ignore */ }
-    setMemories([]);
   }
 
   // Pending (un-acted) proposals from the most recent assistant message that has any,
@@ -236,18 +222,14 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
           ) : (
             <Sparkles size={16} style={{ color: '#ff4d2e' }} />
           )}
-          {view === 'history' ? 'Past conversations' : view === 'memory' ? 'What I remember' : 'party.fun assistant'}
+          {view === 'history' ? 'Past conversations' : 'party.fun assistant'}
         </span>
         <div className="flex items-center gap-1.5">
           {view === 'chat' && (
             <>
               <button onClick={newChat} title="New chat" className={iconBtn} style={muted}><Plus size={17} /></button>
               <button onClick={openHistory} title="Past conversations" className={iconBtn} style={muted}><History size={16} /></button>
-              <button onClick={openMemory} title="What I remember about you" className={iconBtn} style={muted}><Brain size={16} /></button>
             </>
-          )}
-          {view === 'memory' && memories.length > 0 && (
-            <button onClick={forgetAll} title="Forget everything" className="rounded-md px-2 py-1 text-xs transition hover:bg-white/5" style={muted}>Clear all</button>
           )}
           <button onClick={() => setOpen(false)} className={iconBtn} style={muted}><X size={18} /></button>
         </div>
@@ -264,22 +246,6 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
                 <span className="block text-[10px]" style={muted}>{new Date(c.updatedAt).toLocaleString()}</span>
               </button>
               <button onClick={() => removeConversation(c.id)} title="Delete" className={iconBtn} style={muted}><Trash2 size={14} /></button>
-            </div>
-          ))}
-        </div>
-      ) : view === 'memory' ? (
-        <div className="flex-1 overflow-y-auto px-3 py-3">
-          {memories.length === 0 ? (
-            <div className="grid h-full place-items-center px-4 text-center text-sm" style={muted}>
-              Nothing remembered yet. Tell me your interests, budget or preferences and I'll adapt over time.
-            </div>
-          ) : memories.map((m) => (
-            <div key={m.id} className="group flex items-start gap-2 rounded-lg px-2 py-2 transition hover:bg-white/5">
-              <span className="flex-1 text-sm" style={{ color: 'var(--foreground)' }}>
-                {m.content}
-                {m.category && <span className="ml-1 text-[10px] uppercase" style={muted}>· {m.category}</span>}
-              </span>
-              <button onClick={() => forget(m.id)} title="Forget this" className={iconBtn} style={muted}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>

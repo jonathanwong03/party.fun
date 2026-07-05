@@ -35,12 +35,18 @@ const CHECKPOINTER = new MemorySaver();
 const pickTools = (names) => names.map((n) => TOOLS_BY_NAME[n]).filter(Boolean);
 
 // Per-branch scoped toolsets (the only structural difference between branches).
+// Personal read tools about the CURRENT user's own data — available in EVERY branch
+// so an answer never depends on classify routing perfectly (otherwise a misrouted
+// "what have I hosted?" lands in a branch without the tool and the model guesses).
+const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date'];
+const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
+
 export const BRANCH_TOOLS = {
-  read_only: ['search_events', 'list_available_events', 'get_event_details', 'get_event_forecast', 'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts', 'get_current_date', 'get_weather', 'remember'],
-  discovery: ['search_events', 'list_available_events', 'get_event_details', 'get_current_date', 'research_event_ideas', 'remember'],
-  best_fit: ['list_available_events', 'search_events', 'get_my_joined_events', 'get_event_details', 'get_current_date', 'research_event_ideas', 'remember'],
-  event_mgmt: ['get_my_hosted_events', 'get_event_details', 'search_events', 'list_my_drafts', 'get_event_forecast', 'get_current_date', 'get_weather', 'research_event_ideas', 'propose_update_event', 'propose_create_event', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'],
-  transaction: ['get_wallet', 'list_available_events', 'get_my_hosted_events', 'get_my_joined_events', 'get_event_details', 'get_current_date', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'],
+  read_only: withPersonal('search_events', 'list_available_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
+  discovery: withPersonal('search_events', 'list_available_events', 'research_event_ideas', 'remember'),
+  best_fit: withPersonal('list_available_events', 'search_events', 'research_event_ideas', 'remember'),
+  event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
+  transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
 
 const DIRECTIVES = {
@@ -48,10 +54,11 @@ const DIRECTIVES = {
   discovery: 'INTENT: event discovery. Use list_available_events / search_events and present a short, scannable list with prices.',
   best_fit: 'INTENT: best-fit / cheapest. Use list_available_events, then rank candidates by price, match to the stated interests, hype/popularity and date; recommend the best few and say why.',
   event_mgmt: "INTENT: manage the user's own events. You CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
-    + "CREATE (research → draft): when helping create/name an event, FIRST ask the organiser for the THEME. If they give none or are unsure, call research_event_ideas to learn what students are into now and propose a baseline theme. Then use research_event_ideas for a NAME, DESCRIPTION and a LOCATION near their university. Then RECOMMEND a pricing model — tiered (fixed early-bird then greenlit price; predictable, simplest) vs hype (price rises from base to max as tickets sell; rewards early buyers, can earn more when demand is high) — briefly weighing pros/cons for THIS event, and pick one. You need a title + start/end/deadline (get_current_date to reason about dates). Only once the details are settled AND the organiser confirms, call propose_create_event (pass pricingModel + the matching prices). It saves to their DRAFTS — say so.\n"
-    + "EDIT (in place): to change fields of an EXISTING event (e.g. 'set Event A early-bird to $8'), first FIND that event with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. NEVER create a new event to make an edit. If the event name is ambiguous, ask which one.\n"
-    + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — a REASON is required, so ask the organiser why first; it refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).",
-  transaction: "INTENT: wallet/ticket action. Use propose_topup (add wallet money), propose_pledge (buy tickets with wallet balance — check get_wallet first), propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; it is final and releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+    + "CREATE (autonomous research → full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
+    + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
+    + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — a REASON is required, so ask the organiser why first; it refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
+    + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
+  transaction: "INTENT: wallet/ticket action. For BUYING tickets: ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -96,13 +103,15 @@ async function defaultClassify(text) {
 // and refuses anything unrelated (math, trivia, coding, general advice) up front.
 export const OFF_TOPIC_REPLY = "I'm the party.fun events assistant, so I can only help with things on party.fun — finding and buying event tickets, your wallet, and hosting or managing your own events. I can't help with that one, but I'd be glad to help you discover an event or plan one.";
 
-const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|capacity|venue)\b/i;
-const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|ok|okay|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
+const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel)\b/i;
+const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
+// Short mid-flow continuations / confirmations — always on-topic (never block these).
+const AFFIRMATION_RX = /^(yes|yeah|yep|yup|sure|ok|okay|k|go\sahead|do\sit|sounds?\sgood|please|confirm|proceed|that\sone|the\s(first|second|third|last)\sone|first|second|third|either|both|whatever\syou\sthink|you\sdecide|any|no|nope|not\sreally)\b/i;
 
 async function defaultGuard(text) {
   const t = String(text || '').trim();
   if (!t) return true; // empty → let classify handle it
-  if (ON_TOPIC_RX.test(t) || GREETING_RX.test(t)) return true; // obvious in-scope fast-path
+  if (ON_TOPIC_RX.test(t) || GREETING_RX.test(t) || AFFIRMATION_RX.test(t)) return true; // obvious in-scope fast-path
   try {
     const res = await runTier('cheap', {
       system: 'You gate an events-app assistant (party.fun). Decide if the user\'s latest message is IN SCOPE. In scope = anything about events, tickets, pledging, the wallet, hosting/organising events, event weather or dates, OR a greeting/thanks/pleasantry, OR asking what the assistant can do. Out of scope = general knowledge, math, coding, trivia, personal or unrelated topics. Reply with ONLY one word: on_topic or off_topic.',
@@ -193,6 +202,16 @@ function recentContext(state) {
   return parts.join('\n');
 }
 
+// The latest user message text only — used by the scope guard so prior on-topic
+// turns don't leak in and cause an off-topic question to slip through.
+function latestUserText(state) {
+  const msgs = state?.messages ?? [];
+  for (let i = msgs.length - 1; i >= 0; i -= 1) {
+    if (msgs[i]?._getType?.() === 'human') return textOf(msgs[i].content).trim();
+  }
+  return '';
+}
+
 function lastAiText(messages) {
   for (let i = (messages?.length ?? 0) - 1; i >= 0; i -= 1) {
     const m = messages[i];
@@ -239,7 +258,9 @@ function buildApp(model, system) {
 
   // Strict scope gate: runs first. Off-topic → a canned refusal and END (no branch/tools).
   const scope = async (state, config) => {
-    const onTopic = await dependencies.guard(recentContext(state), config?.configurable?.ctx);
+    // Judge ONLY the latest user message (not the rolling context) so earlier
+    // on-topic turns can't let an off-topic question through.
+    const onTopic = await dependencies.guard(latestUserText(state), config?.configurable?.ctx);
     return { offtopic: !onTopic };
   };
   const refuse = () => ({ messages: [new AIMessage(OFF_TOPIC_REPLY)] });

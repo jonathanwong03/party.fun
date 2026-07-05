@@ -268,42 +268,45 @@ function RevenueForecast({ events }: { events: EventItem[] }) {
   );
 }
 
-// AI revenue-boost tips for the selected event (on-demand; degrades silently).
+// AI revenue-boost tips for the selected event (on-demand).
 function RevenueTipsPanel({ eventId }: { eventId: string }) {
   const [tips, setTips] = useState<RevenueTip[] | null>(null);
   const [loading, setLoading] = useState(false);
-  const [unavailable, setUnavailable] = useState(false);
+  const [error, setError] = useState(false);
 
-  useEffect(() => { setTips(null); setUnavailable(false); }, [eventId]);
+  useEffect(() => { setTips(null); setError(false); }, [eventId]);
 
   async function load() {
     if (!eventId || loading) return;
     setLoading(true);
+    setError(false);
     try {
       const res = await fetchRevenueTips(eventId);
-      if (!res.available) setUnavailable(true);
+      if (!res.available) setError(true);
       else setTips(res.tips ?? []);
     } catch {
-      setUnavailable(true);
+      setError(true);
     } finally {
       setLoading(false);
     }
   }
 
-  if (unavailable) return null;
   const impactColor = (i: RevenueTip['impact']) => (i === 'high' ? '#29e07a' : i === 'medium' ? '#ffcb3c' : '#8a8a99');
 
   return (
     <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border)' }}>
       {tips === null ? (
-        <button
-          onClick={load}
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
-          style={{ background: '#ff4d2e' }}
-        >
-          <Sparkles size={14} /> {loading ? 'Thinking…' : 'Get AI revenue tips'}
-        </button>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={load}
+            disabled={loading}
+            className="inline-flex w-fit items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+            style={{ background: '#ff4d2e' }}
+          >
+            <Sparkles size={14} /> {loading ? 'Thinking…' : error ? 'Try again' : 'Get AI tips'}
+          </button>
+          {error && <span className="text-xs" style={{ color: '#ff4d2e' }}>Couldn't generate tips right now — please try again.</span>}
+        </div>
       ) : tips.length === 0 ? (
         <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>No tips available right now.</div>
       ) : (

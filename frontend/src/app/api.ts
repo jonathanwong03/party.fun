@@ -149,6 +149,8 @@ export type WeatherAssessment = {
   precipitationProbability: number | null;
   willRain: boolean;
   summary: string;
+  days?: { date: string; probability: number | null; willRain: boolean }[]; // per-day breakdown across the event
+  rainyDays?: string[]; // the days (YYYY-MM-DD) with > 70% rain probability
 };
 
 // Rain assessment for an event window. Pass an eventId (uses the event's stored

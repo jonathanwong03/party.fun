@@ -1,7 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { forecastForEvent } from '../../forecastService.js';
-import { listDrafts, mapEventRow, getProfile, giveAwayTickets } from '../../eventService.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees } from '../../eventService.js';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
@@ -47,6 +47,39 @@ function isPastEvent(ev, now = Date.now()) {
   return Number.isFinite(t) && t < now;
 }
 
+// True only while an event's START is strictly in the future — once it starts (or is
+// ongoing/past) you can no longer attend it.
+function isFutureStart(ev, now = Date.now()) {
+  if (!ev.startDate) return false;
+  const t = new Date(ev.startDate).getTime();
+  return Number.isFinite(t) && t > now;
+}
+
+// Event ids the caller currently holds ACTIVE tickets for — mirrors the UI's
+// "Tickets already purchased" (get_profile.myEventIds). Used to exclude from buyable.
+async function purchasedEventIds(ctx) {
+  try {
+    const profile = await getProfile(ctx.supabase);
+    return new Set((profile?.myEventIds ?? []).map(String));
+  } catch {
+    return new Set();
+  }
+}
+
+// The canonical set of events the caller can ATTEND / BUY right now (shared by
+// list_available_events and propose_pledge). Hosted by someone else, still open
+// (early_bird/greenlit), starting strictly in the FUTURE (not started/ongoing/past),
+// and NOT already purchased. Mirrors the frontend All Events buyable set.
+async function attendableEvents(ctx) {
+  const now = Date.now();
+  const purchased = await purchasedEventIds(ctx);
+  return (await visibleEvents(ctx)).filter((e) =>
+    e.hostId !== ctx.userId
+    && (e.status === 'early_bird' || e.status === 'greenlit')
+    && !purchased.has(String(e.id))
+    && isFutureStart(e, now));
+}
+
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
 // date/time, venue, deadline and description without extra tool calls.
 function richRow(ev, ctx) {
@@ -69,15 +102,9 @@ function richRow(ev, ctx) {
 async function visibleEvents(ctx) {
   const { data, error } = await ctx.supabase.rpc('get_events');
   if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-// Event ids the caller has already pledged for (a live booking), so "tickets I can
-// buy" can exclude them. Filtered by userId so it's correct even under a service client.
-async function bookedEventIds(ctx) {
-  const { data, error } = await ctx.supabase.from('BOOKINGS').select('eventId').eq('userId', ctx.userId).is('deletedAt', null);
-  if (error) return new Set();
-  return new Set((data ?? []).map((b) => b.eventId));
+  // get_events exposes the live status as `derived_status`; surface it as `status`
+  // so every executor's `.status` read (filters, details, proposals) works.
+  return (data ?? []).map((e) => ({ ...e, status: e.derived_status ?? e.status ?? 'early_bird' }));
 }
 
 // Net revenue-so-far per event the caller HOSTS, keyed by eventId (host-only RPC).
@@ -133,8 +160,14 @@ export const getEventDetailsTool = makeTool(
 
 export const getEventForecastTool = makeTool(
   'get_event_forecast',
-  "Get the projected ticket sales, revenue and estimated costs for one of the ORGANISER'S OWN events (host only). Use this to give revenue advice.",
+  "Get the projected ticket sales, revenue, estimated operational costs and projected PROFIT for one of the ORGANISER'S OWN events (host only). Use this to give revenue/profit advice. Forecasts are estimates, and operational costs are NOT charged through party.fun.",
   z.object({ eventId: z.string().describe('The event id (must be hosted by the caller).') }),
+);
+
+export const getEventAttendeesTool = makeTool(
+  'get_event_attendees',
+  "List who is attending an event — the distinct people holding active tickets (their name/username) and the count. Use for questions like 'who is coming to my event?' or 'how many backers does X have?'.",
+  z.object({ eventId: z.string().describe('The event id.') }),
 );
 
 export const listAvailableEventsTool = makeTool(
@@ -230,7 +263,7 @@ export const proposeUpdateEventTool = makeTool(
 
 export const proposeCreateEventTool = makeTool(
   'propose_create_event',
-  "PROPOSE creating a NEW event for the organiser as a DRAFT (it is NOT published — the user reviews and publishes it from Drafts). First ASK the user for the details and recommend a pricing model. REQUIRED: title, plus startDate, endDate and deadline as ISO 8601 datetimes (e.g. 2026-08-15T19:00:00+08:00) — do not call this until you have the event's date, start & end time, and the pledging deadline. Choose pricingModel: 'tiered' (set earlyPrice + greenlitPrice) or 'hype' (set basePrice + maxPrice, price rises as tickets sell). venue/capacity/hypeThreshold are optional but recommended.",
+  "PROPOSE creating a NEW event for the organiser as a DRAFT (it is NOT published — the user reviews and publishes it from Drafts). Do NOT interrogate the organiser for the details: research current student interests (research_event_ideas) and INVENT sensible, COMPLETE values yourself, then propose immediately; offer alternatives only if they dislike it. Fill every field — title, description, venue, pricingModel + all prices/quantities. REQUIRED: title, plus startDate, endDate and deadline as ISO 8601 datetimes STRICTLY after today (get_current_date), e.g. 2026-08-15T19:00:00+08:00. Choose pricingModel: 'tiered' (set earlyPrice + greenlitPrice) or 'hype' (set basePrice + maxPrice, price rises as tickets sell).",
   z.object({
     title: z.string(),
     description: z.string().optional(),
@@ -289,6 +322,28 @@ export const proposeDeleteDraftTool = makeTool(
   z.object({ draftId: z.string().describe('The draft id (from list_my_drafts).') }),
 );
 
+export const proposeEditDraftTool = makeTool(
+  'propose_edit_draft',
+  "PROPOSE editing an unpublished DRAFT (an event the organiser created via the agent but has NOT published yet — find it with list_my_drafts). This is for DRAFTS only; for a PUBLISHED event use propose_update_event. Pass the draftId and ONLY the fields to change. Does NOT apply — returns a proposal the user must confirm.",
+  z.object({
+    draftId: z.string().describe('The draft id (from list_my_drafts).'),
+    title: z.string().optional(),
+    description: z.string().optional(),
+    venue: z.string().optional(),
+    address: z.string().optional(),
+    startDate: z.string().optional().describe('ISO 8601 datetime.'),
+    endDate: z.string().optional().describe('ISO 8601 datetime.'),
+    deadline: z.string().optional().describe('ISO 8601 datetime.'),
+    pricingModel: z.enum(['tiered', 'hype']).optional(),
+    earlyPrice: z.number().optional().describe('Tiered: early-bird price.'),
+    greenlitPrice: z.number().optional().describe('Tiered: greenlit price.'),
+    basePrice: z.number().optional().describe('Hype: starting price.'),
+    maxPrice: z.number().optional().describe('Hype: maximum price.'),
+    capacity: z.number().optional(),
+    hypeThreshold: z.number().optional(),
+  }),
+);
+
 export const proposeGiveAwayTicketsTool = makeTool(
   'propose_give_away_tickets',
   "PROPOSE giving away some of the user's OWN tickets for an event they've joined. Give-aways are FINAL and non-refundable — the released spots return to the public pool. The user MUST specify how many (qty must be greater than 0 and at most the number they currently hold). Identify the event by its id (use get_my_joined_events / search_events to find it). Does NOT give away — returns a proposal the user must confirm.",
@@ -300,12 +355,12 @@ export const proposeGiveAwayTicketsTool = makeTool(
 
 // All tools + a by-name index for the graph to bind per-branch subsets.
 export const AGENT_TOOLS = [
-  searchEventsTool, getEventDetailsTool, getEventForecastTool, listAvailableEventsTool,
+  searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
   getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
   getCurrentDateTool, getWeatherTool, researchEventIdeasTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
   proposeTopupTool, proposePledgeTool, proposeCancelEventTool, proposeDeleteDraftTool,
-  proposeGiveAwayTicketsTool,
+  proposeEditDraftTool, proposeGiveAwayTicketsTool,
 ];
 export const TOOLS_BY_NAME = Object.fromEntries(AGENT_TOOLS.map((t) => [t.name, t]));
 
@@ -374,7 +429,25 @@ export const EXECUTORS = {
       avgTicketPrice: f.avgTicketPrice,
       totalOperationalCost: f.totalOperationalCost,
       estimatedNet: f.estimatedNet,
+      projectedProfit: f.estimatedNet, // profit = revenue − operational costs (an estimate; costs are NOT charged by the app)
       operationalCosts: f.operationalCosts,
+    };
+  },
+
+  async get_event_attendees(args, ctx) {
+    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+    if (!ev) return { error: 'Event not found or not visible to you.' };
+    let attendees;
+    try {
+      attendees = await getEventAttendees(ctx.supabase, args.eventId);
+    } catch (e) {
+      return { error: e?.message ?? 'Unable to load attendees.' };
+    }
+    return {
+      eventId: args.eventId,
+      title: ev.title,
+      attendeeCount: attendees.length, // distinct people holding active tickets (one buyer of many tickets = one attendee)
+      attendees: attendees.map((a) => ({ name: a.name ?? a.username ?? null, username: a.username ?? null })),
     };
   },
 
@@ -382,12 +455,7 @@ export const EXECUTORS = {
   async list_available_events(args, ctx) {
     const q = String(args.query ?? '').toLowerCase().trim();
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
-    const booked = await bookedEventIds(ctx);
-    const now = Date.now();
-    const rows = (await visibleEvents(ctx))
-      .filter((e) => e.hostId !== ctx.userId && e.status !== 'cancelled' && e.status !== 'completed')
-      .filter((e) => !isPastEvent(e, now))
-      .filter((e) => !booked.has(e.id))
+    const rows = (await attendableEvents(ctx))
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .map((e) => richRow(e, ctx));
@@ -418,13 +486,32 @@ export const EXECUTORS = {
   },
 
   async get_my_joined_events(_args, ctx) {
-    const booked = await bookedEventIds(ctx);
-    if (booked.size === 0) return { count: 0, events: [] };
-    const rows = (await visibleEvents(ctx)).filter((e) => booked.has(e.id));
-    return {
-      count: rows.length,
-      events: rows.map((e) => ({ id: e.id, title: e.title, status: e.status, currentPrice: currentPrice(e), mine: e.hostId === ctx.userId })),
+    let profile;
+    try {
+      profile = await getProfile(ctx.supabase);
+    } catch (e) {
+      return { error: e?.message ?? 'Unable to load your joined events.' };
+    }
+    const tickets = profile?.tickets ?? [];
+    const eventsById = new Map((await visibleEvents(ctx)).map((e) => [e.id, e]));
+    const toRow = (t) => {
+      const e = eventsById.get(t.eventId);
+      return {
+        eventId: t.eventId,
+        title: e?.title ?? '(event)',
+        status: e?.status ?? null,
+        startDate: e?.startDate ?? null,
+        venue: e?.location ?? null,
+        currentPrice: e ? currentPrice(e) : null,
+        ticketsHeld: Number(t.activeTicketCount ?? 0), // how many tickets the user still holds
+      };
     };
+    // tab: 'upcoming' = currently joined, 'past' = attended, 'cancelled' = gave away all / event cancelled.
+    const byTab = (tab) => tickets.filter((t) => t.tab === tab).map(toRow);
+    const upcoming = byTab('upcoming');
+    const past = byTab('past');
+    const cancelled = byTab('cancelled');
+    return { counts: { upcoming: upcoming.length, past: past.length, cancelled: cancelled.length }, upcoming, past, cancelled };
   },
 
   // ── Date ─────────────────────────────────────────────────────────────────────
@@ -478,7 +565,8 @@ export const EXECUTORS = {
   async propose_update_event(args, ctx) {
     const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
     if (!ev) return { error: 'Event not found or not visible to you.' };
-    if (ev.hostId !== ctx.userId) return { error: 'You can only edit events you host.' };
+    // Owners AND accepted co-organisers can edit (mirrors the update_event RPC's can_manage_event check).
+    if (ev.hostId !== ctx.userId && !ev.isCoOrganiser) return { error: 'You can only edit events you host or co-organise.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be edited.' };
 
     const FIELDS = ['title', 'description', 'venue', 'address', 'startDate', 'endDate', 'deadline', 'maxCapacity', 'hypeThreshold', 'earlyPrice', 'greenlitPrice'];
@@ -518,6 +606,14 @@ export const EXECUTORS = {
     if (!isValidDate(args.startDate) || !isValidDate(args.endDate) || !isValidDate(args.deadline)) {
       return { error: 'Ask the user for the event date, start & end time, and the pledging deadline, then pass them as ISO 8601 (e.g. 2026-08-15T19:00:00+08:00) — startDate, endDate and deadline are all required to draft the event.' };
     }
+    // Dates must be sensible and in the FUTURE (use get_current_date to reason about "today").
+    const now = Date.now();
+    const startMs = new Date(args.startDate).getTime();
+    const endMs = new Date(args.endDate).getTime();
+    const deadlineMs = new Date(args.deadline).getTime();
+    if (startMs <= now) return { error: 'The event start must be in the future — check get_current_date and pick a date and time strictly after today.' };
+    if (endMs <= startMs) return { error: 'The event end must be after its start.' };
+    if (deadlineMs >= startMs) return { error: 'The pledging deadline must be before the event start.' };
     const pricingModel = args.pricingModel === 'hype' ? 'hype' : 'tiered';
     if (pricingModel === 'hype') {
       const base = Number(args.basePrice);
@@ -626,20 +722,36 @@ export const EXECUTORS = {
   },
 
   async propose_pledge(args, ctx) {
-    const ev = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
-    if (!ev) return { error: 'Event not found or not visible to you.' };
-    if (ev.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
-    if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event is no longer open for tickets.' };
+    // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
+    const ev = (await attendableEvents(ctx)).find((e) => e.id === args.eventId);
+    if (!ev) {
+      const seen = (await visibleEvents(ctx)).find((e) => e.id === args.eventId);
+      if (!seen) return { error: 'Event not found or not visible to you.' };
+      if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
+      if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
+      if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
+      return { error: 'You already hold tickets for this event — give them away before buying again.' };
+    }
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
     const price = currentPrice(ev);
     const total = price * qty;
+    // Wallet pre-check: the agent pays from the wallet; if short, guide a card top-up first.
+    const { data: me } = await ctx.supabase.from('USER').select('walletBalance, cardLast4').eq('id', ctx.userId).single();
+    const balance = Number(me?.walletBalance ?? 0);
+    if (total > balance) {
+      const shortfall = (total - balance).toFixed(2);
+      const cardNote = me?.cardLast4
+        ? `Offer to top up $${shortfall} (or more) into the wallet by charging their card ending ${me.cardLast4} (propose_topup), then pledge.`
+        : `No card is linked — ask them to link a card in Wallet before buying.`;
+      return { error: `Wallet balance is $${balance.toFixed(2)}, which is $${shortfall} short of the $${total.toFixed(2)} for ${qty} ticket${qty > 1 ? 's' : ''}. ${cardNote}` };
+    }
     return {
       proposal: {
         id: `pledge:${ev.id}:${Date.now()}`,
         action: 'pledge',
         eventId: ev.id,
         title: ev.title,
-        summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your wallet — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}) deducted from your balance.`,
+        summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your wallet — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}). Wallet $${balance.toFixed(2)} → $${(balance - total).toFixed(2)} after.`,
         payload: { qty },
       },
     };
@@ -713,6 +825,38 @@ export const EXECUTORS = {
         title: draft.title || '(untitled draft)',
         summary: `Delete the draft "${draft.title || '(untitled draft)'}". This cannot be undone.`,
         payload: { draftId },
+      },
+    };
+  },
+
+  async propose_edit_draft(args, ctx) {
+    const draftId = String(args.draftId ?? '').trim();
+    if (!draftId) return { error: 'Provide the draftId (use list_my_drafts to find it).' };
+    let drafts;
+    try {
+      drafts = await listDrafts(ctx.supabase);
+    } catch (e) {
+      return { error: e?.message ?? 'Unable to load drafts.' };
+    }
+    const draft = drafts.find((d) => d.id === draftId);
+    if (!draft) return { error: 'Draft not found (use list_my_drafts to find the right draftId).' };
+
+    // Collect only the fields the organiser wants to change.
+    const FIELDS = ['title', 'description', 'venue', 'address', 'startDate', 'endDate', 'deadline', 'pricingModel', 'earlyPrice', 'greenlitPrice', 'basePrice', 'maxPrice', 'capacity', 'hypeThreshold'];
+    const updates = {};
+    for (const f of FIELDS) if (args[f] !== undefined && args[f] !== null && args[f] !== '') updates[f] = args[f];
+    if (Object.keys(updates).length === 0) return { error: 'Specify at least one field to change on the draft.' };
+
+    const label = { title: 'Title', description: 'Description', venue: 'Venue', address: 'Address', startDate: 'Start', endDate: 'End', deadline: 'Deadline', pricingModel: 'Pricing model', earlyPrice: 'Early-bird price', greenlitPrice: 'Greenlit price', basePrice: 'Base price', maxPrice: 'Max price', capacity: 'Capacity', hypeThreshold: 'Hype threshold' };
+    const parts = Object.keys(updates).map((f) => (f === 'description' ? 'Description (updated)' : `${label[f]} → ${updates[f]}`));
+    return {
+      proposal: {
+        id: `edit_draft:${draftId}:${Date.now()}`,
+        action: 'edit_draft',
+        eventId: null,
+        title: draft.title || '(untitled draft)',
+        summary: `Edit the draft "${draft.title || '(untitled draft)'}": ${parts.join(', ')}.`,
+        payload: { draftId, updates },
       },
     };
   },
