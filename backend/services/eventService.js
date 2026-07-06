@@ -7,6 +7,13 @@ import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pri
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
 
+export const dependencies = {
+  syncEventEmbedding,
+  syncDraftEmbedding,
+  deleteDraftEmbedding,
+};
+
+
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
 function sgDate(iso, opts) {
@@ -355,7 +362,7 @@ export async function saveDraft(sb, userId, draft) {
       .single();
     if (error) throw new Error(error.message);
     const saved = asDraft(data);
-    syncDraftEmbedding(sb, saved.id, userId, saved);
+    dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
     return saved;
   }
   const { data, error } = await sb
@@ -365,14 +372,14 @@ export async function saveDraft(sb, userId, draft) {
     .single();
   if (error) throw new Error(error.message);
   const saved = asDraft(data);
-  syncDraftEmbedding(sb, saved.id, userId, saved);
+  dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
   return saved;
 }
 
 export async function deleteDraft(sb, id) {
   const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
   if (error) throw new Error(error.message);
-  deleteDraftEmbedding(sb, id);
+  dependencies.deleteDraftEmbedding(sb, id);
 }
 
 // ── Organiser writes ───────────────────────────────────────────────────────
@@ -381,7 +388,7 @@ export async function createEvent(sb, e) {
   const { data, error } = await sb.rpc('create_event', eventRpcArgs(e));
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
-  syncEventEmbedding(sb, data.eventId, e); // fire-and-forget (semantic search/recommendation)
+  dependencies.syncEventEmbedding(sb, data.eventId, e); // fire-and-forget (semantic search/recommendation)
   return { eventId: data.eventId };
 }
 
@@ -389,9 +396,10 @@ export async function updateEvent(sb, e) {
   const { data, error } = await sb.rpc('update_event', { p_event_id: e.id, ...eventRpcArgs(e) });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
-  syncEventEmbedding(sb, e.id, e); // re-embed on edit
+  dependencies.syncEventEmbedding(sb, e.id, e); // re-embed on edit
   return { status: 'ok' };
 }
+
 
 export async function deleteEvent(sb, eventId) {
   const { data, error } = await sb.rpc('delete_event', { p_event_id: eventId });
