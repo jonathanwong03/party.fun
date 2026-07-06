@@ -110,8 +110,8 @@ export function accountCreatedTemplate({ userName, role }) {
   return emailShell(`
     ${h1('Welcome to party.fun!')}
     ${greet(userName, role)}
-    ${p(`Your <strong>${accountType}</strong> account has been created successfully. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
-    ${detailsBox('Account Details', row('Username', userName) + row('Account type', accountType))}
+    ${p(`Your <strong>${accountType}</strong> account has been created successfully, and <strong>$20 has been added to your in-app wallet balance</strong>. You're all set to ${role === 'organiser' ? 'spin up events, set hype thresholds and rally your crowd' : 'pledge for events and lock in your spot before they greenlight'}.`)}
+    ${detailsBox('Account Details', row('Username', userName) + row('Account type', accountType) + row('Wallet balance added', '$20.00', '#29e07a'))}
     ${button('Open party.fun', `${APP_URL}/login`)}
   `);
 }
@@ -271,27 +271,6 @@ export function eventCompletedTemplate({ organiserName, eventTitle, revenue }) {
       row('Revenue from ticket sales', `$${formattedRevenue}`, '#29e07a'),
     )}
     ${p('Operational costs are handled outside party.fun and are not deducted here.')}
-    ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
-  `);
-}
-
-export function agentAdviceTemplate({ organiserName, eventTitle, advice = '', proposals = [] }) {
-  const body = escapeHtml(String(advice).trim()).replace(/\n{2,}/g, '</p><p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#e5e7eb;">').replace(/\n/g, '<br>');
-  const suggestions = (proposals ?? []).length
-    ? `<div style="background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:16px 20px;margin-bottom:30px;">
-        <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.5px;color:#ff4d2e;font-weight:700;margin-bottom:10px;font-family:${FONT};">Suggested actions (open the app to apply)</div>
-        <ul style="margin:0;padding-left:18px;">${proposals.map((pr) => `<li style="margin:0 0 8px;font-size:14px;line-height:1.5;color:#e5e7eb;">${escapeHtml(pr.summary ?? '')}</li>`).join('')}</ul>
-      </div>`
-    : '';
-  return emailShell(`
-    ${h1('A few ways to boost your event 🚀')}
-    ${greet(organiserName, 'organiser')}
-    ${p(`Your event <strong>${eventTitle}</strong> is approaching its deadline and hasn't reached its hype threshold yet. Here's what the party.fun assistant suggests:`)}
-    <div style="background-color:#171725;border:1px solid #1f1f2e;border-radius:12px;padding:20px 24px;margin-bottom:30px;">
-      <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#e5e7eb;">${body}</p>
-    </div>
-    ${suggestions}
-    ${p('Open your dashboard to make changes — or ask the in-app assistant and it can apply them for you (with your confirmation).')}
     ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
   `);
 }

@@ -444,9 +444,10 @@ function AppShell() {
 
   const go = (nextRoute: Route) => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
-    const target = pathForRoute(nextRoute);
+    const targetRoute = role === 'admin' && nextRoute.name === 'landing' ? { name: 'manage-events' } as Route : nextRoute;
+    const target = pathForRoute(targetRoute);
     navigate(role || isAuthPath(target) || isPublicPath(target) ? target : '/login', {
-      state: stateForRoute(nextRoute),
+      state: stateForRoute(targetRoute),
     });
   };
 
@@ -455,7 +456,7 @@ function AppShell() {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
-    navigate('/events', { replace: true });
+    navigate(account.role === 'admin' ? '/manage-events' : '/events', { replace: true });
   };
 
   const handleLogout = async () => {
@@ -517,32 +518,32 @@ function AppShell() {
         <BrowserRoute path="/signup/finish" element={<FinishSignup go={go} onLogin={handleLogin} />} />
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
-        <BrowserRoute path="/events" element={<Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />
+        <BrowserRoute path="/events" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/faq" element={<FAQ go={go} />} />
-        <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} purchasedEventIds={purchasedEventIds} onGiveAway={giveAway} />} />
+        <BrowserRoute path="/events/:eventId" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <EventDetailRoute role={role} go={go} events={events} purchasedEventIds={purchasedEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/events/:eventId/attendees" element={<AttendeesRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />
-        <BrowserRoute path="/confirmation/:eventId" element={<ConfirmationRoute role={role} go={go} events={events} />} />
+        <BrowserRoute path="/confirmation/:eventId" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <ConfirmationRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/profile" element={<Profile go={go} user={user} onLogout={handleLogout} />} />
-        <BrowserRoute path="/joined-events" element={role === 'admin' ? <Navigate to="/events" replace /> : <JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
-        <BrowserRoute path="/analytics" element={role ? <Analytics role={role} go={go} events={events} /> : <Navigate to="/login" replace />} />
-        <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/tickets" element={role === 'organiser' || role === 'admin' ? <CheckIn role={role} events={events} /> : <Navigate to="/events" replace />} />
+        <BrowserRoute path="/joined-events" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <JoinedEvents go={go} events={events} tickets={profileTickets} counts={profileCounts} onDelete={removeBooking} />} />
+        <BrowserRoute path="/analytics" element={role && role !== 'admin' ? <Analytics role={role} go={go} events={events} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/login'} replace />} />
+        <BrowserRoute path="/attendees" element={role === 'organiser' ? <AllAttendees /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
+        <BrowserRoute path="/tickets" element={role === 'organiser' ? <CheckIn role={role} events={events} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
         <BrowserRoute path="/pending-invites" element={role === 'organiser' ? <PendingInvites go={go} onChanged={refreshEvents} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/manage-events" element={role === 'admin' ? <AdminManageEvents go={go} events={events} onCancel={adminCancel} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="/settings" element={<Settings user={user} go={go} onChangeUsername={updateUsername} onChangeAvatar={updateAvatar} onChangeContact={updateContact} onChangeUniversity={updateUniversity} onDeleteAccount={handleDeleteAccount} theme={theme} onToggleTheme={toggleTheme} />} />
-        <BrowserRoute path="/wallet" element={role && role !== 'admin' ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/hosted-events" element={role === 'organiser' ? <OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} /> : <Navigate to="/events" replace />} />
-        <BrowserRoute path="/hosted-events/events/new" element={<CreateEvent route={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onPublish={addEvent} onSaveDraft={addDraft} />} />
-        <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={<ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} />} />
-        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={<EditEventRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} />} />
+        <BrowserRoute path="/wallet" element={role && role !== 'admin' ? <WalletPage go={go} onBalance={setWalletBalance} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
+        <BrowserRoute path="/hosted-events" element={role === 'organiser' ? <OrganiserHostedEvents route={activeRoute} go={go} events={events} onCancel={cancelEvent} onHide={hideEvent} drafts={drafts} onDeleteDraft={deleteDraft} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
+        <BrowserRoute path="/hosted-events/events/new" element={role === 'organiser' ? <CreateEvent route={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onPublish={addEvent} onSaveDraft={addDraft} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
+        <BrowserRoute path="/hosted-events/drafts/:draftId/edit" element={role === 'organiser' ? <ResumeDraftRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} drafts={drafts} onPublish={addEvent} onSaveDraft={addDraft} onDeleteDraft={deleteDraft} /> : <Navigate to={role === 'admin' ? '/manage-events' : '/events'} replace />} />
+        <BrowserRoute path="/hosted-events/events/:eventId/edit" element={(role === 'organiser' || role === 'admin') ? <EditEventRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
 
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
-      {!isAuthPage && role && <AiAssistant onDataChanged={onAiDataChanged} />}
+      {!isAuthPage && role && <AiAssistant role={role} onDataChanged={onAiDataChanged} />}
     </div>
   );
 }
@@ -597,7 +598,7 @@ function CheckoutRoute({
   const state = (location.state ?? {}) as RouteState;
 
   if (!role) return <Navigate to="/login" replace />;
-  if (role === 'admin') return <Navigate to="/events" replace />;
+  if (role === 'admin') return <Navigate to="/manage-events" replace />;
 
   return <Checkout id={eventId} role={role} go={go} events={events} qty={state.qty} onPledge={onPledge} />;
 }
@@ -654,6 +655,7 @@ function AttendeesRoute({
 }) {
   const { eventId = '' } = useParams();
   if (!role) return <Navigate to="/login" replace />;
+  if (role === 'admin') return <Navigate to="/manage-events" replace />;
   return <Attendees id={eventId} go={go} events={events} />;
 }
 

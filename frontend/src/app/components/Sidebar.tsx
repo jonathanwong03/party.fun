@@ -19,9 +19,9 @@ export function Sidebar({
   const isOrganiser = role === 'organiser';
   const isAdmin = role === 'admin';
 
-  const baseItems: Item[] = [
+  const baseItems: Item[] = isAdmin ? [] : [
     { label: 'All Events', icon: CalendarRange, target: { name: 'landing' }, active: route.name === 'landing' },
-    ...(isAdmin ? [] : [{ label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' } as Item]),
+    { label: 'Joined Events', icon: Bookmark, target: { name: 'joined-events' }, active: route.name === 'joined-events' },
     { label: 'Analytics', icon: BarChart3, target: { name: 'analytics' }, active: route.name === 'analytics' },
   ];
 
@@ -35,7 +35,6 @@ export function Sidebar({
 
   const adminOnly: Item[] = [
     { label: 'Manage Events', icon: LayoutDashboard, target: { name: 'manage-events' }, active: route.name === 'manage-events' },
-    { label: 'Tickets', icon: Ticket, target: { name: 'tickets' }, active: route.name === 'tickets' },
   ];
 
   const tail: Item[] = [

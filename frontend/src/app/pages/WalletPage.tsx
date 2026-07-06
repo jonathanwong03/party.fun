@@ -57,11 +57,12 @@ export function WalletPage({ go, onBalance }: { go: (r: Route) => void; onBalanc
         ) : (
           <div>
             {wallet!.transactions.map((t) => {
-              const credit = t.type === 'topup' || t.type === 'refund';
+              const credit = t.type === 'topup' || t.type === 'refund' || t.type === 'signup_bonus';
+              const label = t.type === 'signup_bonus' ? 'Signup bonus' : t.type;
               return (
                 <div key={t.id} className="flex items-center justify-between border-t px-5 py-3 text-sm" style={{ borderColor: 'var(--border)' }}>
                   <div>
-                    <div style={{ fontWeight: 600, textTransform: 'capitalize' }}>{t.type}</div>
+                    <div style={{ fontWeight: 600, textTransform: 'capitalize' }}>{label}</div>
                     <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{new Date(t.createdAt).toLocaleString('en-SG')} · {t.source}</div>
                   </div>
                   <div style={{ fontWeight: 700, color: credit ? '#29e07a' : 'var(--foreground)' }}>{credit ? '+' : '−'}{money(t.amount)}</div>

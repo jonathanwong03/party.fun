@@ -58,7 +58,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
   return (
     <AuthShell
       title="Create your account"
-      subtitle="Track your tickets, get hype updates and refunds in one place."
+      subtitle="Get $20 in your in-app wallet when your account is created."
       footer={
         <>
           Already have an account?{' '}

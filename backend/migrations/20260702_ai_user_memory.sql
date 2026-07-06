@@ -1,6 +1,6 @@
 -- Migration: AI_USER_MEMORY — durable per-user preferences the agent LEARNS and
 -- reads back to personalise (interests/budget/vibe for attendees; venue/theme/
--- pricing preferences for organisers). RLS owner-only; the advisor reads/writes
+-- pricing preferences for organisers). RLS owner-only; server code reads/writes
 -- an organiser's memory via the service role.
 
 CREATE TABLE IF NOT EXISTS public."AI_USER_MEMORY" (

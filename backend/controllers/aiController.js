@@ -191,7 +191,7 @@ const AGENT_SYSTEM = () => [
   '',
   'MEMORY: call `remember` to save a durable preference you learn about the user (interests, budget, preferred venue/theme/timing, or an organiser\'s pricing/venue preferences). Personalise your help using what you already remember about them (shown below, if any). Do not re-remember something already known.',
   '',
-  'CREATING & EDITING: you CAN create, edit, cancel and delete events for an organiser — do it, never say you cannot. propose_create_event saves the event as a DRAFT (it is NOT published) that the organiser reviews and publishes from their Drafts; once confirmed it IS saved — tell them it is in their Drafts. To change a still-unpublished draft afterwards, call list_my_drafts to find it then propose_edit_draft (do NOT use propose_update_event, and never claim the draft was not saved without first calling list_my_drafts). propose_update_event edits an existing PUBLISHED event IN PLACE (never recreate it). Every write pauses for the organiser to confirm before anything happens.',
+  'CREATING & EDITING: only organiser/admin accounts can create, edit, cancel and delete hosted events. For organiser/admin accounts, use the propose_* tools and never claim a write is done before confirmation. propose_create_event saves the event as a DRAFT (it is NOT published) that the organiser reviews and publishes from their Drafts; once confirmed it IS saved — tell them it is in their Drafts. To change a still-unpublished draft afterwards, call list_my_drafts to find it then propose_edit_draft (do NOT use propose_update_event, and never claim the draft was not saved without first calling list_my_drafts). propose_update_event edits an existing PUBLISHED event IN PLACE (never recreate it). Every write pauses for the organiser to confirm before anything happens.',
   '',
   'When you call a propose_* tool, tell the user what you are proposing and that it needs their confirmation; never claim it is already done.',
   "Distinguish \"all events\" (discovery — events to buy) from \"hosted events\" (the organiser's own). Keep replies short, friendly and practical.",
@@ -211,7 +211,7 @@ function roleLine(role) {
     ? 'an ADMIN who can manage (including cancel) any event on the platform'
     : r === 'organiser'
       ? 'an ORGANISER who can host, edit and cancel their own events, and can also join/buy tickets for other people\'s events'
-      : 'a regular USER who joins and buys tickets for events';
+      : 'a regular USER (attendee) who joins and buys tickets for events. Attendees CANNOT create, host, edit, cancel or delete events — only organiser accounts can. If this user asks to create/host/manage an event, do NOT attempt it: tell them event hosting is for organiser accounts and they would need to sign up as (or switch to) an organiser';
   return `The current user's role is: ${r} — ${detail}.`;
 }
 
@@ -267,6 +267,27 @@ async function persistTurn(supabase, { conversationId, titleSeed, userText, repl
 
 const modelLabelOf = (result) => (result.model ? `${result.provider} · ${result.model}` : null);
 
+// Deterministic backstop for the "never show internal IDs" prompt rule: strip any
+// leaked event/draft/database IDs (UUIDs) from a user-facing reply, whether bare,
+// labelled ("ID: <uuid>"), or parenthetical ("(ID: <uuid>)"). Trailing/duplicate
+// whitespace and now-empty parens/brackets left behind are tidied up.
+const UUID_RE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+export function stripInternalIds(text) {
+  if (!text || typeof text !== 'string') return text;
+  let out = text
+    // "(ID: <uuid>)" / "[id <uuid>]" and similar wrappers, with optional separators.
+    .replace(new RegExp(`[\\(\\[]\\s*(?:event\\s+)?id[:#]?\\s*${UUID_RE}\\s*[\\)\\]]`, 'gi'), '')
+    // Bare "ID: <uuid>" / "id = <uuid>" label with no brackets.
+    .replace(new RegExp(`\\b(?:event\\s+)?id\\s*[:=#]?\\s*${UUID_RE}`, 'gi'), '')
+    // Any remaining standalone UUID.
+    .replace(new RegExp(UUID_RE, 'g'), '')
+    // Tidy: empty brackets/parens left behind, doubled spaces, and space-before-punctuation.
+    .replace(/[\(\[]\s*[\)\]]/g, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/[ \t]+([.,;:)\]])/g, '$1');
+  return out;
+}
+
 // POST /api/ai/chat — agentic chat (the LangGraph workflow). In 'ask' mode a write
 // returns status:'awaiting_confirmation' + proposals + a threadId; the UI confirms
 // via /chat/resume. In 'auto' mode writes execute inline. Returns conversationId +
@@ -287,6 +308,7 @@ export async function chat(req, res) {
   const historyBlock = formatChatHistory(chatHistory);
   const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock, historyBlock].filter(Boolean).join('\n\n');
   const result = await runGraph({ system, messages: list, ctx, mode: 'ask' });
+  if (result?.reply) result.reply = stripInternalIds(result.reply);
 
   let convoId = conversationId || null;
   if (result?.available && result.reply) {
@@ -321,6 +343,7 @@ export async function resumeChat(req, res) {
     proposalId,
     decision: decision === 'reject' ? 'reject' : 'confirm',
   });
+  if (result?.reply) result.reply = stripInternalIds(result.reply);
 
   let convoId = conversationId || null;
   if (result?.available && result.reply) {

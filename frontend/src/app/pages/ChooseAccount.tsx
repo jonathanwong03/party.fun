@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowRight, Ticket, Megaphone } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
+import { GoogleIcon } from '../components/GoogleIcon';
 import { loginWithGoogleRequest } from '../api';
 import type { Route } from '../components/types';
 
@@ -24,7 +25,7 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
   return (
     <AuthShell
       title="Join party.fun"
-      subtitle="Pick the type of account that fits you. You can always add the other later."
+      subtitle="Create an account and get $20 added to your in-app wallet."
       footer={
         <>
           Already have an account?{' '}
@@ -39,14 +40,14 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
           icon={<Ticket size={20} />}
           accent="#ff4d2e"
           title="User"
-          desc="Buy tickets, track your events, and join the hype."
+          desc="Get $20 in your wallet, buy tickets, and join the hype."
           onClick={() => go({ name: 'register-user' })}
         />
         <Card
           icon={<Megaphone size={20} />}
           accent="#29e07a"
           title="Organiser"
-          desc="Create, manage, and launch events for your CCA or society."
+          desc="Get $20 in your wallet, then create and launch events."
           onClick={() => go({ name: 'register-organiser' })}
         />
       </div>
@@ -67,7 +68,9 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
         className="mt-4 w-full"
         style={{ borderRadius: 12, height: 46 }}
       >
-        {googleSubmitting ? 'Redirecting…' : 'Sign up with Google'}
+        {googleSubmitting ? 'Redirecting…' : (
+          <span className="inline-flex items-center justify-center gap-2">Sign up with Google <GoogleIcon /></span>
+        )}
       </Button>
     </AuthShell>
   );

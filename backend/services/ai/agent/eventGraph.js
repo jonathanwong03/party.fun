@@ -15,7 +15,6 @@ import { sanitizeAiReply } from '../responseSanitizer.js';
 //                                       ↓ (if it produced write proposals)
 //                     ask:  confirm(interrupt) → execute → (more? loop) → END
 //                     auto: execute → END
-//                     advisor(autonomous): END   (proposals are advisory only)
 //
 // Each branch is a canonical LangChain v1 `createAgent(...)` (built on LangGraph) —
 // a single named agent with a SCOPED toolset. The confirm step is a real
@@ -57,8 +56,8 @@ const DIRECTIVES = {
   read_only: 'INTENT: read-only question. Answer using your read tools (events, wallet, forecast). Do not propose changes unless the user explicitly asks.',
   discovery: 'INTENT: event discovery. Use list_available_events / search_events and present a short, scannable list with prices.',
   best_fit: "INTENT: best-fit / recommendation. When the user gives INTERESTS (e.g. 'I'm into gaming'), call recommend_events (semantic — ranks by meaning, so 'gaming' matches an arcade/esports night even without the word). For a vague thematic search use semantic_search_events; for 'events like X' use find_similar_events. Present the top few with a short why; when purely price-driven, fall back to list_available_events sorted by price. Trust the semantic ranking over literal keyword matches.",
-  event_mgmt: "INTENT: manage the user's own events. You CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
-    + "CREATE (autonomous research → full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
+  event_mgmt: "INTENT: manage the user's own events. ROLE GATE: only ORGANISER (or admin) accounts can create, edit, cancel or delete events. If the current user's role (stated above) is a regular user/attendee, do NOT call any propose_* create/edit/cancel/delete tool — briefly tell them event hosting is for organiser accounts and they'd need to sign up as / switch to an organiser. For an ORGANISER/admin you CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
+    + "CREATE (research to full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "RAG PLANNING: for event creation, planning, pricing, capacity or revenue advice, call get_similar_past_events when a useful theme/reference exists. Use examples only as historical benchmarks, never as current availability, and never expose example IDs.\n"
     + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
@@ -108,6 +107,8 @@ async function defaultClassify(text) {
 // and refuses anything unrelated (math, trivia, coding, general advice) up front.
 export const OFF_TOPIC_REPLY = "I'm the party.fun events assistant, so I can only help with things on party.fun — finding and buying event tickets, your wallet, and hosting or managing your own events. I can't help with that one, but I'd be glad to help you discover an event or plan one.";
 
+export const ROLE_BLOCK_REPLY = "Your current role is attendee/user, so you cannot create, host, edit, cancel or delete events. Event hosting is only available from organiser accounts. To host an event, sign up with or switch to an organiser account.";
+
 const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
 const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
 // Short mid-flow continuations / confirmations — always on-topic (never block these).
@@ -115,6 +116,7 @@ const AFFIRMATION_RX = /^(yes|yeah|yep|yup|sure|ok|okay|k|go\sahead|do\sit|sound
 // A short answer to the agent's own question — a bare number/quantity or a one-word reply
 // (e.g. "3", "3 tickets", "$20"). These are continuations of an on-topic flow, never off-topic.
 const SHORT_ANSWER_RX = /^\$?\d[\d.,]*\s*(tickets?|ticket|pax|people|persons?|x)?[.!]?$/i;
+const EVENT_MANAGEMENT_WRITE_RX = /\b(cancel|delete|remove|edit|update|change|reschedule|rename|create|host|launch|draft|publish|co-?organiser|coorganiser|invite|manage|my event|hosted event)\b/i;
 
 // Synchronous fast-path: obviously in-scope (or a short continuation answer) → allow
 // without an LLM call. Exported so it can be unit-tested.
@@ -228,6 +230,12 @@ function latestUserText(state) {
   return '';
 }
 
+function shouldBlockUserEventManagement(state, ctx) {
+  if (String(ctx?.role || 'user').toLowerCase() !== 'user') return false;
+  if (state?.intent !== 'event_mgmt') return false;
+  return EVENT_MANAGEMENT_WRITE_RX.test(recentContext(state));
+}
+
 function lastAiText(messages) {
   for (let i = (messages?.length ?? 0) - 1; i >= 0; i -= 1) {
     const m = messages[i];
@@ -262,6 +270,7 @@ const GraphState = Annotation.Root({
   ...MessagesAnnotation.spec,
   intent: Annotation(),
   offtopic: Annotation(),
+  roleBlocked: Annotation(),
   proposals: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
   decisions: Annotation({ reducer: (a = {}, b = {}) => ({ ...a, ...b }), default: () => ({}) }),
   results: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
@@ -280,10 +289,15 @@ function buildApp(model, system) {
     return { offtopic: !onTopic };
   };
   const refuse = () => ({ messages: [new AIMessage(OFF_TOPIC_REPLY)] });
+  const roleRefuse = () => ({ messages: [new AIMessage(ROLE_BLOCK_REPLY)] });
 
   const classify = async (state, config) => {
     return { intent: await dependencies.classify(recentContext(state), config?.configurable?.ctx) };
   };
+
+  const roleGate = (state, config) => ({
+    roleBlocked: shouldBlockUserEventManagement(state, config?.configurable?.ctx),
+  });
 
   const runBranch = (intent) => async (state, config) => {
     const res = await agents[intent].invoke({ messages: state.messages }, config);
@@ -322,7 +336,6 @@ function buildApp(model, system) {
 
   const afterBranch = (state, config) => {
     if (!state.proposals.length) return END;
-    if (config?.configurable?.autonomous) return END; // advisor: proposals are advisory only
     return mode(config) === 'auto' ? 'execute' : 'confirm';
   };
 
@@ -337,6 +350,8 @@ function buildApp(model, system) {
     .addNode('scope', scope)
     .addNode('refuse', refuse)
     .addNode('classify', classify)
+    .addNode('role_gate', roleGate)
+    .addNode('role_refuse', roleRefuse)
     .addNode('answer', runBranch('read_only'))
     .addNode('discover', runBranch('discovery'))
     .addNode('bestfit', runBranch('best_fit'))
@@ -347,7 +362,9 @@ function buildApp(model, system) {
     .addEdge(START, 'scope')
     .addConditionalEdges('scope', (state) => (state.offtopic ? 'refuse' : 'classify'), { refuse: 'refuse', classify: 'classify' })
     .addEdge('refuse', END)
-    .addConditionalEdges('classify', routeIntent, { answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
+    .addEdge('classify', 'role_gate')
+    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : routeIntent(state)), { role_refuse: 'role_refuse', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
+    .addEdge('role_refuse', END)
     .addConditionalEdges('answer', afterBranch, branchMap)
     .addConditionalEdges('discover', afterBranch, branchMap)
     .addConditionalEdges('bestfit', afterBranch, branchMap)
@@ -373,16 +390,15 @@ function shape(state, interrupted, { threadId, provider, modelId }) {
 }
 
 // Start a run. `ctx` = { supabase, userId, role }; `mode` = 'ask'|'auto';
-// `autonomous` = advisor (no interrupt). Returns { available, status, reply,
-// proposals, results, threadId, provider, model }.
-export async function runGraph({ system, messages, ctx, preferred, mode: runMode = 'ask', autonomous = false, threadId } = {}) {
+// Returns { available, status, reply, proposals, results, threadId, provider, model }.
+export async function runGraph({ system, messages, ctx, preferred, mode: runMode = 'ask', threadId } = {}) {
   const built = await dependencies.buildModel(preferred, 1024);
   if (!built) return { available: false };
   const { model, provider, modelId } = built;
 
   const app = buildApp(model, system ?? '');
   const tid = threadId || randomUUID();
-  const config = { configurable: { ctx, mode: runMode, autonomous, thread_id: tid }, recursionLimit: RECURSION_LIMIT };
+  const config = { configurable: { ctx, mode: runMode, thread_id: tid }, recursionLimit: RECURSION_LIMIT };
   const input = { messages: (messages ?? []).map(toLcMessage).filter(Boolean) };
 
   try {
@@ -402,7 +418,7 @@ export async function resumeGraph({ system, ctx, preferred, threadId, proposalId
   const { model, provider, modelId } = built;
 
   const app = buildApp(model, system ?? '');
-  const config = { configurable: { ctx, mode: 'ask', autonomous: false, thread_id: threadId }, recursionLimit: RECURSION_LIMIT };
+  const config = { configurable: { ctx, mode: 'ask', thread_id: threadId }, recursionLimit: RECURSION_LIMIT };
 
   try {
     await app.invoke(new Command({ resume: { proposalId, decision } }), config);

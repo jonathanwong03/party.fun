@@ -35,7 +35,7 @@ export function TestimonialsCarousel() {
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <h2 className="text-center" style={{ color: 'var(--foreground)', fontWeight: 700, fontSize: 22, letterSpacing: '0.04em' }}>WHAT STUDENTS SAY</h2>
+      <h2 className="mb-8 text-center" style={{ color: 'var(--foreground)', fontWeight: 700, fontSize: 22, letterSpacing: '0.04em' }}>WHAT STUDENTS SAY</h2>
 
       <div className="mx-auto flex max-w-3xl items-center gap-3 sm:gap-6">
         <button onClick={prev} aria-label="Previous" className={arrowBtn} style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}>

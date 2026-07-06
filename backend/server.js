@@ -15,7 +15,6 @@ import adminRoutes from './routes/adminRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import weatherRoutes from './routes/weatherRoutes.js';
 import { startDeadlineScheduler } from './services/deadlineScheduler.js';
-import { startAgentAdvisor } from './services/ai/agent/advisor.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -64,7 +63,6 @@ app.use((err, _req, res, _next) => {
 const server = app.listen(PORT, () => {
   console.log(`API server running at http://localhost:${PORT}`);
   startDeadlineScheduler();
-  startAgentAdvisor();
 });
 
 server.on('error', (err) => {

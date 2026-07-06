@@ -107,6 +107,7 @@ VITE_STRIPE_PUBLISHABLE_KEY=pk_test_...
 Test card: `4242 4242 4242 4242`, any future expiry, any CVC. Decline: `4000 0000 0000 0002`.
 
 How it works:
+- **Signup bonus** — every first‑time account (user or organiser) is credited **$20** in the wallet on creation. Email/password signups get it inline from the `handle_new_user` trigger; Google‑OAuth signups get it when they complete onboarding (`complete_oauth_signup` → `grant_signup_wallet_credit`). It is one‑time and idempotent (guarded on an existing `signup_bonus` transaction), and appears in the wallet ledger as "Signup bonus".
 - **Link a card** (Wallet page) via Stripe SetupIntent; the saved card is reused for both direct card payments and wallet top‑ups.
 - **Top up** charges the linked card and credits the wallet.
 - **Pledge** deducts instantly — from the wallet (atomic balance debit) or by charging the card (Stripe PaymentIntent).
@@ -556,7 +557,6 @@ A Google **Gemini**-only event-planning **agent** (model `gemini-2.5-flash`), bu
   - **Create flow:** for a new event the agent asks for a theme (or researches one), suggests a name/description/location from web research, recommends a tiered-vs-hype pricing model, and only drafts after the organiser confirms.
   - _Checkpointer note:_ `MemorySaver` is in-process, so pending confirmations are lost on a backend restart / don't span multiple instances — a lost pending confirm just means the user re-asks (nothing unsafe executes because `execute` re-validates).
 - **Inline helpers** — "Suggest names/description" on Create Event, "Get AI revenue tips" on the analytics forecast card, and "Recommended for you" on the events page.
-- **Proactive advisor** — an opt-in background agent that periodically finds at-risk events (early-bird, near deadline, below threshold) and emails the organiser tailored suggestions. It only advises (never mutates). Enable with `AGENT_ADVISOR_ENABLED=true` (interval via `AGENT_ADVISOR_INTERVAL_MS`).
 - **Memory (learns & adapts)** — a per-user store the agent reads to personalise and writes to via a `remember` tool (interests/budget for attendees; venue/theme/pricing preferences for organisers). It works silently in the background — injected into the agent's context each turn — with no user-facing panel.
 - **Weather warnings** — the agent (and three UI surfaces) warn when an event's day has a **> 70% chance of rain** (unsuitable for outdoor events), using the Google Maps Platform **Weather API** (`GOOGLE_WEATHER_API_KEY`, called server-side; ~10-day horizon). Events store their **venue coordinates** (`EVENT.latitude`/`longitude`, captured from the AddressPicker on create/edit and returned by `get_events`), so the **Create/Edit Event** form, the **Event Details** page and the agent's `get_weather` tool all check the forecast at the exact venue (Singapore fallback for events with no stored coordinates). Exposed via `GET /api/weather` ([backend/controllers/weatherController.js](backend/controllers/weatherController.js), [backend/services/weatherService.js](backend/services/weatherService.js)). Degrades silently when the key is unset.
 - **Semantic (vector) RAG** — Gemini text embeddings (`gemini-embedding-001`, 768-dim) stored in **Supabase pgvector** (`EVENT_EMBEDDINGS`, `DOC_CHUNKS`) power meaning-based features: `recommend_events` (rank events by the user's interests — "gaming" surfaces an arcade/esports night, not a literal keyword match), `semantic_search_events` + the All Events search bar (`GET /api/events/search`), `find_similar_events` ("more like this"), and help-doc retrieval in `answerAppQuestion` (fetch only the relevant knowledge chunks). Event embeddings are refreshed on create/edit ([eventEmbeddings.js](backend/services/ai/eventEmbeddings.js)); backfill existing rows with `node scripts/backfillEmbeddings.js`. All of it degrades gracefully to the old LLM/substring behaviour when embeddings are unavailable.
@@ -568,11 +568,9 @@ Env keys (in `backend/.env`; `GEMINI_API_KEY` enables all AI features):
 GEMINI_API_KEY=...        # Google Gemini (AI Studio, may start with AQ. or AIza) — powers the whole assistant
 # AI_GEMINI_MODEL=gemini-2.5-flash   # optional model override (default gemini-2.5-flash)
 GOOGLE_WEATHER_API_KEY=...# Google Maps Platform Weather API (server-side; enable "Weather API" in the same GCP project as Maps)
-# AGENT_ADVISOR_ENABLED=true         # opt-in proactive advisor (off by default)
-# AGENT_ADVISOR_INTERVAL_MS=60000    # advisor scan cadence (default 1 hour)
 ```
 
-AI-owned tables (all RLS owner-only): `AI_CHAT_CONVERSATIONS`, `AI_CHAT_MESSAGES`, `AI_USER_MEMORY`, and `NOTIFICATION_LOGS` (email audit + advisor de-dupe). The agent's internal knowledge base — how it should answer questions about the app — lives in [backend/services/ai/app-knowledge.md](backend/services/ai/app-knowledge.md); **keep that file updated alongside this README when the agent's behaviour or the app changes.**
+AI-owned tables (all RLS owner-only): `AI_CHAT_CONVERSATIONS`, `AI_CHAT_MESSAGES`, `AI_USER_MEMORY`, and `NOTIFICATION_LOGS` (email audit). The agent's internal knowledge base — how it should answer questions about the app — lives in [backend/services/ai/app-knowledge.md](backend/services/ai/app-knowledge.md); **keep that file updated alongside this README when the agent's behaviour or the app changes.**
 
 
 

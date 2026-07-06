@@ -2,10 +2,9 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { __resetProvidersForTests } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, guardAllows, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
-import { selectAtRisk } from './advisor.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
 import { __setResearchCallForTests, __resetResearchCallForTests } from './research.js';
 import { __setEmbedForTests, __resetEmbedForTests } from '../embeddingService.js';
@@ -25,9 +24,9 @@ const useClassify = (intent) => __setClassifyForTests(async () => intent);
 const say = (text) => new AIMessage(text);
 const toolMsg = (obj, name = 'tool', id = 't1') => new ToolMessage({ content: JSON.stringify(obj), tool_call_id: id, name });
 
-const ctxWith = (events) => ({
+const ctxWith = (events, role = 'user') => ({
   userId: 'u1',
-  role: 'user',
+  role,
   supabase: { rpc: async () => ({ data: events, error: null }) },
 });
 
@@ -78,8 +77,25 @@ test('classify routes to the matching branch agent', async () => {
     event_mgmt: fakeAgent([say('manage-branch')]),
     transaction: fakeAgent([say('transact-branch')]),
   }));
-  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'edit my event' }], ctx: ctxWith([]) });
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'edit my event' }], ctx: ctxWith([], 'organiser') });
   assert.match(out.reply, /manage-branch/);
+});
+
+test('normal users asking to manage events are refused before branch tools run', async () => {
+  useModel(); useClassify('event_mgmt');
+  let branchCalled = false;
+  __setAgentsForTests(() => allBranches({ invoke: async ({ messages }) => { branchCalled = true; return { messages: [...messages, say('should not run')] }; } }));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'i want to create an event' }], ctx: ctxWith([]) });
+  assert.equal(out.reply, ROLE_BLOCK_REPLY);
+  assert.equal(branchCalled, false);
+  assert.deepEqual(out.proposals, []);
+});
+
+test('organisers can still enter the event management branch', async () => {
+  useModel(); useClassify('event_mgmt');
+  useAgents(fakeAgent([say('organiser branch')]));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'i want to create an event' }], ctx: { ...ctxWith([]), role: 'organiser' } });
+  assert.equal(out.reply, 'organiser branch');
 });
 
 test('branch toolsets are scoped (only management/transaction expose write proposals)', () => {
@@ -110,7 +126,7 @@ test('ask mode interrupts for confirmation; confirm executes, reject does not', 
   assert.equal(rejected.results.length, 0);
 });
 
-test('auto mode executes inline; autonomous surfaces proposals without interrupting', async () => {
+test('auto mode executes inline', async () => {
   useModel(); useClassify('transaction');
   useAgents(fakeAgent([toolMsg({ proposal: topupProposal }, 'propose_topup'), say('Proposed.')]));
   const ctx = ctxWith([]);
@@ -118,11 +134,6 @@ test('auto mode executes inline; autonomous surfaces proposals without interrupt
   const auto = await runGraph({ system: 's', messages: [{ role: 'user', content: 'top up $20' }], ctx, mode: 'auto' });
   assert.equal(auto.status, 'done');
   assert.equal(auto.results.length, 1);
-
-  const adv = await runGraph({ system: 's', messages: [{ role: 'user', content: 'top up $20' }], ctx, autonomous: true });
-  assert.equal(adv.status, 'done');
-  assert.deepEqual(adv.proposals.map((p) => p.action), ['topup']);
-  assert.equal(adv.results.length, 0);
 });
 
 test('runGraph returns a graceful reply when a branch agent errors', async () => {
@@ -359,6 +370,19 @@ test('event tools resolve an event by NAME or slug, not just id', async () => {
   // A nonsense reference still errors.
   const bad = await EXECUTORS.get_event_details({ eventId: 'totally made up event' }, ctx);
   assert.ok(bad.error);
+});
+
+test('admin accounts cannot receive pledge proposals', async () => {
+  const events = [{ id: 'e1', title: 'Public Gig', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
+  const ctx = {
+    userId: 'admin1',
+    role: 'admin',
+    supabase: { rpc: async (name) => ({ data: name === 'get_profile' ? { tickets: [] } : events, error: null }) },
+  };
+  const listed = await EXECUTORS.list_available_events({}, ctx);
+  assert.equal(listed.count, 0);
+  const proposed = await EXECUTORS.propose_pledge({ eventId: 'e1', qty: 1 }, ctx);
+  assert.match(proposed.error, /Admin accounts cannot attend/);
 });
 
 test('event action tools resolve natural references semantically and ask when ambiguous', async () => {
@@ -886,18 +910,5 @@ test('remember tool stores a durable fact and skips duplicates', async () => {
   const dup = await EXECUTORS.remember({ fact: 'loves live music' }, ctx); // case-insensitive dupe
   assert.equal(dup.note, 'already remembered');
   assert.equal(rows.length, 1);
-});
-
-test('advisor selectAtRisk picks open, near-deadline, below-threshold events', () => {
-  const now = Date.now();
-  const h = (n) => new Date(now + n * 3600 * 1000).toISOString();
-  const rows = [
-    { id: 'r1', derived_status: 'early_bird', deadlineAt: h(24), active_ticket_count: 2, hypeThreshold: 10 },
-    { id: 'r2', derived_status: 'early_bird', deadlineAt: h(240), active_ticket_count: 2, hypeThreshold: 10 }, // too far out
-    { id: 'r3', derived_status: 'greenlit', deadlineAt: h(24), active_ticket_count: 2, hypeThreshold: 10 }, // already greenlit
-    { id: 'r4', derived_status: 'early_bird', deadlineAt: h(24), active_ticket_count: 12, hypeThreshold: 10 }, // already at threshold
-  ];
-  const picked = selectAtRisk(rows, now).map((e) => e.id);
-  assert.deepEqual(picked, ['r1']);
 });
 

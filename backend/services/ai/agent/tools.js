@@ -77,6 +77,7 @@ async function purchasedEventIds(ctx) {
 // (early_bird/greenlit), starting strictly in the FUTURE (not started/ongoing/past),
 // and NOT already purchased. Mirrors the frontend All Events buyable set.
 async function attendableEvents(ctx) {
+  if (ctx.role === 'admin') return [];
   const now = Date.now();
   const purchased = await purchasedEventIds(ctx);
   return (await visibleEvents(ctx)).filter((e) =>
@@ -949,6 +950,7 @@ export const EXECUTORS = {
   },
 
   async propose_pledge(args, ctx) {
+    if (ctx.role === 'admin') return { error: 'Admin accounts cannot attend events or buy tickets.' };
     // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
     // Accepts an event id OR name (findEvent resolves both).
     const resolved = await resolveEvent(ctx, await attendableEvents(ctx), args.eventId);

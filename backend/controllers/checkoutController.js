@@ -60,6 +60,7 @@ const PLEDGE_MESSAGES = {
   no_card: 'Link a card before paying by card.',
   university_restricted: 'This event is open to members of a specific university only.',
   price_mismatch: 'The ticket price changed — refresh and try again.',
+  admin_forbidden: 'Admin accounts cannot attend events or buy tickets.',
 };
 
 export async function getQuote(req, res) {
@@ -76,6 +77,10 @@ export async function getQuote(req, res) {
 }
 
 export async function postPledge(req, res) {
+  if (req.user.role === 'admin') {
+    res.status(403).json({ status: 'admin_forbidden', message: PLEDGE_MESSAGES.admin_forbidden });
+    return;
+  }
   const eventId = req.params.eventId;
   const qty = Number(req.body.qty) || 1;
   const method = req.body.paymentMethod === 'card' ? 'card' : 'wallet';

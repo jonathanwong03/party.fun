@@ -1,6 +1,6 @@
 // Per-user agent memory: durable preferences the agent learns and reads back to
 // personalise. Reads/writes are scoped to one user — the chat passes the caller's
-// RLS client; the advisor passes the service-role client + an explicit userId.
+// RLS client; server-side callers may pass a service-role client + explicit userId.
 
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from './embeddingService.js';
 
@@ -14,7 +14,7 @@ export async function loadMemory(sb, userId) {
   return (data ?? []).map((m) => ({ id: m.id, content: m.content, category: m.category }));
 }
 
-// Save a learned fact. Explicitly sets user_id (the advisor's service client has no
+// Save a learned fact. Explicitly sets user_id (service clients have no
 // auth.uid()). De-dupes on identical content and prunes to the newest CAP rows.
 export async function rememberFact(sb, userId, { content, category }) {
   const text = String(content ?? '').trim();

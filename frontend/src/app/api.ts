@@ -96,6 +96,47 @@ export type AuthUser = {
   universityChanged?: boolean;
 };
 
+type SignupValidationResult = { status?: string; error?: string };
+
+function signupErrorMessage(code: string | undefined, username?: string): string {
+  if (code === "username_taken") {
+    const name = username?.trim();
+    return name
+      ? `The username ${name} has already been taken. Please choose another username.`
+      : "That username has already been taken. Please choose another username.";
+  }
+  if (code === "org_id_taken") return "That matriculation / staff ID is already registered.";
+  if (code === "username_required") return "Please choose a username.";
+  if (code === "invalid_role") return "Please choose a valid account type.";
+  if (code === "invalid_university") return "Please choose your university.";
+  if (code === "invalid_member_type") return "Please choose Student, Instructor or Professor.";
+  if (code === "invalid_matric") return "Matriculation ID must be a letter, 8 digits, then a letter (e.g. A12345678B).";
+  if (code === "invalid_staff_id") return "Staff ID must be exactly 9 digits.";
+  if (code === "already_onboarded") return "This account is already set up. Please log in.";
+  return "Could not validate those account details.";
+}
+
+async function validateSignupIdentity(input: {
+  username: string;
+  role: Role;
+  university?: string | null;
+  memberType?: MemberType | null;
+  orgId?: string | null;
+  currentUserId?: string | null;
+}): Promise<void> {
+  const { data, error } = await supabase.rpc("validate_signup_identity", {
+    p_username: input.username.trim(),
+    p_role: input.role,
+    p_university: input.university ?? null,
+    p_member_type: input.memberType ?? null,
+    p_org_id: input.orgId?.trim() ?? null,
+    p_current_user_id: input.currentUserId ?? null,
+  });
+  if (error) throw new Error(error.message);
+  const result = data as SignupValidationResult;
+  if (result?.error) throw new Error(signupErrorMessage(result.error, input.username));
+}
+
 export type Attendee = {
   name: string;
   username: string;
@@ -251,6 +292,17 @@ export async function completeOauthSignupRequest(
   org?: { university: string; memberType: MemberType; orgId: string },
   userUniversity?: string | null,
 ): Promise<AuthUser> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  await validateSignupIdentity({
+    role,
+    username,
+    university: org?.university ?? userUniversity ?? null,
+    memberType: org?.memberType ?? null,
+    orgId: org?.orgId ?? null,
+    currentUserId: session?.user.id ?? null,
+  });
   const { data, error } = await supabase.rpc("complete_oauth_signup", {
     p_role: role,
     p_username: username.trim(),
@@ -260,16 +312,7 @@ export async function completeOauthSignupRequest(
   });
   if (error) throw new Error(error.message);
   const result = data as { status?: string; error?: string };
-  if (result?.error === "username_taken") throw new Error("That username is taken.");
-  if (result?.error === "org_id_taken") throw new Error("That matriculation / staff ID is already registered.");
-  if (result?.error === "username_required") throw new Error("Please choose a username.");
-  if (result?.error === "invalid_role") throw new Error("Please choose an account type.");
-  if (result?.error === "invalid_university") throw new Error("Please choose your university.");
-  if (result?.error === "invalid_member_type") throw new Error("Please choose Student, Instructor or Professor.");
-  if (result?.error === "invalid_matric") throw new Error("Matriculation ID must be a letter, 8 digits, then a letter (e.g. A12345678B).");
-  if (result?.error === "invalid_staff_id") throw new Error("Staff ID must be exactly 9 digits.");
-  if (result?.error === "already_onboarded") throw new Error("This account is already set up. Please log in.");
-  if (result?.error) throw new Error("Could not finish setting up your account.");
+  if (result?.error) throw new Error(signupErrorMessage(result.error, username));
   const user = await fetchCurrentUser();
   if (!user) throw new Error("Could not load your profile.");
   return user;
@@ -335,28 +378,42 @@ export async function registerRequest(input: {
   memberType?: MemberType;
   orgId?: string;
 }): Promise<AuthUser> {
+  const username = input.username.trim();
+  const orgId = input.orgId?.trim() ?? null;
+  await validateSignupIdentity({
+    username,
+    role: input.role,
+    university: input.university ?? null,
+    memberType: input.memberType ?? null,
+    orgId,
+  });
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
     password: input.password,
     options: {
       data: {
-        username: input.username,
-        name: input.username,
+        username,
+        name: username,
         role: input.role,
         avatarUrl: input.avatarUrl ?? null,
         telegram: input.telegram ?? null,
         phone: input.phone ?? null,
         university: input.university ?? null,
         memberType: input.memberType ?? null,
-        orgId: input.orgId?.trim() ?? null,
+        orgId,
       },
     },
   });
-  if (error) throw new Error(error.message);
+  if (error) {
+    const lower = String(error.message || "").toLowerCase();
+    if (lower.includes("username_taken")) throw new Error(signupErrorMessage("username_taken", username));
+    if (lower.includes("org_id_taken")) throw new Error(signupErrorMessage("org_id_taken"));
+    throw new Error(error.message);
+  }
   if (!data.user) throw new Error("Sign up failed — please try again.");
   return {
     id: data.user.id,
-    username: input.username,
+    username,
     email: input.email,
     role: input.role,
     avatarUrl: input.avatarUrl,
@@ -364,7 +421,7 @@ export async function registerRequest(input: {
     phone: input.phone ?? null,
     university: input.university ?? null,
     memberType: input.memberType ?? null,
-    orgId: input.orgId ?? null,
+    orgId,
   };
 }
 
@@ -597,7 +654,7 @@ export function createPledge(_role: Role, eventId: string, qty: number, _amount:
 
 // ── Wallet + linked card (Stripe) ───────────────────────────────────────────────
 
-export type WalletTxn = { id: number; type: 'topup' | 'pledge' | 'refund'; source: 'wallet' | 'card'; amount: number; balanceAfter: number; eventId: string | null; createdAt: string };
+export type WalletTxn = { id: number; type: 'topup' | 'pledge' | 'refund' | 'signup_bonus'; source: 'wallet' | 'card' | 'system'; amount: number; balanceAfter: number; eventId: string | null; createdAt: string };
 export type WalletInfo = { balance: number; card: { brand: string | null; last4: string | null } | null; transactions: WalletTxn[] };
 
 export function fetchWallet(): Promise<WalletInfo> {
@@ -721,11 +778,6 @@ export type RevenueForecast = {
 
 export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> {
   return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
-}
-
-// Personalised "For You" event ids (taste profile: interests + joined events).
-export function fetchForYou(): Promise<{ ids: string[] }> {
-  return apiFetch<{ ids: string[] }>('/api/ai/for-you', { method: 'POST', body: JSON.stringify({}) });
 }
 
 // ── AI agent (Gemini; all responses tolerate {available:false}) ────

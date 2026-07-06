@@ -7,6 +7,7 @@ import { getActiveStatus, type EventItem, type Role, type Route } from '../compo
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, fetchWallet, type Quote, type WalletInfo } from '../api';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
+import { urgencyCues, urgencyToneStyle } from '../components/urgency';
 
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card', attemptId?: string) => Promise<string | undefined> }) {
   const event = events.find((e) => e.id === id);
@@ -50,6 +51,8 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   // University-restricted event the signed-in user can't attend — block the pledge (server enforces too).
   const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
   const canPay = !universityBlocked && (method === 'wallet' ? !walletShort : hasCard);
+  const topCue = universityBlocked ? undefined : urgencyCues(event)[0];
+  const topCueStyle = topCue ? urgencyToneStyle(topCue.tone) : null;
 
   const handleConfirm = async () => {
     setSubmitError(null);
@@ -150,6 +153,15 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               {universityBlocked && (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.4)', color: '#ff6b85' }}>
                   This event is open to {event.restrictedUniversity} members only.
+                </div>
+              )}
+
+              {topCue && topCueStyle && (
+                <div
+                  className="rounded-lg px-3 py-2 text-xs"
+                  style={{ color: topCueStyle.color, background: topCueStyle.bg, border: `1px solid ${topCueStyle.border}`, fontWeight: 700 }}
+                >
+                  {topCue.text}
                 </div>
               )}
 

@@ -58,6 +58,7 @@ The assistant always knows the **current user's role** (organiser / user / admin
 - **University gating:** some events are restricted to a university; users only see events they're eligible to join (`get_events` is RLS-scoped, so the assistant only ever sees eligible events — it will not surface a restricted event to an ineligible user).
 - **Co-organisers:** an organiser can invite co-organisers to help manage an event. A co-organiser is an organiser account invited to a specific event; they **can edit** the event and **view attendees**, but **cannot cancel, delete, or invite** — only the owner can. Only the owner invites/revokes co-organisers.
 - **Analytics:** organisers see projected ticket sales/revenue, itemised estimated operational costs (these are paid outside party.fun), and past-event totals.
+- **Admins:** admins manage platform events and settings only. They do not attend events, buy tickets, scan tickets, use the All Events discovery page, or use attendee ticket flows.
 
 ## Agent operating principles (what the assistant must always respect)
 - **Backend is the source of truth.** The assistant proposes; Supabase RLS + the Postgres RPCs + wallet/Stripe logic decide and validate. It must never invent event, ticket, wallet or payment state — it answers strictly from tool results.

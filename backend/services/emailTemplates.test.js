@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { pledgeConfirmedTemplate } from './emailTemplates.js';
+import { accountCreatedTemplate, pledgeConfirmedTemplate } from './emailTemplates.js';
 
 const base = {
   userName: 'jamie',
@@ -28,5 +28,14 @@ describe('pledgeConfirmedTemplate', () => {
     assert.doesNotMatch(html, /<script>/);
     assert.match(html, /&lt;script&gt;/);
     assert.match(html, /Party &lt;img/);
+  });
+});
+
+describe('accountCreatedTemplate', () => {
+  it('mentions the $20 in-app wallet balance added at signup', () => {
+    const html = accountCreatedTemplate({ userName: 'jamie', role: 'user' });
+    assert.match(html, /\$20 has been added to your in-app wallet balance/i);
+    assert.match(html, /Wallet balance added/i);
+    assert.match(html, /\$20\.00/);
   });
 });

@@ -65,11 +65,11 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
   };
 
   return (
-    <AuthShell title="Finish setting up" subtitle="Choose how you'll use party.fun and pick a username.">
+    <AuthShell title="Finish setting up" subtitle="Complete setup to get $20 added to your in-app wallet.">
       <form className="space-y-5" onSubmit={handleSubmit} autoComplete="off">
         <div className="space-y-3">
           <RoleCard icon={<Ticket size={20} />} accent="#ff4d2e" title="User" desc="Buy tickets, track your events, and join the hype." active={role === 'user'} onClick={() => setRole('user')} />
-          <RoleCard icon={<Megaphone size={20} />} accent="#29e07a" title="Organiser" desc="Create and manage events (university members only)." active={role === 'organiser'} onClick={() => setRole('organiser')} />
+          <RoleCard icon={<Megaphone size={20} />} accent="#29e07a" title="Organiser" desc="Create and manage events, with $20 ready in your wallet." active={role === 'organiser'} onClick={() => setRole('organiser')} />
         </div>
 
         <div>

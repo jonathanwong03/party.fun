@@ -63,7 +63,6 @@ export function AdminManageEvents({ go, events, onCancel }: { go: (r: Route) => 
                   <td className="px-4 py-3"><span style={{ color: s.color, fontWeight: 700, fontSize: 12 }}>{s.text}</span></td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => go({ name: 'event', id: e.id })} className="text-xs underline" style={{ color: 'var(--muted-foreground)' }}>View</button>
                       {canActOn && (
                         <>
                           <Button onClick={() => go({ name: 'edit-event', id: e.id })} variant="outline" className="h-8 gap-1 text-xs" style={{ borderRadius: 10 }}><Pencil size={13} /> Edit</Button>

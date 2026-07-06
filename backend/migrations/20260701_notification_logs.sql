@@ -1,5 +1,5 @@
 -- Migration: NOTIFICATION_LOGS — audit log of every email the notification
--- service sends (best-effort). Also backs the agent advisor's de-dupe. Written
+-- service sends (best-effort). Written
 -- server-side only (service role); never exposed to anon/authenticated.
 
 CREATE TABLE IF NOT EXISTS public."NOTIFICATION_LOGS" (

@@ -96,6 +96,30 @@ describe('postPledge', () => {
     assert.equal(sendCalls[0].qty, 2);
   });
 
+  it('rejects admin accounts before creating a pledge', async () => {
+    let createCalled = false;
+    dependencies.createPledge = async () => {
+      createCalled = true;
+      return {};
+    };
+    const res = createMockRes();
+
+    await postPledge(
+      {
+        supabase: mockSupabase(),
+        user: { id: 'admin-1', role: 'admin' },
+        params: { eventId: 'event-1' },
+        body: { qty: 1 },
+        originalUrl: '/api/checkout/event-1/pledge',
+      },
+      res,
+    );
+
+    assert.equal(res.statusCode, 403);
+    assert.equal(res.body.status, 'admin_forbidden');
+    assert.equal(createCalled, false);
+  });
+
   it('does not send notification when pledge fails', async () => {
     dependencies.createPledge = async () => ({ error: 'not_enough_tickets' });
     const res = createMockRes();

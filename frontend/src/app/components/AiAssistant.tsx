@@ -5,6 +5,7 @@ import {
   fetchConversations, fetchConversation, deleteConversation,
   type ChatMessage, type AgentProposal, type AiConversation,
 } from '../api';
+import type { Role } from './types';
 
 type Turn = ChatMessage & { proposals?: AgentProposal[]; threadId?: string };
 type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: string };
@@ -65,7 +66,7 @@ function renderReply(content: string): string[] {
 // loop. Conversations are saved per user — "New chat" starts a thread, the history
 // list reopens past ones. `onDataChanged` refreshes the app's data after a write so
 // edits show instantly.
-export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
+export function AiAssistant({ role, onDataChanged }: { role: Role; onDataChanged?: () => void }) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [view, setView] = useState<'chat' | 'history'>('chat');
@@ -244,6 +245,11 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
 
   const iconBtn = 'rounded-md p-1 transition hover:bg-white/5';
   const muted = { color: 'var(--muted-foreground)' } as const;
+  const intro = role === 'organiser'
+    ? "Hi! I'm your party.fun assistant. I can find and recommend events, buy tickets, top up your wallet, and help you create, edit, publish or cancel your hosted events with confirmation."
+    : role === 'admin'
+      ? "Hi! I'm your party.fun assistant. I can help you inspect platform events and manage event moderation tasks."
+      : "Hi! I'm your party.fun assistant. I can find and recommend events, buy tickets, top up your wallet, and help you join what suits you. Event hosting is only available from organiser accounts.";
 
   return (
     <div
@@ -290,7 +296,7 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.length === 0 && (
               <div className="text-sm" style={muted}>
-                Hi! I'm your party.fun assistant. I can find and recommend events, buy tickets and top up your wallet, and help you join what suits you. If you host events, I can also add, edit, cancel or delete them, check forecasts and the weather, and more. Ask away!
+                {intro}
               </div>
             )}
             {messages.map((m, i) => (

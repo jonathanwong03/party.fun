@@ -52,7 +52,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
   return (
     <AuthShell
       title="Launch as an organiser"
-      subtitle="Only university members (students, instructors and professors) can run events."
+      subtitle="Get $20 in your wallet when your organiser account is created."
       footer={
         <>
           Already an organiser?{' '}

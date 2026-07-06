@@ -48,13 +48,13 @@ export function Navbar({
               <Menu size={20} color="#ffffff" />
             </button>
           )}
-          <button onClick={() => go({ name: 'landing' })} className="flex items-center">
+          <button onClick={() => go(role === 'admin' ? { name: 'manage-events' } : { name: 'landing' })} className="flex items-center">
             <Logo />
           </button>
         </div>
 
         <nav className="hidden items-center gap-1 justify-self-center md:flex">
-          {navItem('All Events', { name: 'landing' }, route.name === 'landing')}
+          {role !== 'admin' && navItem('All Events', { name: 'landing' }, route.name === 'landing')}
           {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
           {role === 'organiser' && navItem('Hosted Events', { name: 'hosted-events' }, route.name === 'hosted-events')}
           {role === 'admin' && navItem('Manage Events', { name: 'manage-events' }, route.name === 'manage-events')}
