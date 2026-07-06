@@ -2,20 +2,24 @@ import { adminClient } from './supabaseAdmin.js';
 import { notifyPasswordReset } from './notificationService.js';
 import { sendSms } from './smsService.js';
 
+export const dependencies = {
+  adminClient,
+  notifyPasswordReset,
+  sendSms,
+  store: new Map(),
+  sixDigit: () => String(Math.floor(100000 + Math.random() * 900000)),
+};
+
 // Custom password-reset OTP. The 6-digit code is generated here and emailed via
 // Resend (so it honours NOTIFICATION_OVERRIDE_EMAIL in dev), then the password is
 // updated with the service-role Auth admin API. Codes live in memory only.
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_ATTEMPTS = 5;
 
-// email (lowercased) -> { code, expiresAt, attempts, userId, username }
-const store = new Map();
-
 const normalise = (email) => (email ?? '').trim().toLowerCase();
-const sixDigit = () => String(Math.floor(100000 + Math.random() * 900000));
 
 async function findUser(email) {
-  const { data, error } = await adminClient()
+  const { data, error } = await dependencies.adminClient()
     .from('USER')
     .select('id, email, username, role, contact')
     .ilike('email', normalise(email))
@@ -35,7 +39,7 @@ function normalisePhone(raw) {
 async function findUserByPhone(phone) {
   const target = normalisePhone(phone);
   if (!target) return null;
-  const { data, error } = await adminClient()
+  const { data, error } = await dependencies.adminClient()
     .from('USER')
     .select('id, email, username, role, contact')
     .not('contact', 'is', null);
@@ -46,10 +50,10 @@ async function findUserByPhone(phone) {
 // Validate a stored code; returns the entry on success or an error string.
 function checkCode(email, code) {
   const key = normalise(email);
-  const entry = store.get(key);
+  const entry = dependencies.store.get(key);
   if (!entry) return { error: 'invalid_code' };
-  if (Date.now() > entry.expiresAt) { store.delete(key); return { error: 'expired_code' }; }
-  if (entry.attempts >= MAX_ATTEMPTS) { store.delete(key); return { error: 'too_many_attempts' }; }
+  if (Date.now() > entry.expiresAt) { dependencies.store.delete(key); return { error: 'expired_code' }; }
+  if (entry.attempts >= MAX_ATTEMPTS) { dependencies.store.delete(key); return { error: 'too_many_attempts' }; }
   if (entry.code !== String(code ?? '').trim()) {
     entry.attempts += 1;
     return { error: 'invalid_code' };
@@ -68,15 +72,15 @@ export async function requestReset(identifier, channel = 'email') {
   // SMS delivery needs a phone on file.
   if (channel === 'sms' && !user.contact) return { error: 'no_phone' };
 
-  const code = sixDigit();
-  store.set(normalise(user.email), { code, expiresAt: Date.now() + CODE_TTL_MS, attempts: 0, userId: user.id, username: user.username });
+  const code = dependencies.sixDigit();
+  dependencies.store.set(normalise(user.email), { code, expiresAt: Date.now() + CODE_TTL_MS, attempts: 0, userId: user.id, username: user.username });
 
   // Awaited so the HTTP response reflects whether the message was dispatched.
   if (channel === 'sms') {
-    const result = await sendSms(user.contact, `Your party.fun password reset code is ${code}. It expires in 10 minutes.`);
+    const result = await dependencies.sendSms(user.contact, `Your party.fun password reset code is ${code}. It expires in 10 minutes.`);
     if (!result.success) return { error: 'sms_failed' };
   } else {
-    await notifyPasswordReset({ email: user.email, username: user.username, role: user.role, code });
+    await dependencies.notifyPasswordReset({ email: user.email, username: user.username, role: user.role, code });
   }
   return { status: 'ok', email: user.email };
 }
@@ -92,9 +96,10 @@ export async function completeReset(email, code, password) {
   const result = checkCode(email, code);
   if (result.error) return { error: result.error };
 
-  const { error } = await adminClient().auth.admin.updateUserById(result.entry.userId, { password });
+  const { error } = await dependencies.adminClient().auth.admin.updateUserById(result.entry.userId, { password });
   if (error) return { error: error.message };
 
-  store.delete(normalise(email));
+  dependencies.store.delete(normalise(email));
   return { status: 'ok' };
 }
+
