@@ -1,6 +1,11 @@
 import PDFDocument from 'pdfkit';
 import { qrPngBuffer } from './qrCode.js';
 
+export const dependencies = {
+  qrPngBuffer,
+};
+
+
 const ORANGE = '#ff4d2e';
 
 // Build a printable PDF with one page per ticket; each page shows the event
@@ -16,7 +21,7 @@ export async function buildTicketsPdf({ event, tickets }) {
   for (let i = 0; i < list.length; i++) {
     if (i > 0) doc.addPage();
     const t = list[i];
-    const qr = await qrPngBuffer(t.qrCode);
+    const qr = await dependencies.qrPngBuffer(t.qrCode);
 
     doc.fillColor(ORANGE).fontSize(30).font('Helvetica-Bold').text('party.fun', { align: 'center' });
     doc.moveDown(0.4);
