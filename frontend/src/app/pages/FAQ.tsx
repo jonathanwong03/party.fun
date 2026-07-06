@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus, Minus, ArrowLeft } from 'lucide-react';
 import type { Route } from '../components/types';
 
-const GOLD = '#d4a24e';
+const GOLD = '#ff4d2e';
 
 const FAQS: { q: string; a: string }[] = [
   {
@@ -36,6 +36,10 @@ const FAQS: { q: string; a: string }[] = [
   {
     q: 'What are university-restricted events and co-organisers?',
     a: 'Organisers can restrict an event to their own university, so only eligible students see and join it. Co-organisers are other organiser accounts invited to help manage a specific event — they can edit it, view attendees and check in tickets, but only the owner can cancel, delete, or invite.',
+  },
+  {
+    q: 'What can the party.fun AI assistant do?',
+    a: 'The in-app assistant helps you get things done in plain language. For attendees it discovers and recommends events by your interests (it understands meaning, not just keywords), answers questions about your wallet, tickets and joined events, and can buy tickets or top up on your behalf. For organisers it can research ideas and draft, edit or cancel events, check the weather for an event, and give away tickets. It stays strictly on party.fun topics, and every payment or change is only ever proposed — nothing happens until you confirm it.',
   },
 ];
 

@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const GOLD = '#d4a24e';
+const GOLD = '#ff4d2e';
 
 // Fictional party.fun testimonials. Faces are stable portrait URLs (randomuser.me).
 const TESTIMONIALS = [
-  { name: 'Jun Liang', role: 'SMU · Year 3', quote: 'I found my whole friend group through party.fun. Pledging early meant the event actually happened — and I got the cheapest tickets.', img: 'https://randomuser.me/api/portraits/men/32.jpg' },
+  { name: 'James Seng', role: 'SMU · Year 3', quote: 'I found my whole friend group through party.fun. Pledging early meant the event actually happened — and I got the cheapest tickets.', img: 'https://randomuser.me/api/portraits/men/32.jpg' },
   { name: 'Priya Menon', role: 'NUS · Year 2', quote: 'The recommendations are scarily good. I said I was into live music and it lined up three gigs I would never have found otherwise.', img: 'https://randomuser.me/api/portraits/women/44.jpg' },
-  { name: 'Marcus Tan', role: 'Event Organiser', quote: 'As an organiser, seeing real demand before committing a cent changed everything. No more empty venues or out-of-pocket losses.', img: 'https://randomuser.me/api/portraits/men/76.jpg' },
+  { name: 'Marcus Tan', role: 'SUSS · Year 2', quote: 'As an organiser, seeing real demand before committing a cent changed everything. No more empty venues or out-of-pocket losses.', img: 'https://randomuser.me/api/portraits/men/76.jpg' },
   { name: 'Sofia Reyes', role: 'NTU · Year 1', quote: 'Refunds went straight back to my wallet when an event fell through. It just works — I never worry about losing my money.', img: 'https://randomuser.me/api/portraits/women/68.jpg' },
-  { name: 'Daniel Ong', role: 'Student Club President', quote: 'Inviting co-organisers and checking people in with QR codes made our fundraiser run itself. Highly recommend for any campus club.', img: 'https://randomuser.me/api/portraits/men/12.jpg' },
+  { name: 'Daniel Ong', role: 'NUS · Year 4', quote: 'Inviting co-organisers and checking people in with QR codes made our fundraiser run itself. Highly recommend for any campus club.', img: 'https://randomuser.me/api/portraits/men/12.jpg' },
 ];
 
 export function TestimonialsCarousel() {
