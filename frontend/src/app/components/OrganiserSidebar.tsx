@@ -42,8 +42,9 @@ export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) =
           ><it.icon size={16} />{it.label}</button>
         ))}
       </nav>
-      <div
-        className="mt-auto rounded-[14px] p-3"
+      <button
+        onClick={() => go({ name: 'faq' })}
+        className="mt-auto rounded-[14px] p-3 text-left transition hover:bg-white/5"
         style={{
           background: '#14141b',
           borderWidth: '0.556px',
@@ -54,10 +55,10 @@ export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) =
         <div className="text-xs" style={{ color: '#8a8a99' }}>
           Need help?
         </div>
-        <div className="text-sm" style={{ color: '#f5f5f7', fontWeight: 500 }}>
-          Read the organiser guide
+        <div className="text-sm underline" style={{ color: '#f5f5f7', fontWeight: 500 }}>
+          See the commonly asked questions
         </div>
-      </div>
+      </button>
     </aside>
   );
 }

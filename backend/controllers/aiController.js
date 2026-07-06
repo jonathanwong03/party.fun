@@ -1,11 +1,12 @@
 import { anyConfigured } from '../services/ai/modelRouter.js';
+import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { executeAction } from '../services/ai/agent/actions.js';
-import { loadMemory, formatMemory } from '../services/ai/memory.js';
+import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -77,8 +78,8 @@ export async function recommendEvents(req, res) {
   const { data: rows, error } = await req.supabase.rpc('get_events');
   if (error) return res.status(400).json({ status: 'error', message: error.message });
 
-  const candidates = (rows ?? [])
-    .filter((e) => e.hostId !== req.user.id && e.status !== 'cancelled' && e.status !== 'completed')
+  let candidates = (rows ?? [])
+    .filter((e) => e.hostId !== req.user.id && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
     .map((e) => {
       const prices = (e.statuses ?? []).map((s) => Number(s.price)).filter((n) => Number.isFinite(n));
       const cheapest = prices.length ? Math.min(...prices) : 0;
@@ -91,10 +92,46 @@ export async function recommendEvents(req, res) {
         cheapestPrice: cheapest,
         hypePct: threshold > 0 ? Math.min(100, Math.round((active / threshold) * 100)) : 0,
       };
-    })
-    .slice(0, 40);
+    });
+
+  // Semantic pre-ranking: order candidates by embedding similarity to the interests,
+  // then let the LLM pick/reason over the closest ones. Falls back to the raw list.
+  if (interests && String(interests).trim() && isEmbeddingEnabled()) {
+    const vec = await embedText(String(interests), { taskType: 'RETRIEVAL_QUERY' });
+    if (vec) {
+      const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 40 });
+      const order = new Map((matches ?? []).map((m, i) => [m.eventId, i]));
+      if (order.size) {
+        candidates = candidates
+          .filter((c) => order.has(c.id))
+          .sort((a, b) => order.get(a.id) - order.get(b.id));
+      }
+    }
+  }
+  candidates = candidates.slice(0, 40);
 
   res.json(await recommendEventsTask({ interests, candidates }));
+}
+
+// POST /api/ai/for-you — a personalised event feed from the user's taste profile
+// (remembered interests + the titles of events they've joined) → semantic match.
+// Returns { ids } best-first (excluding events they already joined). Empty when
+// there's no history/interests or embeddings are off.
+export async function forYou(req, res) {
+  if (!isEmbeddingEnabled()) return res.json({ ids: [] });
+  const [memories, profileRes, eventsRes] = await Promise.all([
+    loadMemory(req.supabase, req.user.id),
+    req.supabase.rpc('get_profile'),
+    req.supabase.rpc('get_events'),
+  ]);
+  const joined = new Set((profileRes.data?.tickets ?? []).map((t) => t.eventId));
+  const joinedTitles = (eventsRes.data ?? []).filter((e) => joined.has(e.id)).map((e) => e.title);
+  const profileText = [...memories.map((m) => m.content), ...joinedTitles].filter(Boolean).join('\n');
+  if (!profileText.trim()) return res.json({ ids: [] });
+  const vec = await embedText(profileText, { taskType: 'RETRIEVAL_QUERY' });
+  if (!vec) return res.json({ ids: [] });
+  const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 20 });
+  res.json({ ids: (matches ?? []).map((m) => m.eventId).filter((id) => !joined.has(id)) });
 }
 
 // POST /api/ai/ask
@@ -104,7 +141,7 @@ export async function ask(req, res) {
   if (!question || !String(question).trim()) {
     return res.status(400).json({ status: 'error', message: 'Question is required.' });
   }
-  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [] }));
+  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [], supabase: req.supabase }));
 }
 
 const AGENT_SYSTEM = () => [
@@ -112,12 +149,12 @@ const AGENT_SYSTEM = () => [
   '',
   'You are an event-planning agent for party.fun. Prefer calling a tool over guessing about events, prices or numbers.',
   'ALWAYS call the matching tool for the user\'s own data — get_my_hosted_events (events they host), get_my_joined_events (events they joined + tickets held), get_wallet (balance), list_my_drafts, list_available_events (events they can attend). NEVER answer these from memory or assume "none"; if a tool returns an empty list, say so, but only after actually calling it.',
-  'REFERENCES: resolve words like "it", "that", "this", "the event", "the draft", "the first one" to the event or draft most recently discussed in the conversation. Before you edit, cancel or delete an event or draft, look it up by name in the SAME turn (list_my_drafts for drafts; get_my_hosted_events or search_events for published events) and use the EXACT id it returns — never invent, guess, or reuse an id from an earlier message.',
+  'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',
   'READ tools:',
-  '- list_available_events: the ALL EVENTS / discovery list — the events the user can ATTEND/BUY right now: hosted by SOMEONE ELSE, still open (early_bird or greenlit), starting strictly in the FUTURE (not started/ongoing/ended), and NOT already purchased by them. Use this for "which events can I attend" and "cheapest/most expensive ticket I can buy". For an organiser it returns other organisers\' events, never their own.',
+  '- list_available_events: the ALL EVENTS / discovery list, and the ONLY correct tool for "which events can I attend / buy / participate in" and "cheapest/most expensive ticket I can buy". It returns exactly the events the user can BUY right now: hosted by SOMEONE ELSE, still open (early_bird or greenlit), starting strictly in the FUTURE, and NOT already purchased by them. It accepts an optional query/maxPrice. NEVER use search_events to answer "what can I attend" — it does not exclude own or already-purchased events.',
   "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype.",
-  '- search_events: general search across events the user can see (includes their own; excludes ended events). Use to look up an event by name before editing.',
+  '- search_events: general lookup of a SPECIFIC event by name (includes the user\'s own events and ones they already bought; excludes ended events). Use ONLY to find one event (e.g. before editing) — never to list what the user can attend/buy.',
   '- get_event_details: full details for one event.',
   "- get_event_forecast: projected sales/revenue/costs and PROFIT for the user's OWN events (host only). Forecasts are estimates; operational costs are NOT charged through party.fun.",
   '- get_event_attendees: who is attending an event (people holding active tickets) and the count — for "who is coming / how many backers".',
@@ -137,7 +174,7 @@ const AGENT_SYSTEM = () => [
   '- propose_topup: add money to the wallet by charging the linked card. Requires a linked card.',
   '- propose_pledge: buy ticket(s) with the WALLET balance. First ask how many + payment preference, then state the total and wallet balance (get_wallet). If the wallet is short, offer a card top-up (propose_topup) for the shortfall then pledge; if no card is linked, tell them to link one. Only for attendable events (someone else\'s, open, future-start, not already bought).',
   '- propose_give_away_tickets: give away some of the user\'s OWN tickets for an event they joined. They MUST say how many (more than 0, at most what they hold). Final and non-refundable — the released spots return to the public pool.',
-  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event. A REASON is REQUIRED: ask the organiser why before proposing.',
+  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event. A reason is OPTIONAL: if the organiser gives one, use it as-is (accept ANY reason, even informal like "it is not nice"); if they give none, proceed without one. Never demand a "formal" or "valid" reason.',
   '- propose_edit_draft: edit fields of an unpublished DRAFT (find it with list_my_drafts). Use this — NOT propose_update_event — to change an event that is still a draft. Pass draftId + only the fields to change.',
   '- propose_delete_draft: permanently delete one of the user\'s unpublished drafts.',
   '',
@@ -156,7 +193,7 @@ const AGENT_SYSTEM = () => [
   '',
   'SCOPE: You are ONLY an events assistant for party.fun. You help with discovering/buying events, wallet/top-ups, hosting (create/edit/cancel), giving away tickets, event ideas, and the weather for an event. If asked anything unrelated to events or party.fun (e.g. what to wear, general trivia, coding, personal advice, maths), politely say you can only help with events on party.fun and offer an events-related next step — do NOT answer the off-topic question. Still respond warmly to greetings, thanks and small pleasantries.',
   '',
-  'FORMATTING: reply in PLAIN TEXT only. Do NOT use markdown — no **bold**, no # headings, no dash/asterisk bullet characters, and no | tables |. Do NOT use emojis. Write short paragraphs separated by a blank line. When you list multiple items (events, drafts, options, tips), format them as a NUMBERED list — put each item on its own line starting with "1.", "2.", "3.", and so on.',
+  'FORMATTING: whenever you list multiple items (events, drafts, options, tips), you MUST number them — put each item on its OWN line, starting with "1.", then "2.", then "3.", and so on. For example:\n1. First item.\n\n2. Second item.\n\n3. Third item.\nNever present a list as unnumbered paragraphs. Otherwise reply in PLAIN TEXT — no markdown bold/headings/tables, no dash or asterisk bullets, and no emojis. Keep paragraphs short, separated by a blank line.',
 ].join('\n');
 
 // A one-line statement of who the current user is, prepended to the system prompt so
@@ -226,7 +263,9 @@ export async function chat(req, res) {
   const list = Array.isArray(messages) ? messages : [];
   // Every write always pauses for confirmation — no auto-apply mode.
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
-  const memBlock = formatMemory(await loadMemory(req.supabase, req.user.id));
+  // Recall only the memories relevant to THIS turn (vector match; falls back to all).
+  const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+  const memBlock = formatMemory(await loadRelevantMemory(req.supabase, req.user.id, lastUserMsg?.content));
   const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock].filter(Boolean).join('\n\n');
   const result = await runGraph({ system, messages: list, ctx, mode: 'ask' });
 

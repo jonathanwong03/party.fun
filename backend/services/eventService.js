@@ -4,6 +4,7 @@
 // the business logic stays in Postgres where it already works atomically.
 
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
+import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
@@ -374,6 +375,7 @@ export async function createEvent(sb, e) {
   const { data, error } = await sb.rpc('create_event', eventRpcArgs(e));
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  syncEventEmbedding(sb, data.eventId, e); // fire-and-forget (semantic search/recommendation)
   return { eventId: data.eventId };
 }
 
@@ -381,6 +383,7 @@ export async function updateEvent(sb, e) {
   const { data, error } = await sb.rpc('update_event', { p_event_id: e.id, ...eventRpcArgs(e) });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  syncEventEmbedding(sb, e.id, e); // re-embed on edit
   return { status: 'ok' };
 }
 

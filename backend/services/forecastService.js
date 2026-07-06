@@ -1,5 +1,28 @@
 import { adminClient } from './supabaseAdmin.js';
 import { predictRevenue } from './revenueForecaster.js';
+import { embedText, toVectorLiteral, isEmbeddingEnabled } from './ai/embeddingService.js';
+
+// Benchmark the event against the most SIMILAR past events' real sell-through
+// (semantic match). Returns null when embeddings/data are unavailable. Never throws.
+export async function similarPastBenchmark(admin, ev) {
+  try {
+    if (!isEmbeddingEnabled()) return null;
+    const text = [ev.title, ev.description, ev.location, ev.address].filter(Boolean).join('\n');
+    const vec = await embedText(text, { taskType: 'RETRIEVAL_QUERY' });
+    if (!vec) return null;
+    const { data } = await admin.rpc('match_similar_past_events', { p_embedding: toVectorLiteral(vec), p_count: 5, p_exclude: ev.id });
+    const rows = (data ?? []).filter((r) => Number(r.capacity) > 0);
+    if (!rows.length) return null;
+    const pct = rows.map((r) => Math.min(100, Math.round((Number(r.sold) / Number(r.capacity)) * 100)));
+    return {
+      similarCount: rows.length,
+      avgSellThroughPct: Math.round(pct.reduce((a, b) => a + b, 0) / pct.length),
+      examples: rows.slice(0, 3).map((r, i) => ({ title: r.title, sellThroughPct: pct[i] })),
+    };
+  } catch {
+    return null;
+  }
+}
 
 // Assemble forecast features for one event and run the local predictor. Mirrors
 // the feature mapping in analyticsController.getRevenueForecast so the AI
@@ -58,5 +81,6 @@ export async function forecastForEvent(eventId) {
   };
 
   const forecast = await predictRevenue(features);
+  forecast.benchmark = await similarPastBenchmark(admin, ev); // similar past events' real sell-through
   return { event: ev, features, forecast };
 }

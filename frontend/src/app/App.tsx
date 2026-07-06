@@ -19,6 +19,7 @@ const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
 import { installIdleTimeout, resetActivity } from './idle';
 import { Landing } from './pages/Landing';
+import { FAQ } from './pages/FAQ';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
 import { Confirmation } from './pages/Confirmation';
@@ -63,6 +64,8 @@ function pathForRoute(route: Route) {
   switch (route.name) {
     case 'landing':
       return '/events';
+    case 'faq':
+      return '/faq';
     case 'event':
       return `/events/${route.id}`;
     case 'checkout':
@@ -160,7 +163,7 @@ function isAuthPath(pathname: string) {
 
 // Pages a signed-out guest may view: the All Events list and any event detail.
 function isPublicPath(pathname: string) {
-  return pathname === '/events' || /^\/events\/[^/]+$/.test(pathname);
+  return pathname === '/events' || pathname === '/faq' || /^\/events\/[^/]+$/.test(pathname);
 }
 
 function routeFromPath(pathname: string, state: RouteState | null): Route {
@@ -175,6 +178,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/signup/user') return { name: 'register-user' };
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
   if (pathname === '/events') return { name: 'landing' };
+  if (pathname === '/faq') return { name: 'faq' };
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/analytics') return { name: 'analytics' };
@@ -514,6 +518,7 @@ function AppShell() {
         <BrowserRoute path="/signup/user" element={<RegisterUser go={go} />} />
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
         <BrowserRoute path="/events" element={<Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />
+        <BrowserRoute path="/faq" element={<FAQ go={go} />} />
         <BrowserRoute path="/events/:eventId" element={<EventDetailRoute role={role} go={go} events={events} purchasedEventIds={purchasedEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/events/:eventId/attendees" element={<AttendeesRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />

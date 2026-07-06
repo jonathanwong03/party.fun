@@ -1,5 +1,6 @@
 import { adminClient } from '../services/supabaseAdmin.js';
 import { predictRevenue } from '../services/revenueForecaster.js';
+import { similarPastBenchmark } from '../services/forecastService.js';
 
 // Role-aware analytics: global discovery + (organiser) own-events + personal.
 // The aggregation runs in the get_analytics() RPC (SECURITY DEFINER) so it can
@@ -68,5 +69,6 @@ export async function getRevenueForecast(req, res) {
 
   const forecast = await predictRevenue(features);
   if (!forecast) return res.json({ available: false });
-  res.json({ available: true, ...forecast });
+  const benchmark = await similarPastBenchmark(admin, ev); // similar past events' real sell-through
+  res.json({ available: true, ...forecast, benchmark });
 }

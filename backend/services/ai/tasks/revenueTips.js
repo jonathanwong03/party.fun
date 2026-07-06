@@ -50,6 +50,7 @@ export async function revenueTips({ event = {}, forecast = {} } = {}) {
     `- Avg ticket price: $${Number(forecast.avgTicketPrice ?? 0).toFixed(2)}`,
     `- Estimated operational costs: $${Number(forecast.totalOperationalCost ?? 0).toFixed(2)}`,
     `- Estimated net: $${Number(forecast.estimatedNet ?? 0).toFixed(2)}`,
+    forecast.benchmark ? `- Benchmark: ${forecast.benchmark.similarCount} similar past event(s) sold ~${forecast.benchmark.avgSellThroughPct}% of capacity — use this as a reality check.` : '',
     costLines ? `Cost breakdown:\n${costLines}` : '',
     '',
     'Give 4-6 prioritised tips (most impactful first).',

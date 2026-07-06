@@ -24,6 +24,28 @@ const actionMeta = (action: string) => ACTION_META[action] ?? { label: 'Action n
 
 // Render an assistant reply as clean plain-text paragraphs: strip markdown syntax
 // (bold/headings/code/bullets) and split into paragraphs so replies aren't a wall of text.
+// Known "Label: value" detail lines in the agent's list output. Matched by a label
+// whitelist (not a bare colon) because item titles can contain colons, e.g.
+// "Grad Ball: Black-Tie Gala".
+const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|location|address|deadline|tickets?|tickets sold|hype|hype threshold|threshold|capacity|early[- ]?bird|greenlit|revenue|profit|cost|reason)\b[^:]*:/i;
+
+// Deterministically number lists the model failed to number. A list = an intro
+// paragraph ending with ":" followed by >=2 item TITLES (paragraphs that aren't
+// detail lines). Non-list replies are left untouched.
+function autoNumberList(paras: string[]): string[] {
+  const introIdx = paras.findIndex((p) => /:\s*$/.test(p));
+  if (introIdx === -1) return paras;
+  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p);
+  const titleCount = paras.slice(introIdx + 1).filter(isTitle).length;
+  if (titleCount < 2) return paras;
+  let n = 0;
+  return paras.map((p, i) => {
+    if (i <= introIdx || !isTitle(p)) return p;
+    n += 1;
+    return `${n}. ${p}`;
+  });
+}
+
 function renderReply(content: string): string[] {
   const cleaned = content
     .replace(/\*\*(.*?)\*\*/g, '$1')   // **bold**
@@ -34,7 +56,8 @@ function renderReply(content: string): string[] {
     .replace(/\*/g, '')                // stray asterisks
     .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\u{FE0F}\u{20E3}]/gu, '') // emojis
     .replace(/[ \t]{2,}/g, ' ');       // collapse gaps left by stripped emojis
-  return cleaned.split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  const paras = cleaned.split(/\n+/).map((p) => p.trim()).filter(Boolean);
+  return autoNumberList(paras);
 }
 
 // Floating AI agent: a launcher + chat panel. The model calls backend tools in a

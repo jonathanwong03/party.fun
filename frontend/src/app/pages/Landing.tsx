@@ -1,11 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Search, Sparkles } from 'lucide-react';
 import { EventCard } from '../components/EventCard';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 import { UNIVERSITIES, universityLabel } from '../components/universities';
-import { fetchEventRecommendations, type EventRecommendation } from '../api';
+import { fetchEventRecommendations, fetchSemanticEventIds, fetchForYou, type EventRecommendation } from '../api';
+import { TestimonialsCarousel } from '../components/TestimonialsCarousel';
 
 
 export function Landing({
@@ -26,6 +27,28 @@ export function Landing({
   const [hype, setHype] = useState('all');
   const [price, setPrice] = useState('all');
   const [university, setUniversity] = useState('all');
+  // Semantic (vector) ranking for the search query; null = use plain substring match.
+  const [semanticIds, setSemanticIds] = useState<string[] | null>(null);
+  // Personalised "For You" order (taste profile). Empty for guests / no history.
+  const [forYouIds, setForYouIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchForYou().then((r) => { if (!cancelled) setForYouIds(r.ids ?? []); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    const query = q.trim();
+    if (!query) { setSemanticIds(null); return; }
+    let cancelled = false;
+    const t = setTimeout(() => {
+      fetchSemanticEventIds(query)
+        .then((r) => { if (!cancelled) setSemanticIds(r.ids?.length ? r.ids : null); })
+        .catch(() => { if (!cancelled) setSemanticIds(null); });
+    }, 300);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [q]);
 
   // Organiser-owned, globally cancelled, and completed events do not belong in discovery.
   const available = useMemo(
@@ -33,8 +56,7 @@ export function Landing({
     [events],
   );
   const filteredAvailable = useMemo(() => {
-    return available.filter((e) => {
-      if (q && !`${e.title} ${e.organiser} ${universityLabel(e.hostUniversity)}`.toLowerCase().includes(q.toLowerCase())) return false;
+    const base = available.filter((e) => {
       if (price === 'lt15' && e.price >= 15) return false;
       if (price === '15-25' && (e.price < 15 || e.price > 25)) return false;
       if (price === 'gt25' && e.price <= 25) return false;
@@ -42,12 +64,31 @@ export function Landing({
       if (university !== 'all' && e.hostUniversity !== university) return false;
       return true;
     });
-  }, [available, hype, price, q, university]);
+    const query = q.trim();
+    if (!query) return base;
+    // Semantic search: keep events in the ranked ids, ordered by relevance.
+    if (semanticIds && semanticIds.length) {
+      const rank = new Map(semanticIds.map((id, i) => [id, i]));
+      return base.filter((e) => rank.has(e.id)).sort((a, b) => (rank.get(a.id) ?? 0) - (rank.get(b.id) ?? 0));
+    }
+    // Fallback: substring match while the semantic result loads or is unavailable.
+    return base.filter((e) => `${e.title} ${e.organiser} ${universityLabel(e.hostUniversity)}`.toLowerCase().includes(query.toLowerCase()));
+  }, [available, hype, price, q, university, semanticIds]);
 
   // "Most hyped" is chosen by the backend (highest uncapped fill ratio among open,
   // non-owned events) and flagged as `featured`; fall back to the first available.
   const featured = filteredAvailable.find((e) => e.featured) ?? (filteredAvailable.length ? filteredAvailable[0] : undefined);
   const filtered = filteredAvailable.filter((e) => e.id !== featured?.id);
+
+  // "For You": the personalized order intersected with buyable (not-yet-purchased) events.
+  const forYou = useMemo(() => {
+    if (!forYouIds.length) return [];
+    const byId = new Map(available.map((e) => [e.id, e]));
+    return forYouIds
+      .map((id) => byId.get(id))
+      .filter((e): e is EventItem => !!e && !purchasedEventIds.has(e.id))
+      .slice(0, 6);
+  }, [forYouIds, available, purchasedEventIds]);
 
   if (loading) {
     return (
@@ -89,6 +130,21 @@ export function Landing({
         onView={(id) => go({ name: 'event', id })}
         purchasedEventIds={purchasedEventIds}
       />
+
+      {/* For You — personalized from taste profile (hidden when empty) */}
+      {forYou.length > 0 && (
+        <div className="mb-12">
+          <div className="mb-4 flex items-center gap-2">
+            <Sparkles size={18} style={{ color: '#ff4d2e' }} />
+            <h2>For You</h2>
+          </div>
+          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {forYou.map((e) => (
+              <EventCard key={e.id} event={e} alreadyPurchased={purchasedEventIds.has(e.id)} onView={() => go({ name: 'event', id: e.id })} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Featured */}
       {featured && (
@@ -160,6 +216,9 @@ export function Landing({
           <p style={{ color: 'var(--muted-foreground)' }}>No events match those filters.</p>
         </div>
       )}
+
+      {/* Testimonials */}
+      <TestimonialsCarousel />
     </div>
   );
 }
