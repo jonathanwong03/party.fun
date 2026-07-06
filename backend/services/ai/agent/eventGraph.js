@@ -5,6 +5,7 @@ import { createAgent } from 'langchain';
 import { resolveCandidates, runTier } from '../modelRouter.js';
 import { TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
+import { sanitizeAiReply } from '../responseSanitizer.js';
 
 // ── LangGraph event-planning agent (full workflow) ───────────────────────────
 // The whole diagram is one graph:
@@ -47,8 +48,8 @@ export const BRANCH_TOOLS = {
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
   discovery: withPersonal('list_available_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
-  best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'research_event_ideas', 'remember'),
-  event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
+  best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'get_similar_past_events', 'research_event_ideas', 'remember'),
+  event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
 
@@ -58,6 +59,7 @@ const DIRECTIVES = {
   best_fit: "INTENT: best-fit / recommendation. When the user gives INTERESTS (e.g. 'I'm into gaming'), call recommend_events (semantic — ranks by meaning, so 'gaming' matches an arcade/esports night even without the word). For a vague thematic search use semantic_search_events; for 'events like X' use find_similar_events. Present the top few with a short why; when purely price-driven, fall back to list_available_events sorted by price. Trust the semantic ranking over literal keyword matches.",
   event_mgmt: "INTENT: manage the user's own events. You CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
     + "CREATE (autonomous research → full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
+    + "RAG PLANNING: for event creation, planning, pricing, capacity or revenue advice, call get_similar_past_events when a useful theme/reference exists. Use examples only as historical benchmarks, never as current availability, and never expose example IDs.\n"
     + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
@@ -306,12 +308,14 @@ function buildApp(model, system) {
       ? state.proposals.filter((p) => !doneIds.has(p.id))
       : state.proposals.filter((p) => state.decisions[p.id] === 'confirm' && !doneIds.has(p.id));
     const results = [];
+    const nextProposals = [];
     for (const p of toRun) {
       const r = await executeAction({ sb: ctx.supabase, user, action: p.action, eventId: p.eventId, payload: p.payload });
       results.push({ proposalId: p.id, action: p.action, ok: !r?.error, message: r?.message ?? r?.error, status: r?.status });
+      if (!r?.error && r?.nextProposal) nextProposals.push(r.nextProposal);
     }
     const text = summarize(results);
-    return { results, messages: text ? [new AIMessage(text)] : [] };
+    return { results, proposals: nextProposals, messages: text ? [new AIMessage(text)] : [] };
   };
 
   const routeIntent = (state) => INTENT_TO_NODE[state.intent] ?? 'answer';
@@ -359,7 +363,7 @@ function shape(state, interrupted, { threadId, provider, modelId }) {
   return {
     available: true,
     status: interrupted ? 'awaiting_confirmation' : 'done',
-    reply: lastAiText(state?.messages),
+    reply: sanitizeAiReply(lastAiText(state?.messages)),
     proposals: state?.proposals ?? [],
     results: state?.results ?? [],
     threadId,

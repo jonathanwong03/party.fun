@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 
-const GOLD = '#ff4d2e';
+const ACCENT = '#ff4d2e';
 
 // Fictional party.fun testimonials. Faces are stable portrait URLs (randomuser.me).
 const TESTIMONIALS = [
@@ -35,8 +35,7 @@ export function TestimonialsCarousel() {
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
     >
-      <h2 className="text-center" style={{ color: GOLD, fontWeight: 700, fontSize: 22, letterSpacing: '0.04em' }}>WHAT STUDENTS SAY</h2>
-      <div className="mx-auto mt-3 mb-8 h-px w-16" style={{ background: GOLD }} />
+      <h2 className="text-center" style={{ color: 'var(--foreground)', fontWeight: 700, fontSize: 22, letterSpacing: '0.04em' }}>WHAT STUDENTS SAY</h2>
 
       <div className="mx-auto flex max-w-3xl items-center gap-3 sm:gap-6">
         <button onClick={prev} aria-label="Previous" className={arrowBtn} style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}>
@@ -48,7 +47,6 @@ export function TestimonialsCarousel() {
             src={t.img}
             alt={t.name}
             className="mx-auto mb-4 size-20 rounded-full object-cover"
-            style={{ border: `2px solid ${GOLD}` }}
           />
           <p className="mx-auto max-w-xl text-base" style={{ color: 'var(--foreground)', lineHeight: 1.6 }}>
             &ldquo;{t.quote}&rdquo;
@@ -69,7 +67,7 @@ export function TestimonialsCarousel() {
             onClick={() => setI(idx)}
             aria-label={`Go to testimonial ${idx + 1}`}
             className="size-2 rounded-full transition"
-            style={{ background: idx === i ? GOLD : 'var(--border)' }}
+            style={{ background: idx === i ? ACCENT : 'var(--border)' }}
           />
         ))}
       </div>

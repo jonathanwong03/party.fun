@@ -73,11 +73,10 @@ export function FAQ({ go }: { go: (r: Route) => void }) {
         <ArrowLeft size={16} /> Back to events
       </button>
       <div className="rounded-2xl border p-6 sm:p-8" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <h1 className="text-center" style={{ color: GOLD, fontWeight: 700, fontSize: 26, letterSpacing: '0.02em' }}>
-          COMMONLY ASKED QUESTIONS
+        <h1 className="text-center" style={{ color: 'var(--foreground)', fontWeight: 700, fontSize: 26, letterSpacing: '0.02em' }}>
+          FREQUENTLY ASKED QUESTIONS
         </h1>
-        <div className="mx-auto mt-3 mb-6 h-px w-16" style={{ background: GOLD }} />
-        <div>
+        <div className="mt-6">
           {FAQS.map((f, i) => (
             <FaqItem
               key={i}

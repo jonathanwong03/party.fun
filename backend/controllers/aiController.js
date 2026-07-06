@@ -7,6 +7,7 @@ import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/an
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
+import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
 import { forecastForEvent } from '../services/forecastService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
@@ -151,6 +152,12 @@ const AGENT_SYSTEM = () => [
   'ALWAYS call the matching tool for the user\'s own data — get_my_hosted_events (events they host), get_my_joined_events (events they joined + tickets held), get_wallet (balance), list_my_drafts, list_available_events (events they can attend). NEVER answer these from memory or assume "none"; if a tool returns an empty list, say so, but only after actually calling it.',
   'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',
+  'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
+  'For "events I can join" or "events I can attend", use list_available_events and list ALL returned events unless the user asks for a shorter list.',
+  '"Ongoing events" means buyable All Events items for attendees/users. For organisers, clarify whether they mean buyable All Events or their own active hosted events. Completed events are never ongoing.',
+  'Only organisers can create, draft, publish, edit, cancel, or manage hosted events. If a normal user asks to create an event, tell them they need an organiser account.',
+  'Retrieved memory and chat history are context only. Current events, tickets, wallet, draft state, pricing and permissions must come from tools in the current turn.',
+  '',
   'READ tools:',
   '- list_available_events: the ALL EVENTS / discovery list, and the ONLY correct tool for "which events can I attend / buy / participate in" and "cheapest/most expensive ticket I can buy". It returns exactly the events the user can BUY right now: hosted by SOMEONE ELSE, still open (early_bird or greenlit), starting strictly in the FUTURE, and NOT already purchased by them. It accepts an optional query/maxPrice. NEVER use search_events to answer "what can I attend" — it does not exclude own or already-purchased events.',
   "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype.",
@@ -242,7 +249,14 @@ async function persistTurn(supabase, { conversationId, titleSeed, userText, repl
       // Stored as 'chat user' (not 'user') to avoid confusion with the app's USER role.
       if (userText) rows.push({ conversation_id: convoId, role: 'chat user', content: String(userText) });
       if (reply) rows.push({ conversation_id: convoId, role: 'assistant', content: reply, model: modelLabel ?? null });
-      if (rows.length) await supabase.from('AI_CHAT_MESSAGES').insert(rows);
+      if (rows.length) {
+        const { data: inserted, error: insertError } = await supabase
+          .from('AI_CHAT_MESSAGES')
+          .insert(rows)
+          .select('id, content');
+        if (insertError) throw insertError;
+        embedChatMessages(supabase, inserted ?? []);
+      }
       await supabase.from('AI_CHAT_CONVERSATIONS').update({ updated_at: new Date().toISOString() }).eq('id', convoId);
     }
   } catch (e) {
@@ -265,8 +279,13 @@ export async function chat(req, res) {
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
   // Recall only the memories relevant to THIS turn (vector match; falls back to all).
   const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
-  const memBlock = formatMemory(await loadRelevantMemory(req.supabase, req.user.id, lastUserMsg?.content));
-  const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock].filter(Boolean).join('\n\n');
+  const [memories, chatHistory] = await Promise.all([
+    loadRelevantMemory(req.supabase, req.user.id, lastUserMsg?.content),
+    loadRelevantChatHistory(req.supabase, lastUserMsg?.content),
+  ]);
+  const memBlock = formatMemory(memories);
+  const historyBlock = formatChatHistory(chatHistory);
+  const system = [AGENT_SYSTEM(), roleLine(req.user.role), dateLine(), memBlock, historyBlock].filter(Boolean).join('\n\n');
   const result = await runGraph({ system, messages: list, ctx, mode: 'ask' });
 
   let convoId = conversationId || null;

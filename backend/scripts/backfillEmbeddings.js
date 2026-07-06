@@ -8,6 +8,8 @@ import { adminClient } from '../services/supabaseAdmin.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { eventEmbeddingText, eventEmbeddingHash } from '../services/ai/eventEmbeddings.js';
 import { embedMemory } from '../services/ai/memory.js';
+import { embedChatMessage } from '../services/ai/chatHistory.js';
+import { syncDraftEmbedding } from '../services/ai/draftEmbeddings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -66,12 +68,36 @@ async function backfillMemories(admin) {
   console.log(`Memories embedded: ${done}`);
 }
 
+async function backfillChatMessages(admin) {
+  const { data: rows } = await admin.from('AI_CHAT_MESSAGES').select('id, content, embedding');
+  let done = 0;
+  for (const m of rows ?? []) {
+    if (m.embedding || !m.content) continue;
+    await embedChatMessage(admin, m.id, m.content);
+    done += 1;
+  }
+  console.log(`Chat messages embedded: ${done}`);
+}
+
+async function backfillDrafts(admin) {
+  const { data: rows } = await admin.from('EVENT_DRAFTS').select('id, userId, payload');
+  let done = 0;
+  for (const d of rows ?? []) {
+    if (!d.id || !d.userId) continue;
+    await syncDraftEmbedding(admin, d.id, d.userId, { id: d.id, ...(d.payload ?? {}) });
+    done += 1;
+  }
+  console.log(`Drafts checked for embeddings: ${done}`);
+}
+
 async function main() {
   if (!isEmbeddingEnabled()) { console.error('GEMINI_API_KEY not set — cannot embed.'); process.exit(1); }
   const admin = adminClient();
   await backfillEvents(admin);
   await backfillDocs(admin);
   await backfillMemories(admin);
+  await backfillChatMessages(admin);
+  await backfillDrafts(admin);
   console.log('Backfill complete.');
   process.exit(0);
 }

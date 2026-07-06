@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 import { UNIVERSITIES, universityLabel } from '../components/universities';
-import { fetchEventRecommendations, fetchSemanticEventIds, fetchForYou, type EventRecommendation } from '../api';
+import { fetchEventRecommendations, fetchSemanticEventIds, type EventRecommendation } from '../api';
 import { TestimonialsCarousel } from '../components/TestimonialsCarousel';
 
 
@@ -29,15 +29,6 @@ export function Landing({
   const [university, setUniversity] = useState('all');
   // Semantic (vector) ranking for the search query; null = use plain substring match.
   const [semanticIds, setSemanticIds] = useState<string[] | null>(null);
-  // Personalised "For You" order (taste profile). Empty for guests / no history.
-  const [forYouIds, setForYouIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchForYou().then((r) => { if (!cancelled) setForYouIds(r.ids ?? []); }).catch(() => {});
-    return () => { cancelled = true; };
-  }, []);
-
   useEffect(() => {
     const query = q.trim();
     if (!query) { setSemanticIds(null); return; }
@@ -80,16 +71,6 @@ export function Landing({
   const featured = filteredAvailable.find((e) => e.featured) ?? (filteredAvailable.length ? filteredAvailable[0] : undefined);
   const filtered = filteredAvailable.filter((e) => e.id !== featured?.id);
 
-  // "For You": the personalized order intersected with buyable (not-yet-purchased) events.
-  const forYou = useMemo(() => {
-    if (!forYouIds.length) return [];
-    const byId = new Map(available.map((e) => [e.id, e]));
-    return forYouIds
-      .map((id) => byId.get(id))
-      .filter((e): e is EventItem => !!e && !purchasedEventIds.has(e.id))
-      .slice(0, 6);
-  }, [forYouIds, available, purchasedEventIds]);
-
   if (loading) {
     return (
       <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -130,21 +111,6 @@ export function Landing({
         onView={(id) => go({ name: 'event', id })}
         purchasedEventIds={purchasedEventIds}
       />
-
-      {/* For You — personalized from taste profile (hidden when empty) */}
-      {forYou.length > 0 && (
-        <div className="mb-12">
-          <div className="mb-4 flex items-center gap-2">
-            <Sparkles size={18} style={{ color: '#ff4d2e' }} />
-            <h2>For You</h2>
-          </div>
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {forYou.map((e) => (
-              <EventCard key={e.id} event={e} alreadyPurchased={purchasedEventIds.has(e.id)} onView={() => go({ name: 'event', id: e.id })} />
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Featured */}
       {featured && (

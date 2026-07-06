@@ -1,5 +1,5 @@
-import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createPledge, deleteDraft, listDrafts, giveAwayTickets } from '../../eventService.js';
-import { notifyEventUpdated, notifyCoOrganiserInvite, notifyPledgeConfirmed } from '../../notificationService.js';
+import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createEvent, createPledge, deleteDraft, listDrafts, giveAwayTickets } from '../../eventService.js';
+import { notifyEventUpdated, notifyCoOrganiserInvite, notifyPledgeConfirmed, notifyEventCreated } from '../../notificationService.js';
 import { topupWallet } from '../../walletService.js';
 import { cancelEventWithRefunds } from '../../eventCancellationService.js';
 
@@ -7,7 +7,7 @@ import { cancelEventWithRefunds } from '../../eventCancellationService.js';
 // (user-scoped) Supabase client so RLS + the RPCs re-enforce ownership/validation;
 // we also re-check ownership here. Never trusts the proposal blindly.
 
-const ACTIONS = new Set(['update_event', 'create_event_draft', 'edit_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft', 'give_away']);
+const ACTIONS = new Set(['update_event', 'create_event_draft', 'publish_draft', 'edit_draft', 'invite_coorganiser', 'topup', 'pledge', 'cancel_event', 'delete_draft', 'give_away']);
 
 // Apply friendly field updates onto a stored draft payload (same field→shape mapping
 // create_event_draft uses), so an AI draft edit re-saves in the shape the form expects.
@@ -65,6 +65,9 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
 
   // ── Create a DRAFT (no existing event / ownership check needed) ──────────────
   if (action === 'create_event_draft') {
+    if (user.role !== 'organiser' && user.role !== 'admin') {
+      return { error: 'not_organiser', message: 'Only organisers can create events.' };
+    }
     const p = payload ?? {};
     const title = String(p.title ?? '').trim();
     if (!title) return { error: 'title_required', message: 'An event title is required.' };
@@ -98,13 +101,54 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
     };
     try {
       const saved = await saveDraft(sb, user.id, draft);
-      return { status: 'ok', message: `Saved "${title}" as a draft — review and publish it from your Drafts.`, draftId: saved?.id };
+      return {
+        status: 'ok',
+        message: `Saved "${title}" as a draft. Would you like to officially create the event now?`,
+        draftId: saved?.id,
+        nextProposal: saved?.id ? {
+          id: `publish_draft:${saved.id}:${Date.now()}`,
+          action: 'publish_draft',
+          eventId: null,
+          title,
+          summary: `Officially create "${title}" from this draft and add it to your Created events.`,
+          payload: { draftId: saved.id },
+        } : null,
+      };
     } catch (e) {
       return { error: 'error', message: e?.message ?? 'Unable to save the draft.' };
     }
   }
 
   // ── Top up the wallet (Stripe charge → wallet credit; no event) ──────────────
+  if (action === 'publish_draft') {
+    if (user.role !== 'organiser' && user.role !== 'admin') {
+      return { error: 'not_organiser', message: 'Only organisers can create events.' };
+    }
+    const draftId = String(payload?.draftId ?? '').trim();
+    if (!draftId) return { error: 'bad_request', message: 'Missing draft id.' };
+    let drafts;
+    try { drafts = await listDrafts(sb); } catch (e) { return { error: 'error', message: e?.message ?? 'Unable to load drafts.' }; }
+    const draft = drafts.find((d) => d.id === draftId);
+    if (!draft) return { error: 'not_found', message: 'Draft not found.' };
+    const result = await createEvent(sb, draft);
+    if (result?.error) return { error: result.error, message: msg(result.error, 'Unable to create event.') };
+    try { await deleteDraft(sb, draftId); } catch { /* event was created; keep going */ }
+    try {
+      const { data: me } = await sb.from('USER').select('email, username').eq('id', user.id).single();
+      if (me?.email) {
+        notifyEventCreated({
+          email: me.email,
+          organiserName: me.username,
+          eventTitle: draft.title,
+          eventId: result.eventId,
+          hypeThreshold: draft.hypeThreshold,
+          deadline: draft.deadlineAt,
+        });
+      }
+    } catch { /* notification is non-critical */ }
+    return { status: 'ok', message: `Created "${draft.title || 'the event'}" and added it to your Created events.`, eventId: result.eventId };
+  }
+
   if (action === 'topup') {
     const result = await topupWallet(sb, user.id, payload?.amount);
     if (result.error) return { error: result.error, message: result.message ?? 'Unable to top up.' };

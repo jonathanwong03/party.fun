@@ -13,6 +13,7 @@ type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: strin
 const ACTION_META: Record<string, { label: string; danger?: boolean }> = {
   update_event: { label: 'Edit event' },
   create_event_draft: { label: 'Create draft' },
+  publish_draft: { label: 'Create event' },
   edit_draft: { label: 'Edit draft' },
   invite_coorganiser: { label: 'Invite co-organiser' },
   topup: { label: 'Wallet top-up', danger: true },
@@ -208,6 +209,18 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
       const outcome = (res.results ?? []).find((r) => r.proposalId === p.id);
       const ok = outcome ? outcome.ok : true;
       setActions((s) => ({ ...s, [p.id]: { status: ok ? 'done' : 'error', message: outcome?.message ?? res.reply } }));
+      const followUps = (res.proposals ?? []).filter((proposal) => proposal.id !== p.id);
+      if (ok && followUps.length) {
+        setMessages((current) => [
+          ...current,
+          {
+            role: 'assistant',
+            content: res.reply ?? 'Would you like to continue?',
+            proposals: followUps,
+            threadId: res.threadId,
+          },
+        ]);
+      }
       if (ok) onDataChanged?.(); // refresh app data so the change shows instantly
     } catch (e) {
       setActions((s) => ({ ...s, [p.id]: { status: 'error', message: e instanceof Error ? e.message : 'Action failed.' } }));
@@ -277,7 +290,7 @@ export function AiAssistant({ onDataChanged }: { onDataChanged?: () => void }) {
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
             {messages.length === 0 && (
               <div className="text-sm" style={muted}>
-                Hi! I can look up real events, check your forecasts, and help plan an event. Ask away.
+                Hi! I'm your party.fun assistant. I can find and recommend events, buy tickets and top up your wallet, and help you join what suits you. If you host events, I can also add, edit, cancel or delete them, check forecasts and the weather, and more. Ask away!
               </div>
             )}
             {messages.map((m, i) => (

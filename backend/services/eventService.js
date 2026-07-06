@@ -5,6 +5,7 @@
 
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
+import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
 
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 
@@ -353,7 +354,9 @@ export async function saveDraft(sb, userId, draft) {
       .select('id, payload')
       .single();
     if (error) throw new Error(error.message);
-    return asDraft(data);
+    const saved = asDraft(data);
+    syncDraftEmbedding(sb, saved.id, userId, saved);
+    return saved;
   }
   const { data, error } = await sb
     .from('EVENT_DRAFTS')
@@ -361,12 +364,15 @@ export async function saveDraft(sb, userId, draft) {
     .select('id, payload')
     .single();
   if (error) throw new Error(error.message);
-  return asDraft(data);
+  const saved = asDraft(data);
+  syncDraftEmbedding(sb, saved.id, userId, saved);
+  return saved;
 }
 
 export async function deleteDraft(sb, id) {
   const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
   if (error) throw new Error(error.message);
+  deleteDraftEmbedding(sb, id);
 }
 
 // ── Organiser writes ───────────────────────────────────────────────────────

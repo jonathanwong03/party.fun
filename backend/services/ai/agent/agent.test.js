@@ -9,8 +9,9 @@ import { selectAtRisk } from './advisor.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
 import { __setResearchCallForTests, __resetResearchCallForTests } from './research.js';
 import { __setEmbedForTests, __resetEmbedForTests } from '../embeddingService.js';
+import { sanitizeAiReply } from '../responseSanitizer.js';
 
-afterEach(() => { __resetProvidersForTests(); __resetGraphForTests(); __resetForecastForTests(); __resetResearchCallForTests(); });
+afterEach(() => { __resetProvidersForTests(); __resetGraphForTests(); __resetForecastForTests(); __resetResearchCallForTests(); __resetEmbedForTests(); delete process.env.GEMINI_API_KEY; });
 
 // A fake branch agent: appends a fixed set of NEW messages onto the input list,
 // mimicking what createAgent returns from `.invoke({ messages })`.
@@ -55,6 +56,17 @@ test('runGraph runs the classified branch and returns the final answer', async (
   assert.equal(out.status, 'done');
   assert.match(out.reply, /music/i);
   assert.equal(out.provider, 'gemini');
+});
+
+test('final replies strip UUIDs and parenthetical IDs', async () => {
+  const uuid = '0de00006-0000-4000-8000-000000000005';
+  assert.equal(sanitizeAiReply(`1. Gala (ID: ${uuid})`), '1. Gala');
+
+  useModel(); useClassify('discovery');
+  useAgents(fakeAgent([say(`1. Gala (ID: ${uuid}) is available.`)]));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'list events' }], ctx: ctxWith([]) });
+  assert.doesNotMatch(out.reply, /[0-9a-f]{8}-[0-9a-f-]{27,}/i);
+  assert.doesNotMatch(out.reply, /\bID:/i);
 });
 
 test('classify routes to the matching branch agent', async () => {
@@ -220,25 +232,31 @@ test('propose_update_event returns a proposal for own event, errors for non-owne
 
 test('propose_create_event drafts an event and requires title + dates', async () => {
   const dates = { startDate: '2026-08-15T19:00:00+08:00', endDate: '2026-08-15T23:00:00+08:00', deadline: '2026-08-10T23:59:00+08:00' };
-  const out = await EXECUTORS.propose_create_event({ title: 'Rooftop Jam', venue: 'SoR', earlyPrice: 10, ...dates }, ctxWith([]));
+  const organiserCtx = { ...ctxWith([]), role: 'organiser' };
+  const out = await EXECUTORS.propose_create_event({ title: 'Rooftop Jam', venue: 'SoR', earlyPrice: 10, ...dates }, organiserCtx);
   assert.equal(out.proposal.action, 'create_event_draft');
   assert.equal(out.proposal.eventId, null);
   assert.equal(out.proposal.payload.title, 'Rooftop Jam');
   assert.equal(out.proposal.payload.startDate, dates.startDate);
 
-  const noTitle = await EXECUTORS.propose_create_event({ ...dates, title: '  ' }, ctxWith([]));
+  const noTitle = await EXECUTORS.propose_create_event({ ...dates, title: '  ' }, organiserCtx);
   assert.ok(noTitle.error);
-  const noDates = await EXECUTORS.propose_create_event({ title: 'Dateless' }, ctxWith([]));
+  const noDates = await EXECUTORS.propose_create_event({ title: 'Dateless' }, organiserCtx);
   assert.match(noDates.error, /deadline/i);
+
+  const normalUser = await EXECUTORS.propose_create_event({ title: 'User Event', ...dates }, ctxWith([]));
+  assert.match(normalUser.error, /Only organisers/);
 });
 
-test('list_available_events excludes own, purchased, given-away and already-started events', async () => {
+test('list_available_events excludes own, purchased, given-away, completed, cancelled and already-started events', async () => {
   const events = [
     { id: 'e1', title: 'Buyable', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] },
     { id: 'e2', title: 'Mine', status: 'early_bird', hostId: 'u1', startDate: inDaysIso(3), statuses: [{ price: 5 }] },
     { id: 'e3', title: 'Held tickets', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 8 }] },
     { id: 'e4', title: 'Already started', status: 'early_bird', hostId: 'other', startDate: inDaysIso(-1), statuses: [{ price: 7 }] },
     { id: 'e5', title: 'Gave away all', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 6 }] },
+    { id: 'e6', title: 'Completed', status: 'completed', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 6 }] },
+    { id: 'e7', title: 'Cancelled', status: 'cancelled', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 6 }] },
   ];
   // Matches the UI: a booking in the 'upcoming' (active) OR 'cancelled' (given-away) tab
   // means "already purchased" and can't be bought again. e3 = active, e5 = all given away.
@@ -343,6 +361,43 @@ test('event tools resolve an event by NAME or slug, not just id', async () => {
   assert.ok(bad.error);
 });
 
+test('event action tools resolve natural references semantically and ask when ambiguous', async () => {
+  process.env.GEMINI_API_KEY = 'test-key';
+  __setEmbedForTests(async () => [0.1, 0.2, 0.3]);
+  const events = [
+    { id: 'e1', title: 'Retro Arcade & Esports Night', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 9 }] },
+    { id: 'e2', title: 'Wine Appreciation & Wind-Down', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 14 }] },
+  ];
+  const ctx = {
+    ...ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } }),
+    supabase: {
+      ...ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } }).supabase,
+      rpc: async (name) => {
+        if (name === 'get_profile') return { data: { tickets: [] }, error: null };
+        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.91 }, { eventId: 'e2', similarity: 0.2 }], error: null };
+        return { data: events, error: null };
+      },
+    },
+  };
+
+  const ok = await EXECUTORS.propose_pledge({ eventId: 'the esports one', qty: 1 }, ctx);
+  assert.equal(ok.proposal.eventId, 'e1');
+
+  const ambiguous = {
+    ...ctx,
+    supabase: {
+      ...ctx.supabase,
+      rpc: async (name) => {
+        if (name === 'get_profile') return { data: { tickets: [] }, error: null };
+        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.84 }, { eventId: 'e2', similarity: 0.81 }], error: null };
+        return { data: events, error: null };
+      },
+    },
+  };
+  const ask = await EXECUTORS.get_event_details({ eventId: 'the night event' }, ambiguous);
+  assert.match(ask.error, /more than one matching event/i);
+});
+
 test('propose_cancel_event proposes a refund/cancel for own event only, reason optional', async () => {
   const own = [{ id: 'e1', title: 'My Gig', status: 'greenlit', hostId: 'u1', statuses: [] }];
   const ok = await EXECUTORS.propose_cancel_event({ eventId: 'e1', reason: 'venue fell through' }, ctxWith(own));
@@ -381,6 +436,44 @@ test('propose_edit_draft proposes editing an existing draft, needs a field, erro
   assert.ok(missing.error);
 });
 
+test('draft tools resolve natural references semantically and ask when ambiguous', async () => {
+  process.env.GEMINI_API_KEY = 'test-key';
+  __setEmbedForTests(async () => [0.1, 0.2, 0.3]);
+  const drafts = [
+    { id: 'd1', title: 'Founders Networking Night', description: 'meet startup founders', location: 'SMU Hall' },
+    { id: 'd2', title: 'Wine Social', description: 'wine appreciation', location: 'Lounge' },
+  ];
+  const base = ctxFull({ drafts });
+  const ctx = {
+    ...base,
+    supabase: {
+      ...base.supabase,
+      rpc: async (name) => {
+        if (name === 'match_event_drafts') return { data: [{ draftId: 'd1', similarity: 0.9 }, { draftId: 'd2', similarity: 0.3 }], error: null };
+        return { data: [], error: null };
+      },
+    },
+  };
+
+  const listed = await EXECUTORS.list_my_drafts({ query: 'the networking draft' }, ctx);
+  assert.equal(listed.drafts[0].id, 'd1');
+  const edit = await EXECUTORS.propose_edit_draft({ draftId: 'the founder draft', earlyPrice: 8 }, ctx);
+  assert.equal(edit.proposal.payload.draftId, 'd1');
+
+  const ambiguous = {
+    ...ctx,
+    supabase: {
+      ...ctx.supabase,
+      rpc: async (name) => {
+        if (name === 'match_event_drafts') return { data: [{ draftId: 'd1', similarity: 0.84 }, { draftId: 'd2', similarity: 0.82 }], error: null };
+        return { data: [], error: null };
+      },
+    },
+  };
+  const ask = await EXECUTORS.propose_delete_draft({ draftId: 'the social draft' }, ambiguous);
+  assert.match(ask.error, /more than one matching draft/i);
+});
+
 test('executeAction edit_draft re-saves the merged draft payload', async () => {
   const draftId = '11111111-1111-1111-1111-111111111111';
   let saved = null;
@@ -401,6 +494,82 @@ test('executeAction edit_draft re-saves the merged draft payload', async () => {
   assert.equal(saved.payload.statuses.find((s) => s.statusName === 'early_bird').price, 3);
 });
 
+test('executeAction create_event_draft returns a publish follow-up and publish_draft creates the event', async () => {
+  const drafts = [];
+  let deletedDraft = null;
+  let createArgs = null;
+  const sb = {
+    rpc: async (name, args) => {
+      if (name === 'create_event') {
+        createArgs = args;
+        return { data: { eventId: 'e1' }, error: null };
+      }
+      return { data: null, error: null };
+    },
+    from: (table) => {
+      if (table === 'EVENT_DRAFTS') {
+        return {
+          insert: (vals) => ({
+            select: () => ({
+              single: async () => {
+                const row = { id: 'd1', payload: vals.payload };
+                drafts.unshift(row);
+                return { data: row, error: null };
+              },
+            }),
+          }),
+          select: () => ({ order: async () => ({ data: drafts, error: null }) }),
+          delete: () => ({ eq: async (_col, id) => { deletedDraft = id; return { error: null }; } }),
+        };
+      }
+      if (table === 'USER') return { select: () => ({ eq: () => ({ single: async () => ({ data: { email: null, username: 'org' }, error: null }) }) }) };
+      return { select: () => ({}) };
+    },
+  };
+
+  const draft = await executeAction({
+    sb,
+    user: { id: 'u1', role: 'organiser' },
+    action: 'create_event_draft',
+    payload: {
+      title: 'Future Mixer',
+      description: 'Skills and social',
+      venue: 'SMU Hall',
+      startDate: inDaysIso(10),
+      endDate: inDaysIso(10),
+      deadline: inDaysIso(5),
+      earlyPrice: 10,
+      greenlitPrice: 20,
+      hypeThreshold: 10,
+      capacity: 50,
+    },
+  });
+  assert.equal(draft.status, 'ok');
+  assert.equal(draft.nextProposal.action, 'publish_draft');
+  assert.equal(draft.nextProposal.payload.draftId, 'd1');
+
+  const published = await executeAction({
+    sb,
+    user: { id: 'u1', role: 'organiser' },
+    action: 'publish_draft',
+    payload: { draftId: 'd1' },
+  });
+  assert.equal(published.status, 'ok');
+  assert.equal(published.eventId, 'e1');
+  assert.equal(createArgs.p_title, 'Future Mixer');
+  assert.equal(deletedDraft, 'd1');
+});
+
+test('normal users cannot create draft events through confirmed AI actions', async () => {
+  const out = await executeAction({
+    sb: {},
+    user: { id: 'u1', role: 'user' },
+    action: 'create_event_draft',
+    payload: { title: 'Nope' },
+  });
+  assert.equal(out.error, 'not_organiser');
+});
+
 test('get_wallet returns balance, card and recent transactions', async () => {
   const out = await EXECUTORS.get_wallet({}, ctxFull({ user: { walletBalance: 42, cardBrand: 'visa', cardLast4: '4242' } }));
   assert.equal(out.balance, 42);
@@ -408,14 +577,14 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 25 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 25);
+test('AGENT_TOOLS exposes all 26 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 26);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));
-  assert.ok(names.includes('recommend_events') && names.includes('semantic_search_events') && names.includes('find_similar_events'));
+  assert.ok(names.includes('recommend_events') && names.includes('semantic_search_events') && names.includes('find_similar_events') && names.includes('get_similar_past_events'));
   // Every entry is a StructuredTool with a zod schema.
   assert.ok(AGENT_TOOLS.every((t) => typeof t.invoke === 'function' && t.schema));
 
@@ -538,7 +707,7 @@ test('get_event_attendees returns the attendee count and names', async () => {
 // ── Hype-pricing draft creation ──────────────────────────────────────────────
 test('propose_create_event supports hype pricing (base < max)', async () => {
   const args = { title: 'Rooftop Rave', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 10, maxPrice: 25 };
-  const out = await EXECUTORS.propose_create_event(args, ctxWith([]));
+  const out = await EXECUTORS.propose_create_event(args, { ...ctxWith([]), role: 'organiser' });
   assert.equal(out.proposal.action, 'create_event_draft');
   assert.equal(out.proposal.payload.pricingModel, 'hype');
   assert.match(out.proposal.summary, /hype pricing \$10\.00→\$25\.00/);
@@ -546,7 +715,7 @@ test('propose_create_event supports hype pricing (base < max)', async () => {
 
 test('propose_create_event rejects hype pricing when max is not above base', async () => {
   const args = { title: 'X', startDate: '2026-09-01T19:00:00+08:00', endDate: '2026-09-01T23:00:00+08:00', deadline: '2026-08-25T23:59:00+08:00', pricingModel: 'hype', basePrice: 20, maxPrice: 10 };
-  const out = await EXECUTORS.propose_create_event(args, ctxWith([]));
+  const out = await EXECUTORS.propose_create_event(args, { ...ctxWith([]), role: 'organiser' });
   assert.match(out.error, /maxPrice must be higher/);
 });
 
@@ -574,6 +743,28 @@ test('recommend_events ranks attendable events by semantic similarity', async ()
     __resetEmbedForTests();
     delete process.env.GEMINI_API_KEY;
   }
+});
+
+test('get_similar_past_events returns historical benchmark rows without ids', async () => {
+  process.env.GEMINI_API_KEY = 'test-key';
+  __setEmbedForTests(async () => [0.1, 0.2, 0.3]);
+  const ctx = {
+    userId: 'u1',
+    role: 'organiser',
+    supabase: {
+      rpc: async (name) => {
+        if (name === 'match_similar_past_events') {
+          return { data: [{ eventId: 'old1', title: 'Past Networking Mixer', sold: 45, capacity: 60, similarity: 0.88 }], error: null };
+        }
+        return { data: [], error: null };
+      },
+    },
+  };
+  const out = await EXECUTORS.get_similar_past_events({ query: 'networking night', count: 3 }, ctx);
+  assert.equal(out.semantic, true);
+  assert.equal(out.events[0].title, 'Past Networking Mixer');
+  assert.equal(out.events[0].sellThroughPct, 75);
+  assert.equal(out.events[0].eventId, undefined);
 });
 
 test('recommend_events falls back to cheapest when embeddings are unavailable', async () => {

@@ -6,6 +6,7 @@ import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../embeddingService.js';
+import { semanticDraftMatches } from '../draftEmbeddings.js';
 
 // Agent tools. Definitions are provider-agnostic JSON Schemas; executors run
 // server-side scoped to the calling user via ctx = { supabase, userId, role }.
@@ -99,6 +100,53 @@ function findEvent(events, ref) {
   if (ev) return ev;
   const sub = events.filter((e) => normName(e.title).includes(nr) || nr.includes(normName(e.title)));
   return sub[0] ?? null; // best substring match
+}
+
+function ambiguousEvent(names = []) {
+  return { error: `I found more than one matching event: ${names.join(', ')}. Which one do you mean?` };
+}
+
+async function resolveEvent(ctx, events, ref) {
+  const exact = findEvent(events, ref);
+  if (exact) return { event: exact };
+  const ranked = await semanticMatch(ctx, ref, { count: 8 });
+  if (!ranked.length) return { event: null };
+  const byId = new Map((events ?? []).map((e) => [e.id, e]));
+  const scoped = ranked.filter((r) => byId.has(r.eventId));
+  if (!scoped.length) return { event: null };
+  const [first, second] = scoped;
+  const confident = Number(first.similarity ?? 0) >= 0.55;
+  const clear = !second || (Number(first.similarity ?? 0) - Number(second.similarity ?? 0)) >= 0.06;
+  if (confident && clear) return { event: byId.get(first.eventId), similarity: first.similarity };
+  return { ambiguous: scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean) };
+}
+
+function draftRefText(d = {}) {
+  return [d.id, d.title, d.description, d.location, d.venue, d.address]
+    .map((s) => String(s ?? '').toLowerCase())
+    .join(' ');
+}
+
+async function resolveDraft(ctx, drafts, ref) {
+  const query = String(ref ?? '').trim();
+  if (!query) return { draft: null };
+  const exact = drafts.find((d) => d.id === query);
+  if (exact) return { draft: exact };
+  const nq = query.toLowerCase();
+  const literal = drafts.filter((d) => draftRefText(d).includes(nq));
+  if (literal.length === 1) return { draft: literal[0] };
+  if (literal.length > 1) return { ambiguous: literal.map((d) => d.title || '(untitled draft)').slice(0, 3) };
+  const matches = await semanticDraftMatches(ctx.supabase, query, drafts, 5);
+  if (!matches.length) return { draft: null };
+  const [first, second] = matches;
+  const confident = Number(first.similarity ?? 0) >= 0.55;
+  const clear = !second || (Number(first.similarity ?? 0) - Number(second.similarity ?? 0)) >= 0.06;
+  if (confident && clear) return { draft: first.draft, similarity: first.similarity };
+  return { ambiguous: matches.slice(0, 3).map((m) => m.draft?.title || '(untitled draft)') };
+}
+
+function ambiguousDraft(names = []) {
+  return { error: `I found more than one matching draft: ${names.join(', ')}. Which draft do you mean?` };
 }
 
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
@@ -233,8 +281,10 @@ export const getWalletTool = makeTool(
 
 export const listMyDraftsTool = makeTool(
   'list_my_drafts',
-  "The user's saved event DRAFTS (unpublished). Use this to find a draft's id before proposing to delete it.",
-  z.object({}),
+  "The user's saved event DRAFTS (unpublished). Optionally pass a natural-language query like 'the networking draft' to semantically find matching drafts before proposing to edit/delete.",
+  z.object({
+    query: z.string().optional().describe('Optional natural-language draft reference or topic.'),
+  }),
 );
 
 // ── Date ────────────────────────────────────────────────────────────────────────
@@ -291,6 +341,15 @@ export const findSimilarEventsTool = makeTool(
 );
 
 // ── Memory ────────────────────────────────────────────────────────────────────
+export const getSimilarPastEventsTool = makeTool(
+  'get_similar_past_events',
+  'Find similar completed/past events to ground organiser planning, pricing, capacity and revenue advice. Use this as examples only; do not present old results as current.',
+  z.object({
+    query: z.string().describe('The planned event theme or advice topic, e.g. "networking night for business students".'),
+    count: z.number().optional().describe('Number of examples to retrieve.'),
+  }),
+);
+
 export const rememberTool = makeTool(
   'remember',
   "Save a DURABLE preference or fact you've learned about this user so you can personalise future help — e.g. their interests, budget, preferred venue/theme/timing (attendees), or an organiser's pricing/venue preferences and which advice they act on. Use for LASTING facts only, not one-off details. Do not repeat something already known.",
@@ -417,7 +476,7 @@ export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
   getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
   getCurrentDateTool, getWeatherTool, researchEventIdeasTool,
-  recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, rememberTool,
+  recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, getSimilarPastEventsTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
   proposeTopupTool, proposePledgeTool, proposeCancelEventTool, proposeDeleteDraftTool,
   proposeEditDraftTool, proposeGiveAwayTicketsTool,
@@ -442,7 +501,9 @@ export const EXECUTORS = {
   },
 
   async get_event_details(args, ctx) {
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const mine = ev.hostId === ctx.userId;
     const details = {
@@ -472,7 +533,9 @@ export const EXECUTORS = {
 
   async get_event_forecast(args, ctx) {
     // Resolve id-or-name to the real event id before forecasting.
-    const ref = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ref = resolved.event;
     if (!ref) return { error: 'Event not found or not visible to you.' };
     let result;
     try {
@@ -499,7 +562,9 @@ export const EXECUTORS = {
   },
 
   async get_event_attendees(args, ctx) {
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     let attendees;
     try {
@@ -591,7 +656,9 @@ export const EXECUTORS = {
     let lat;
     let lon;
     if (args.eventId) {
-      const ev = findEvent(await visibleEvents(ctx), args.eventId);
+      const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+      if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+      const ev = resolved.event;
       if (!ev) return { error: 'Event not found or not visible to you.' };
       startISO = startISO || ev.startDate;
       endISO = endISO || ev.endDate;
@@ -650,7 +717,9 @@ export const EXECUTORS = {
 
   async find_similar_events(args, ctx) {
     const visible = await visibleEvents(ctx);
-    const ev = findEvent(visible, args.eventId);
+    const resolved = await resolveEvent(ctx, visible, args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const text = [ev.title, ev.description, ev.location].filter(Boolean).join('\n');
     const ranked = await semanticMatch(ctx, text, { count: 10, exclude: ev.id });
@@ -658,6 +727,29 @@ export const EXECUTORS = {
     const byId = new Map(visible.map((e) => [e.id, e]));
     const rows = ranked.filter((r) => byId.has(r.eventId)).map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 5);
     return { reference: ev.title, semantic: true, events: rows };
+  },
+
+  async get_similar_past_events(args, ctx) {
+    const query = String(args.query ?? '').trim();
+    if (!query) return { count: 0, semantic: false, events: [] };
+    if (!isEmbeddingEnabled()) return { count: 0, semantic: false, events: [] };
+    const vec = await embedText(query, { taskType: 'RETRIEVAL_QUERY' });
+    if (!vec) return { count: 0, semantic: false, events: [] };
+    const count = Math.max(1, Math.min(10, Number(args.count ?? 5) || 5));
+    const { data, error } = await ctx.supabase.rpc('match_similar_past_events', {
+      p_embedding: toVectorLiteral(vec),
+      p_count: count,
+      p_exclude: null,
+    });
+    if (error) return { count: 0, semantic: false, events: [] };
+    const rows = (data ?? []).map((r) => ({
+      title: r.title,
+      sold: Number(r.sold ?? 0),
+      capacity: Number(r.capacity ?? 0),
+      sellThroughPct: Number(r.capacity ?? 0) > 0 ? Math.round((Number(r.sold ?? 0) / Number(r.capacity)) * 100) : null,
+      similarity: sim2(r.similarity),
+    }));
+    return { count: rows.length, semantic: true, events: rows };
   },
 
   // Learning: persist a durable preference about the user (executes immediately —
@@ -672,7 +764,9 @@ export const EXECUTORS = {
 
   // ── Proposal tools (write actions; validate only, never mutate) ──────────────
   async propose_update_event(args, ctx) {
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     // Owners AND accepted co-organisers can edit (mirrors the update_event RPC's can_manage_event check).
     if (ev.hostId !== ctx.userId && !ev.isCoOrganiser) return { error: 'You can only edit events you host or co-organise.' };
@@ -708,6 +802,9 @@ export const EXECUTORS = {
   },
 
   async propose_create_event(args, ctx) {
+    if (ctx.role !== 'organiser' && ctx.role !== 'admin') {
+      return { error: 'Only organisers can create events.' };
+    }
     const title = String(args.title ?? '').trim();
     if (!title) return { error: 'An event title is required to draft an event.' };
     // Dates are required so the draft carries real start/end/deadline the form can show.
@@ -768,7 +865,9 @@ export const EXECUTORS = {
   },
 
   async propose_invite_coorganiser(args, ctx) {
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     if (ev.hostId !== ctx.userId) return { error: 'Only the event owner can invite co-organisers.' };
     const identifier = String(args.identifier ?? '').trim();
@@ -800,12 +899,31 @@ export const EXECUTORS = {
     };
   },
 
-  async list_my_drafts(_args, ctx) {
+  async list_my_drafts(args, ctx) {
     let drafts;
     try {
       drafts = await listDrafts(ctx.supabase);
     } catch (e) {
       return { error: e?.message ?? 'Unable to load drafts.' };
+    }
+    const query = String(args.query ?? '').trim();
+    if (query) {
+      const nq = query.toLowerCase();
+      const literal = drafts.filter((d) => draftRefText(d).includes(nq));
+      const matches = literal.length
+        ? literal.map((d) => ({ draft: d, similarity: null }))
+        : await semanticDraftMatches(ctx.supabase, query, drafts, 5);
+      return {
+        count: matches.length,
+        semantic: literal.length === 0 && matches.length > 0,
+        drafts: matches.map((m) => ({
+          id: m.draft.id,
+          title: m.draft.title || '(untitled draft)',
+          startDate: m.draft.startsAt || m.draft.startDate || null,
+          venue: m.draft.location || m.draft.venue || null,
+          similarity: m.similarity == null ? undefined : sim2(m.similarity),
+        })),
+      };
     }
     return {
       count: drafts.length,
@@ -833,9 +951,13 @@ export const EXECUTORS = {
   async propose_pledge(args, ctx) {
     // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
     // Accepts an event id OR name (findEvent resolves both).
-    const ev = findEvent(await attendableEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await attendableEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) {
-      const seen = findEvent(await visibleEvents(ctx), args.eventId);
+      const seenResolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+      if (seenResolved.ambiguous) return ambiguousEvent(seenResolved.ambiguous);
+      const seen = seenResolved.event;
       if (!seen) return { error: 'Event not found or not visible to you.' };
       if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
       if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
@@ -868,7 +990,9 @@ export const EXECUTORS = {
   },
 
   async propose_cancel_event(args, ctx) {
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     if (ev.hostId !== ctx.userId) return { error: 'You can only cancel events you host.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be cancelled.' };
@@ -895,7 +1019,9 @@ export const EXECUTORS = {
       return { error: e?.message ?? 'Unable to load your tickets.' };
     }
     // Resolve the event (id OR name) so we can match holdings by its real id.
-    const ev = findEvent(await visibleEvents(ctx), args.eventId);
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     // Find the caller's active, still-upcoming booking for this event (get_profile
     // tickets carry bookingId/eventId/activeTicketCount/tab, but not the title).
@@ -926,16 +1052,18 @@ export const EXECUTORS = {
     } catch (e) {
       return { error: e?.message ?? 'Unable to load drafts.' };
     }
-    const draft = drafts.find((d) => d.id === draftId);
+    const resolved = await resolveDraft(ctx, drafts, draftId);
+    if (resolved.ambiguous) return ambiguousDraft(resolved.ambiguous);
+    const draft = resolved.draft;
     if (!draft) return { error: 'Draft not found (it may already be deleted or belong to someone else).' };
     return {
       proposal: {
-        id: `delete_draft:${draftId}:${Date.now()}`,
+        id: `delete_draft:${draft.id}:${Date.now()}`,
         action: 'delete_draft',
         eventId: null,
         title: draft.title || '(untitled draft)',
         summary: `Delete the draft "${draft.title || '(untitled draft)'}". This cannot be undone.`,
-        payload: { draftId },
+        payload: { draftId: draft.id },
       },
     };
   },
@@ -949,7 +1077,9 @@ export const EXECUTORS = {
     } catch (e) {
       return { error: e?.message ?? 'Unable to load drafts.' };
     }
-    const draft = drafts.find((d) => d.id === draftId);
+    const resolved = await resolveDraft(ctx, drafts, draftId);
+    if (resolved.ambiguous) return ambiguousDraft(resolved.ambiguous);
+    const draft = resolved.draft;
     if (!draft) return { error: 'Draft not found (use list_my_drafts to find the right draftId).' };
 
     // Collect only the fields the organiser wants to change.
@@ -962,12 +1092,12 @@ export const EXECUTORS = {
     const parts = Object.keys(updates).map((f) => (f === 'description' ? 'Description (updated)' : `${label[f]} → ${updates[f]}`));
     return {
       proposal: {
-        id: `edit_draft:${draftId}:${Date.now()}`,
+        id: `edit_draft:${draft.id}:${Date.now()}`,
         action: 'edit_draft',
         eventId: null,
         title: draft.title || '(untitled draft)',
         summary: `Edit the draft "${draft.title || '(untitled draft)'}": ${parts.join(', ')}.`,
-        payload: { draftId, updates },
+        payload: { draftId: draft.id, updates },
       },
     };
   },
