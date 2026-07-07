@@ -1,6 +1,4 @@
-import { adminClient } from '../services/supabaseAdmin.js';
-import { predictRevenue } from '../services/revenueForecaster.js';
-import { similarPastBenchmark } from '../services/forecastService.js';
+import { computeEconomics, defaultCalculatorState, loadCalculator } from '../services/eventEconomics.js';
 
 // Role-aware analytics: global discovery + (organiser) own-events + personal.
 // The aggregation runs in the get_analytics() RPC (SECURITY DEFINER) so it can
@@ -12,63 +10,44 @@ export async function getAnalytics(req, res) {
   res.json(data);
 }
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
-const DOW = { Mon: 0, Tue: 1, Wed: 2, Thu: 3, Fri: 4, Sat: 5, Sun: 6 };
-
-function sgTimeParts(iso) {
-  if (!iso) return { hour: null, dow: null };
-  const d = new Date(iso);
-  const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Singapore', hour: '2-digit', hourCycle: 'h23' }).format(d));
-  const wd = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Singapore', weekday: 'short' }).format(d);
-  return { hour: Number.isFinite(hour) ? hour : null, dow: DOW[wd] ?? null };
+// Fetch one of the caller's manageable events (owner or accepted co-organiser). Uses
+// the user-scoped get_events RPC so RLS + can_manage_event decide visibility/ownership.
+async function manageableEvent(req, eventId) {
+  const { data: events, error } = await req.supabase.rpc('get_events');
+  if (error) return { error: error.message };
+  const ev = (events ?? []).find((e) => e.id === eventId);
+  if (!ev) return { notFound: true };
+  const isManager = ev.hostId === req.user.id || ev.canEdit || ev.isCoOrganiser || req.user.role === 'admin';
+  if (!isManager) return { forbidden: true };
+  return { ev };
 }
 
-const statusPrice = (ev, name) => (ev?.statuses ?? []).find((s) => s.statusName === name)?.price ?? 0;
-const statusQty = (ev, name) => (ev?.statuses ?? []).find((s) => s.statusName === name)?.ticketCapacity ?? 0;
+// GET /api/analytics/calculator/:eventId — the saved profit-calculator state (or the
+// prefilled defaults from the event's pricing) plus the computed economics.
+export async function getCalculator(req, res) {
+  const { ev, error, notFound, forbidden } = await manageableEvent(req, req.params.eventId);
+  if (error) return res.status(400).json({ status: 'error', message: error });
+  if (notFound) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  if (forbidden) return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
 
-// GET /api/analytics/forecast/:eventId — assemble features and run the local
-// monolith predictor for expected ticket sales and ticket revenue.
-export async function getRevenueForecast(req, res) {
-  const eventId = req.params.eventId;
-  const admin = adminClient();
+  const state = await loadCalculator(req.supabase, ev);
+  res.json({ available: true, eventId: ev.id, title: ev.title, state, economics: computeEconomics(state) });
+}
 
-  const [{ data: events, error: evErr }, { data: row }] = await Promise.all([
-    admin.rpc('get_events'),
-    admin.from('EVENT').select('createdAt').eq('id', eventId).maybeSingle(),
-  ]);
-  if (evErr) return res.status(400).json({ status: 'error', message: evErr.message });
+// PUT /api/analytics/calculator/:eventId — persist the calculator state (RLS enforces
+// that only the event's manager can write). Returns the recomputed economics.
+export async function saveCalculator(req, res) {
+  const { ev, error, notFound, forbidden } = await manageableEvent(req, req.params.eventId);
+  if (error) return res.status(400).json({ status: 'error', message: error });
+  if (notFound) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  if (forbidden) return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
 
-  const ev = (events ?? []).find((e) => e.id === eventId);
-  if (!ev) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  const incoming = req.body?.state;
+  const state = incoming && typeof incoming === 'object' ? incoming : defaultCalculatorState(ev);
+  const { error: upErr } = await req.supabase
+    .from('EVENT_CALCULATOR')
+    .upsert({ eventId: ev.id, state, updatedAt: new Date().toISOString() }, { onConflict: 'eventId' });
+  if (upErr) return res.status(400).json({ status: 'error', message: upErr.message });
 
-  const { hour, dow } = sgTimeParts(ev.startDate);
-  const now = Date.now();
-  const startMs = new Date(ev.startDate).getTime();
-
-  const features = {
-    postal_code: (String(ev.address ?? '').match(/\b\d{6}\b/) || [])[0] ?? null,
-    start_hour: hour,
-    day_of_week: dow,
-    title: ev.title ?? '',
-    description: ev.description ?? null,
-    max_capacity: ev.maxCapacity ?? 0,
-    hype_threshold: ev.hypeThreshold ?? 0,
-    active_tickets: ev.active_ticket_count ?? 0,
-    elapsed_hours: row?.createdAt ? Math.max(0, (now - new Date(row.createdAt).getTime()) / HOUR_MS) : 0,
-    remaining_hours: ev.deadlineAt ? Math.max(0, (new Date(ev.deadlineAt).getTime() - now) / HOUR_MS) : 0,
-    days_until_event: Number.isFinite(startMs) ? Math.max(0, Math.ceil((startMs - now) / DAY_MS)) : 0,
-    pricing_model: ev.hypeDrivenPricing ? 'hype' : 'static',
-    early_price: statusPrice(ev, 'early_bird'),
-    greenlit_price: statusPrice(ev, 'greenlit'),
-    early_capacity: statusQty(ev, 'early_bird'),
-    greenlit_capacity: statusQty(ev, 'greenlit'),
-    base_price: ev.basePrice ?? null,
-    max_price: ev.maxPrice ?? null,
-  };
-
-  const forecast = await predictRevenue(features);
-  if (!forecast) return res.json({ available: false });
-  const benchmark = await similarPastBenchmark(admin, ev); // similar past events' real sell-through
-  res.json({ available: true, ...forecast, benchmark });
+  res.json({ available: true, eventId: ev.id, state, economics: computeEconomics(state) });
 }

@@ -12,7 +12,6 @@ import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, fetchQuote, fetchWeather, type Attendee, type WeatherAssessment } from '../api';
 import { formatEventLocation } from '../components/eventDisplay';
 import { universityLabel } from '../components/universities';
-import { urgencyCues, urgencyToneStyle } from '../components/urgency';
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
@@ -78,7 +77,6 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   // Show the short code (e.g. "SMU members only") so the notice fits.
   const restrictedUniCode = event.restrictedUniversity ?? '';
   const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
-  const detailCues = urgencyCues(event);
 
   return (
     <div className="mx-auto max-w-[1536px] px-6 py-8">
@@ -351,23 +349,6 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                   </div>
                 </div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{available} ticket{available === 1 ? '' : 's'} left</div>
-              </div>
-            )}
-
-            {!alreadyPurchased && !unavailable && !universityBlocked && detailCues.length > 0 && (
-              <div className="mt-4 space-y-1.5">
-                {detailCues.map((c) => {
-                  const s = urgencyToneStyle(c.tone);
-                  return (
-                    <div
-                      key={c.key}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
-                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}`, fontWeight: 700 }}
-                    >
-                      <Timer size={14} className="shrink-0" /> {c.text}
-                    </div>
-                  );
-                })}
               </div>
             )}
 

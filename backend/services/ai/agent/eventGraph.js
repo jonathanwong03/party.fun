@@ -3,7 +3,7 @@ import { StateGraph, Annotation, MessagesAnnotation, MemorySaver, Command, inter
 import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import { createAgent } from 'langchain';
 import { resolveCandidates, runTier } from '../modelRouter.js';
-import { TOOLS_BY_NAME } from './tools.js';
+import { EXECUTORS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { sanitizeAiReply } from '../responseSanitizer.js';
 
@@ -117,6 +117,8 @@ const AFFIRMATION_RX = /^(yes|yeah|yep|yup|sure|ok|okay|k|go\sahead|do\sit|sound
 // (e.g. "3", "3 tickets", "$20"). These are continuations of an on-topic flow, never off-topic.
 const SHORT_ANSWER_RX = /^\$?\d[\d.,]*\s*(tickets?|ticket|pax|people|persons?|x)?[.!]?$/i;
 const EVENT_MANAGEMENT_WRITE_RX = /\b(cancel|delete|remove|edit|update|change|reschedule|rename|create|host|launch|draft|publish|co-?organiser|coorganiser|invite|manage|my event|hosted event)\b/i;
+const CREATE_EVENT_RX = /\b(create|host|plan|draft|organise|organize|launch)\b.{0,80}\b(event|party|workshop|mixer|night|session|festival|gala|meetup)\b|\b(event|party|workshop|mixer|night|session|festival|gala|meetup)\b.{0,80}\b(create|host|plan|draft|organise|organize|launch)\b/i;
+const NON_CREATE_MANAGEMENT_RX = /\b(edit|update|change|reschedule|rename|cancel|delete|remove|publish|invite|co-?organiser|coorganiser|price|capacity|deadline)\b/i;
 
 // Synchronous fast-path: obviously in-scope (or a short continuation answer) → allow
 // without an LLM call. Exported so it can be unit-tested.
@@ -236,6 +238,88 @@ function shouldBlockUserEventManagement(state, ctx) {
   return EVENT_MANAGEMENT_WRITE_RX.test(recentContext(state));
 }
 
+function shouldAutoDraft(state, ctx) {
+  const role = String(ctx?.role || 'user').toLowerCase();
+  if (role !== 'organiser' && role !== 'admin') return false;
+  if (state?.intent !== 'event_mgmt') return false;
+  const text = latestUserText(state) || recentContext(state);
+  if (!CREATE_EVENT_RX.test(text)) return false;
+  return !NON_CREATE_MANAGEMENT_RX.test(text);
+}
+
+const VENUE_BY_UNIVERSITY = {
+  SMU: { venue: 'SMU Seminar Room 3.2', address: '60 Stamford Rd, Singapore 178900' },
+  NUS: { venue: 'NUS University Town', address: '2 College Ave West, Singapore 138607' },
+  NTU: { venue: 'NTU North Spine', address: '50 Nanyang Ave, Singapore 639798' },
+  SUTD: { venue: 'SUTD Campus Centre', address: '8 Somapah Rd, Singapore 487372' },
+  SIT: { venue: 'SIT@Dover', address: '10 Dover Dr, Singapore 138683' },
+  SUSS: { venue: 'SUSS Campus', address: '463 Clementi Rd, Singapore 599494' },
+  SIM: { venue: 'SIM Campus', address: '461 Clementi Rd, Singapore 599491' },
+};
+
+function sgIsoDaysFromNow(days, hour, minute = 0) {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Singapore',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(now.getTime() + days * 24 * 60 * 60 * 1000))
+    .reduce((acc, p) => ({ ...acc, [p.type]: p.value }), {});
+  return `${parts.year}-${parts.month}-${parts.day}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00+08:00`;
+}
+
+function titleCase(text) {
+  return String(text || '').trim().replace(/\w\S*/g, (w) => w[0].toUpperCase() + w.slice(1).toLowerCase());
+}
+
+function extractEventTheme(text) {
+  const cleaned = String(text || '')
+    .replace(/\b(can you|could you|please|for me|i want to|i would like to|help me|make me)\b/gi, ' ')
+    .replace(/\b(create|host|plan|draft|organise|organize|launch)\b/gi, ' ')
+    .replace(/\b(an?|the|one|event|party|please|anything|something)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!cleaned || cleaned.length < 4) return null;
+  return cleaned.slice(0, 80);
+}
+
+async function loadOrganiserUniversity(ctx) {
+  try {
+    const { data } = await ctx.supabase
+      .from('USER')
+      .select('university')
+      .eq('id', ctx.userId)
+      .maybeSingle();
+    return String(data?.university || '').toUpperCase();
+  } catch {
+    return '';
+  }
+}
+
+async function buildDraftArgsFromRequest(text, ctx) {
+  const university = await loadOrganiserUniversity(ctx);
+  const venue = VENUE_BY_UNIVERSITY[university] ?? VENUE_BY_UNIVERSITY.SMU;
+  const theme = extractEventTheme(text);
+  const title = theme ? `${titleCase(theme)} Social Night` : 'Campus Connect Night';
+  const themePhrase = theme || 'campus networking, games and casual social activities';
+  return {
+    title,
+    description: `A student-focused ${themePhrase} event with light activities, conversation starters and refreshments. Designed for students to meet new people, unwind after classes and lock in affordable tickets early.`,
+    venue: venue.venue,
+    address: venue.address,
+    startDate: sgIsoDaysFromNow(21, 19, 0),
+    endDate: sgIsoDaysFromNow(21, 22, 0),
+    deadline: sgIsoDaysFromNow(14, 23, 59),
+    pricingModel: 'tiered',
+    earlyPrice: 10,
+    greenlitPrice: 16,
+    hypeThreshold: 30,
+    earlyCapacity: 30,
+    capacity: 80,
+  };
+}
+
 function lastAiText(messages) {
   for (let i = (messages?.length ?? 0) - 1; i >= 0; i -= 1) {
     const m = messages[i];
@@ -271,6 +355,7 @@ const GraphState = Annotation.Root({
   intent: Annotation(),
   offtopic: Annotation(),
   roleBlocked: Annotation(),
+  autoDraft: Annotation(),
   proposals: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
   decisions: Annotation({ reducer: (a = {}, b = {}) => ({ ...a, ...b }), default: () => ({}) }),
   results: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
@@ -297,7 +382,21 @@ function buildApp(model, system) {
 
   const roleGate = (state, config) => ({
     roleBlocked: shouldBlockUserEventManagement(state, config?.configurable?.ctx),
+    autoDraft: shouldAutoDraft(state, config?.configurable?.ctx),
   });
+
+  const autoDraft = async (state, config) => {
+    const ctx = config?.configurable?.ctx;
+    const args = await buildDraftArgsFromRequest(latestUserText(state), ctx);
+    const result = await EXECUTORS.propose_create_event(args, ctx);
+    if (result?.proposal) {
+      return {
+        proposals: [result.proposal],
+        messages: [new AIMessage(`I drafted "${result.proposal.payload.title}" for you. Review the details and confirm if you want to save it to Drafts.`)],
+      };
+    }
+    return { messages: [new AIMessage(result?.error || 'I could not draft that event. Please try again with a theme or date.')] };
+  };
 
   const runBranch = (intent) => async (state, config) => {
     const res = await agents[intent].invoke({ messages: state.messages }, config);
@@ -352,6 +451,7 @@ function buildApp(model, system) {
     .addNode('classify', classify)
     .addNode('role_gate', roleGate)
     .addNode('role_refuse', roleRefuse)
+    .addNode('auto_draft', autoDraft)
     .addNode('answer', runBranch('read_only'))
     .addNode('discover', runBranch('discovery'))
     .addNode('bestfit', runBranch('best_fit'))
@@ -363,8 +463,9 @@ function buildApp(model, system) {
     .addConditionalEdges('scope', (state) => (state.offtopic ? 'refuse' : 'classify'), { refuse: 'refuse', classify: 'classify' })
     .addEdge('refuse', END)
     .addEdge('classify', 'role_gate')
-    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : routeIntent(state)), { role_refuse: 'role_refuse', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
+    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : state.autoDraft ? 'auto_draft' : routeIntent(state)), { role_refuse: 'role_refuse', auto_draft: 'auto_draft', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
     .addEdge('role_refuse', END)
+    .addConditionalEdges('auto_draft', afterBranch, branchMap)
     .addConditionalEdges('answer', afterBranch, branchMap)
     .addConditionalEdges('discover', afterBranch, branchMap)
     .addConditionalEdges('bestfit', afterBranch, branchMap)
