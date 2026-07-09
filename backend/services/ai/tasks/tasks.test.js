@@ -32,7 +32,7 @@ test('suggestEventCopy parses names and descriptions (tolerates code fences)', a
 
 test('revenueTips returns parsed tips', async () => {
   withResponse('{"tips":[{"title":"Lower early-bird","detail":"...","impact":"high"}]}');
-  const out = await revenueTips({ event: { title: 'X' }, forecast: { projectedRevenue: 100, operationalCosts: [] } });
+  const out = await revenueTips({ event: { title: 'X' }, economics: { totalRevenue: 100, totalCost: 20, profit: 80, ticketCount: 10 } });
   assert.equal(out.available, true);
   assert.equal(out.tips[0].impact, 'high');
 });

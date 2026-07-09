@@ -22,18 +22,14 @@ const SCHEMA = {
   },
 };
 
-// Revenue-boost tips for organisers. The controller supplies the event summary
-// and the already-computed forecast (from forecastService) so this task stays a
-// pure prompt → JSON call.
-export async function revenueTips({ event = {}, forecast = {} } = {}) {
-  const costLines = (forecast.operationalCosts ?? [])
-    .map((c) => `- ${c.category}: $${Number(c.cost).toFixed(2)}`)
-    .join('\n');
-
+// Ticket-volume tips for organisers. The controller supplies the event summary and
+// the profit-calculator economics (revenue/cost/profit) so this task stays a pure
+// prompt → JSON call.
+export async function revenueTips({ event = {}, economics = {} } = {}) {
   const system = [
-    'You are a revenue strategist for party.fun event organisers.',
-    'Given an event and its sales forecast, give concrete, prioritised actions to increase ticket revenue',
-    '(pricing, timing, marketing, capacity). Be specific to THIS event; avoid generic filler.',
+    'You are a growth strategist for party.fun event organisers.',
+    'Given an event and its profit-calculator figures, give concrete, prioritised actions to sell MORE',
+    'tickets (marketing, timing, pricing, audience targeting, capacity). Be specific to THIS event; avoid generic filler.',
     'Respond ONLY with JSON: {"tips":[{"title":string,"detail":string,"impact":"high"|"medium"|"low"}]}.',
   ].join(' ');
 
@@ -42,18 +38,16 @@ export async function revenueTips({ event = {}, forecast = {} } = {}) {
     event.description ? `Description: ${event.description}` : '',
     event.startDate ? `Starts: ${event.startDate}` : '',
     event.address ? `Location: ${event.address}` : '',
-    `Pricing model: ${event.pricingModel ?? 'static/tiered'}`,
+    `Pricing model: ${event.pricingModel ?? 'tiered'}`,
     '',
-    'Forecast:',
-    `- Projected tickets: ${forecast.projectedTicketsSold ?? 0}`,
-    `- Projected revenue: $${Number(forecast.projectedRevenue ?? 0).toFixed(2)}`,
-    `- Avg ticket price: $${Number(forecast.avgTicketPrice ?? 0).toFixed(2)}`,
-    `- Estimated operational costs: $${Number(forecast.totalOperationalCost ?? 0).toFixed(2)}`,
-    `- Estimated net: $${Number(forecast.estimatedNet ?? 0).toFixed(2)}`,
-    forecast.benchmark ? `- Benchmark: ${forecast.benchmark.similarCount} similar past event(s) sold ~${forecast.benchmark.avgSellThroughPct}% of capacity — use this as a reality check.` : '',
-    costLines ? `Cost breakdown:\n${costLines}` : '',
+    'Profit calculator (the organiser\'s current targets):',
+    `- Tickets to sell: ${economics.ticketCount ?? 0}`,
+    `- Total revenue: $${Number(economics.totalRevenue ?? 0).toFixed(2)}`,
+    `- Avg ticket price: $${Number(economics.avgTicketPrice ?? 0).toFixed(2)}`,
+    `- Total operational cost: $${Number(economics.totalCost ?? 0).toFixed(2)}`,
+    `- Profit at this target: $${Number(economics.profit ?? 0).toFixed(2)}`,
     '',
-    'Give 4-6 prioritised tips (most impactful first).',
+    'Give 4-6 prioritised tips (most impactful first) for hitting or exceeding this ticket target.',
   ].filter(Boolean).join('\n');
 
   const res = await runTier('premium', {

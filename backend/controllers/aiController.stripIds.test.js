@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { stripInternalIds } from './aiController.js';
+import { isRoleQuestion, stripInternalIds } from './aiController.js';
 
 const UUID = '21dcef74-7c3b-4a1e-9b2f-0a1b2c3d4e5f';
 
@@ -42,5 +42,20 @@ describe('stripInternalIds', () => {
     assert.equal(stripInternalIds(''), '');
     assert.equal(stripInternalIds(null), null);
     assert.equal(stripInternalIds(undefined), undefined);
+  });
+});
+
+describe('isRoleQuestion', () => {
+  it('catches varied ways of asking for the account role', () => {
+    assert.equal(isRoleQuestion('what is my role?'), true);
+    assert.equal(isRoleQuestion('tell me my role'), true);
+    assert.equal(isRoleQuestion('what account type am I?'), true);
+    assert.equal(isRoleQuestion('am I an organiser?'), true);
+    assert.equal(isRoleQuestion('do I have admin access?'), true);
+  });
+
+  it('does not treat normal event discovery as a role question', () => {
+    assert.equal(isRoleQuestion('show me events I can join'), false);
+    assert.equal(isRoleQuestion('can you recommend a cheap music event'), false);
   });
 });

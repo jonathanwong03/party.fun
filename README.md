@@ -453,7 +453,7 @@ For the cleanest presentation, use this sequence:
 - Released tickets are made available at the current tier price. Once Greenlit pricing opens, pricing does not regress to Early Birds.
 - Organisers cannot pledge for their own events.
 - Pricing model choice (`Tiered` or `Hype curve`) is locked after event creation.
-- Analytics forecasts expected ticket revenue. Operational costs are shown only as typical categories outside party.fun.
+- Analytics gives organisers a **profit calculator** (not a predictor): pick an event, set ticket prices/quantities (respecting its hype or tiered model) and an editable list of operational-cost line items, and read off **profit = total revenue − total cost** — a guide for how many tickets to sell. Ticket prices in the calculator are hypothetical (they never change the live event); the state is saved per event (`EVENT_CALCULATOR`). Operational costs are paid outside party.fun. An on-demand **AI tips** panel suggests ways to sell more tickets.
 - Completed greenlit events record a simulated ticket revenue payout to the organiser; operational costs are not deducted by the app.
 
 ## Event rules

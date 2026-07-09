@@ -760,24 +760,34 @@ export function fetchAnalytics(): Promise<AnalyticsData> {
   return apiFetch<AnalyticsData>("/api/analytics");
 }
 
-// Backend-local ticket revenue forecast. `available:false` lets the dashboard degrade gracefully.
-export type RevenueForecast = {
+// Profit calculator: an editable, per-event guide (profit = total revenue − total cost).
+export type CalcTier = { key: string; label: string; price: number; qty: number };
+export type CalcCost = { name: string; amount: number };
+export type CalcTickets =
+  | { model: 'tiered'; tiers: CalcTier[] }
+  | { model: 'hype'; basePrice: number; maxPrice: number; capacity: number; qty: number };
+export type CalculatorState = { tickets: CalcTickets; costs: CalcCost[] };
+export type CalculatorEconomics = {
+  totalRevenue: number;
+  totalCost: number;
+  profit: number;
+  ticketCount: number;
+  avgTicketPrice: number;
+};
+export type EventCalculator = {
   available: boolean;
-  attractiveness?: number;
-  projectedTicketsSold?: number;
-  avgTicketPrice?: number;
-  projectedRevenue?: number;
-  dailySales?: { dayOffset: number; tickets: number }[];
-  dailyRevenue?: { dayOffset: number; revenue: number }[];
-  breakdown?: Record<string, number>;
-  operationalCosts?: { category: string; cost: number }[];
-  totalOperationalCost?: number;
-  estimatedNet?: number;
-  benchmark?: { similarCount: number; avgSellThroughPct: number; examples: { title: string; sellThroughPct: number }[] } | null;
+  eventId?: string;
+  title?: string;
+  state?: CalculatorState;
+  economics?: CalculatorEconomics;
 };
 
-export function fetchRevenueForecast(eventId: string): Promise<RevenueForecast> {
-  return apiFetch<RevenueForecast>(`/api/analytics/forecast/${eventId}`);
+export function fetchEventCalculator(eventId: string): Promise<EventCalculator> {
+  return apiFetch<EventCalculator>(`/api/analytics/calculator/${eventId}`);
+}
+
+export function saveEventCalculator(eventId: string, state: CalculatorState): Promise<EventCalculator> {
+  return apiFetch<EventCalculator>(`/api/analytics/calculator/${eventId}`, { method: 'PUT', body: JSON.stringify({ state }) });
 }
 
 // ── AI agent (Gemini; all responses tolerate {available:false}) ────

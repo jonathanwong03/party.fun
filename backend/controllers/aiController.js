@@ -8,7 +8,7 @@ import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
-import { forecastForEvent } from '../services/forecastService.js';
+import { computeEconomics, loadCalculator } from '../services/eventEconomics.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
 const WINDOW_MS = 60 * 1000;
@@ -27,12 +27,16 @@ function rateLimited(userId) {
   return false;
 }
 
+function rateLimitKey(req) {
+  return req?.user?.id || `guest:${req?.ip || req?.headers?.['x-forwarded-for'] || 'unknown'}`;
+}
+
 function guard(req, res) {
   if (!anyConfigured()) {
     res.json({ available: false });
     return false;
   }
-  if (rateLimited(req.user.id)) {
+  if (rateLimited(rateLimitKey(req))) {
     res.status(429).json({ status: 'rate_limited', message: 'Too many AI requests; try again shortly.' });
     return false;
   }
@@ -49,27 +53,24 @@ export async function suggestEventCopy(req, res) {
 // POST /api/ai/revenue-tips/:eventId  (host-scoped)
 export async function revenueTips(req, res) {
   if (!guard(req, res)) return;
-  let result;
-  try {
-    result = await forecastForEvent(req.params.eventId);
-  } catch (e) {
-    return res.status(400).json({ status: 'error', message: e.message });
-  }
-  if (!result) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
-
-  const ev = result.event;
-  if (ev.hostId !== req.user.id && req.user.role !== 'admin') {
+  const { data: events, error } = await req.supabase.rpc('get_events');
+  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  const ev = (events ?? []).find((e) => e.id === req.params.eventId);
+  if (!ev) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  if (ev.hostId !== req.user.id && !ev.canEdit && !ev.isCoOrganiser && req.user.role !== 'admin') {
     return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
   }
 
+  const state = await loadCalculator(req.supabase, ev);
+  const economics = computeEconomics(state);
   const event = {
     title: ev.title,
     description: ev.description,
     startDate: ev.startDate,
     address: ev.address,
-    pricingModel: ev.hypeDrivenPricing ? 'hype' : 'tiered/static',
+    pricingModel: ev.hypeDrivenPricing ? 'hype' : 'tiered',
   };
-  res.json(await revenueTipsTask({ event, forecast: result.forecast }));
+  res.json(await revenueTipsTask({ event, economics }));
 }
 
 // POST /api/ai/recommend-events
@@ -78,9 +79,10 @@ export async function recommendEvents(req, res) {
   const { interests } = req.body ?? {};
   const { data: rows, error } = await req.supabase.rpc('get_events');
   if (error) return res.status(400).json({ status: 'error', message: error.message });
+  const userId = req.user?.id ?? null;
 
   let candidates = (rows ?? [])
-    .filter((e) => e.hostId !== req.user.id && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
+    .filter((e) => (!userId || e.hostId !== userId) && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
     .map((e) => {
       const prices = (e.statuses ?? []).map((s) => Number(s.price)).filter((n) => Number.isFinite(n));
       const cheapest = prices.length ? Math.min(...prices) : 0;
@@ -231,6 +233,30 @@ function makeTitle(text) {
   return (words || 'New chat').slice(0, 60);
 }
 
+export function isRoleQuestion(text) {
+  const t = String(text ?? '').toLowerCase().replace(/[^\w\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!t) return false;
+  return /\b(what|which|tell|show|check|confirm|remind)\b.*\b(my|account)\b.*\b(role|account type|type|permission|access)\b/.test(t)
+    || /\bwhat\s+(am|is)\s+i\b/.test(t)
+    || /\bam\s+i\s+(an?\s+)?(organiser|organizer|admin|user|attendee|host)\b/.test(t)
+    || /\bdo\s+i\s+have\s+(organiser|organizer|admin|host)\s+(access|role|permissions?)\b/.test(t)
+    || /\bcan\s+i\s+(host|create|manage)\s+events?\b.*\b(role|account|allowed|permission)\b/.test(t);
+}
+
+async function loadCurrentRole(req) {
+  try {
+    const { data, error } = await req.supabase
+      .from('USER')
+      .select('role')
+      .eq('id', req.user.id)
+      .maybeSingle();
+    const dbRole = String(data?.role || '').toLowerCase();
+    if (!error && ['user', 'organiser', 'admin'].includes(dbRole)) return dbRole;
+  } catch { /* fall back to request role */ }
+  const role = String(req.user?.role || 'user').toLowerCase();
+  return ['user', 'organiser', 'admin'].includes(role) ? role : 'user';
+}
+
 // Persist chat turns (user + assistant) into a conversation, creating + auto-titling
 // one when needed. Returns the conversationId. Never throws.
 async function persistTurn(supabase, { conversationId, titleSeed, userText, reply, modelLabel }) {
@@ -293,13 +319,25 @@ export function stripInternalIds(text) {
 // via /chat/resume. In 'auto' mode writes execute inline. Returns conversationId +
 // threadId so the UI can keep appending and resume pending proposals.
 export async function chat(req, res) {
-  if (!guard(req, res)) return;
   const { messages, conversationId } = req.body ?? {};
   const list = Array.isArray(messages) ? messages : [];
   // Every write always pauses for confirmation — no auto-apply mode.
   const ctx = { supabase: req.supabase, userId: req.user.id, role: req.user.role };
   // Recall only the memories relevant to THIS turn (vector match; falls back to all).
   const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+  if (isRoleQuestion(lastUserMsg?.content)) {
+    const role = await loadCurrentRole(req);
+    const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+    const convoId = await persistTurn(req.supabase, {
+      conversationId: conversationId || null,
+      titleSeed: firstUser?.content,
+      userText: lastUserMsg?.content,
+      reply: role,
+      modelLabel: null,
+    });
+    return res.json({ available: true, status: 'done', reply: role, proposals: [], results: [], threadId: null, conversationId: convoId });
+  }
+  if (!guard(req, res)) return;
   const [memories, chatHistory] = await Promise.all([
     loadRelevantMemory(req.supabase, req.user.id, lastUserMsg?.content),
     loadRelevantChatHistory(req.supabase, lastUserMsg?.content),
