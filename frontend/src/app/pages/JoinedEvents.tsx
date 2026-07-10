@@ -25,7 +25,7 @@ export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (r
   const items = rows.filter((row) => row.tab === tab);
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-8 flex justify-around gap-4 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
         <Stat label="Pledged" value={String(counts.upcoming)} />
         <Stat label="Completed" value={String(counts.past)} />

@@ -88,13 +88,13 @@ export function Landing({
   }
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-10">
+    <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-10">
       {/* Hero */}
-      <section className="relative mb-10 overflow-hidden rounded-3xl border p-8 md:p-12"
+      <section className="relative mb-10 overflow-hidden rounded-3xl border p-5 sm:p-8 md:p-12"
         style={{ borderColor: 'var(--border)', background: 'linear-gradient(135deg, rgba(255,77,46,0.18), rgba(124,92,255,0.10) 50%, rgba(41,224,122,0.10))' }}>
         <div className="relative max-w-2xl">
           
-          <h1 className="mt-4" style={{ fontSize: 44, fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.03em' }}>Greenlit the parties <span style={{ color: '#ff4d2e' }}>your campus</span> actually wants.</h1>
+          <h1 className="mt-4 text-[26px] sm:text-[34px] lg:text-[44px]" style={{ fontWeight: 800, lineHeight: 1.05, letterSpacing: '-0.03em' }}>Greenlit the parties <span style={{ color: '#ff4d2e' }}>your campus</span> actually wants.</h1>
           <p className="mt-4 max-w-xl text-base" style={{ color: 'var(--muted-foreground)' }}>
             Pledge early, pay less. If the event reaches its hype threshold, it is confirmed. If not, active tickets are automatically refunded.
           </p>

@@ -61,10 +61,9 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
       <main className="min-w-0 flex-1 px-4 py-6">
         <div className="mx-auto w-full max-w-[1536px]">
           {/* Header */}
-          <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+          <div className="mb-8 flex flex-wrap items-end justify-between gap-3">
             <div>
-              
-              <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: '-0.02em' }}>Manage your events</h1>
+              <h1 className="text-[22px] sm:text-[26px]" style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>Manage your events</h1>
               <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
                 Track hype, pledges and confirmed events in one place.
               </p>
@@ -120,7 +119,67 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
               <h3>{isDrafts ? 'Drafts' : 'Created events'}</h3>
               <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{rows.length} total</span>
             </div>
-            <div>
+
+            {/* Mobile card list */}
+            <div className="md:hidden divide-y" style={{ borderColor: 'var(--border)' }}>
+              {rows.length === 0 ? (
+                <div className="px-4 py-12 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
+                  {isDrafts ? 'No drafts yet. Start creating an event and hit "Save Draft" to keep it here.' : 'No events yet.'}
+                </div>
+              ) : rows.map((e) => {
+                const s = isDrafts ? null : dashboardStatus(e);
+                return (
+                  <div key={e.id} className="flex flex-col gap-3 border-t px-4 py-4" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-semibold leading-tight">{e.title}</div>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                          <span>{e.organiser || (isDrafts ? 'Draft event' : '')}</span>
+                          {!isDrafts && e.isCoOrganiser && (
+                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c', fontWeight: 700 }}>Co-organiser</span>
+                          )}
+                        </div>
+                      </div>
+                      {s ? (
+                        <span className="shrink-0 text-xs uppercase tracking-wide" style={{ color: DASHBOARD_STATUS_COLORS[s], fontWeight: 700 }}>{s}</span>
+                      ) : (
+                        <span className="shrink-0 text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>Draft</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+                      <span>{e.date || '—'}</span>
+                      <span>Revenue: <strong style={{ color: 'var(--foreground)' }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</strong></span>
+                      <span>{e.activeTicketCount}/{e.hypeThreshold}</span>
+                    </div>
+                    <div>
+                      <HypeMeter pct={e.hypePercentage} status={e.status} statusIndex={getActiveStatus(e)} size="sm" showLabel={false} />
+                      <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}% hype</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {isDrafts ? (
+                        <>
+                          <button onClick={() => go({ name: 'create-event', draftId: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Resume</button>
+                          <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Trash2 size={13} /> Delete</button>
+                        </>
+                      ) : (
+                        <>
+                          <button onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Eye size={13} /> View</button>
+                          {(e.canEdit ?? e.mine) && <button onClick={() => go({ name: 'edit-event', id: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Edit</button>}
+                          {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
+                            <button onClick={() => setDeleting(e.id)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Trash2 size={13} /> Remove</button>
+                          ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
+                            <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Ban size={13} /> Cancel</button>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden md:block">
               <table className="w-full text-xs" style={{ tableLayout: 'fixed' }}>
                 <colgroup>
                   <col style={{ width: '22%' }} />
@@ -205,7 +264,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
               </table>
               {rows.length === 0 && (
                 <div className="px-3 py-12 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
-                  {isDrafts ? 'No drafts yet. Start creating an event and hit “Save Draft” to keep it here.' : 'No events yet.'}
+                  {isDrafts ? 'No drafts yet. Start creating an event and hit "Save Draft" to keep it here.' : 'No events yet.'}
                 </div>
               )}
             </div>
