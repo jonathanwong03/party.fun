@@ -52,3 +52,25 @@ Because the AI only needs to emit a **structured parameter card** instead of man
 
 ### C. Client-Side Tool Filtering
 Before invoking the LLM, client-side regex or classifiers check if the query is purely informational. If it matches common non-action patterns, we skip action-agent tools entirely, reducing the system prompt size and tool definitions sent to the LLM.
+
+---
+
+## 4. Proposed Next Steps & Implementation Roadmap
+
+To execute this architecture safely, we will proceed along the following phases:
+
+### Phase 1: Tool & Schema Definition
+- Formalize the JSON schemas for the three primary proposal types:
+  - `propose_create_event` (event creation fields)
+  - `propose_update_event` (modification patches)
+  - `propose_ticket_purchase` (ticket quantities and event locks)
+- Write unit tests verifying that our parsing layers correctly validate these payload formats under edge-case inputs.
+
+### Phase 2: Frontend Proposal Component Integration
+- Implement the local UI card parser in the frontend chat view.
+- Ensure that the parser intercepts JSON action blocks and renders them as standard React/Vue form components (with native text fields, calendars, and sliders).
+- Connect form confirmations to the existing REST API paths (e.g. `POST /api/events` or `POST /api/checkout/pledge`).
+
+### Phase 3: Token Telemetry & Optimization
+- Implement middleware on the server side to log token consumption counts (input, output, and reasoning cache tokens).
+- Build the summarizing service that runs asynchronously to compress chat context history beyond 5 turns.
