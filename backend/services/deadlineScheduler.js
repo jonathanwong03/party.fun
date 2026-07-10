@@ -3,6 +3,16 @@ import { notifyEventCancelled, notifyEventCompleted } from './notificationServic
 import { refundEventCardBookings } from './stripeRefunds.js';
 import { reconcilePayments } from './paymentReconciler.js';
 
+export const dependencies = {
+  adminClient,
+  notifyEventCancelled,
+  notifyEventCompleted,
+  refundEventCardBookings,
+  reconcilePayments,
+  setTimeout: (fn, ms) => setTimeout(fn, ms),
+  setInterval: (fn, ms) => setInterval(fn, ms),
+};
+
 // Periodically auto-cancels + refunds early_bird events that passed their deadline
 // below the hype threshold (via the expire_overdue_events RPC), then emails the
 // affected backers + organiser through the existing Resend pipeline.
@@ -29,7 +39,7 @@ async function gatherAndNotify(admin, eventId) {
     backers = (users ?? []).map((u) => ({ email: u.email, username: u.username, role: u.role, method: byUser[u.id].method, refundAmount: byUser[u.id].amount }));
   }
 
-  notifyEventCancelled({
+  dependencies.notifyEventCancelled({
     eventTitle: event.title ?? 'your event',
     reason: 'missed_threshold',
     backers,
@@ -37,8 +47,8 @@ async function gatherAndNotify(admin, eventId) {
   });
 }
 
-async function runOnce() {
-  const admin = adminClient();
+export async function runOnce() {
+  const admin = dependencies.adminClient();
 
   // 1) Cancel + refund (to wallet, in the RPC) events that missed their threshold.
   const { data: expired, error: expireErr } = await admin.rpc('expire_overdue_events');
@@ -50,7 +60,7 @@ async function runOnce() {
       console.log(`[DeadlineScheduler] Expired ${ids.length} overdue event(s); refunding + notifying.`);
       for (const id of ids) {
         try {
-          await refundEventCardBookings(id); // real Stripe refunds for card-paid backers
+          await dependencies.refundEventCardBookings(id); // real Stripe refunds for card-paid backers
           await gatherAndNotify(admin, id);
         } catch (e) { console.error(`[DeadlineScheduler] post-expiry handling failed for ${id}:`, e?.message || e); }
       }
@@ -70,7 +80,7 @@ async function runOnce() {
         const { data: event } = await admin.from('EVENT').select('title, hostId, profit').eq('id', event_id).single();
         if (!event) continue;
         const { data: organiser } = await admin.from('USER').select('id, email, username').eq('id', event.hostId).single();
-        notifyEventCompleted({
+        dependencies.notifyEventCompleted({
           organiser: organiser?.email ? { userId: organiser.id, email: organiser.email, username: organiser.username } : null,
           eventTitle: event.title ?? 'your event',
           revenue: Number(event.profit ?? 0),
@@ -81,7 +91,7 @@ async function runOnce() {
   }
 
   // 3) Orphan recovery: refund pledge charges that succeeded but have no booking recorded.
-  const { refunded } = await reconcilePayments();
+  const { refunded } = await dependencies.reconcilePayments();
   if (refunded) console.log(`[DeadlineScheduler] Reconciler refunded ${refunded} orphaned charge(s).`);
 }
 
@@ -92,7 +102,8 @@ export function startDeadlineScheduler() {
   }
   const interval = Number(process.env.DEADLINE_CHECK_INTERVAL_MS) || DEFAULT_INTERVAL_MS;
   const tick = () => runOnce().catch((e) => console.error('[DeadlineScheduler]', e?.message || e));
-  setTimeout(tick, FIRST_RUN_DELAY_MS);
-  setInterval(tick, interval);
+  dependencies.setTimeout(tick, FIRST_RUN_DELAY_MS);
+  dependencies.setInterval(tick, interval);
   console.log(`[DeadlineScheduler] Started (every ${Math.round(interval / 1000)}s).`);
 }
+

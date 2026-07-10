@@ -2,13 +2,21 @@ import { adminClient } from './supabaseAdmin.js';
 import { predictRevenue } from './revenueForecaster.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from './ai/embeddingService.js';
 
+export const dependencies = {
+  adminClient,
+  predictRevenue,
+  embedText,
+  isEmbeddingEnabled,
+  similarPastBenchmark,
+};
+
 // Benchmark the event against the most SIMILAR past events' real sell-through
 // (semantic match). Returns null when embeddings/data are unavailable. Never throws.
 export async function similarPastBenchmark(admin, ev) {
   try {
-    if (!isEmbeddingEnabled()) return null;
+    if (!dependencies.isEmbeddingEnabled()) return null;
     const text = [ev.title, ev.description, ev.location, ev.address].filter(Boolean).join('\n');
-    const vec = await embedText(text, { taskType: 'RETRIEVAL_QUERY' });
+    const vec = await dependencies.embedText(text, { taskType: 'RETRIEVAL_QUERY' });
     if (!vec) return null;
     const { data } = await admin.rpc('match_similar_past_events', { p_embedding: toVectorLiteral(vec), p_count: 5, p_exclude: ev.id });
     const rows = (data ?? []).filter((r) => Number(r.capacity) > 0);
@@ -45,7 +53,7 @@ const statusPrice = (ev, name) => (ev?.statuses ?? []).find((s) => s.statusName 
 const statusQty = (ev, name) => (ev?.statuses ?? []).find((s) => s.statusName === name)?.ticketCapacity ?? 0;
 
 export async function forecastForEvent(eventId) {
-  const admin = adminClient();
+  const admin = dependencies.adminClient();
   const [{ data: events, error }, { data: row }] = await Promise.all([
     admin.rpc('get_events'),
     admin.from('EVENT').select('createdAt').eq('id', eventId).maybeSingle(),
@@ -80,7 +88,10 @@ export async function forecastForEvent(eventId) {
     max_price: ev.maxPrice ?? null,
   };
 
-  const forecast = await predictRevenue(features);
-  forecast.benchmark = await similarPastBenchmark(admin, ev); // similar past events' real sell-through
+  const forecast = await dependencies.predictRevenue(features);
+  if (forecast) {
+    forecast.benchmark = await dependencies.similarPastBenchmark(admin, ev); // similar past events' real sell-through
+  }
   return { event: ev, features, forecast };
 }
+
