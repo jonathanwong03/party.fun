@@ -7,7 +7,6 @@ import { getActiveStatus, type EventItem, type Role, type Route } from '../compo
 import { ImageWithFallback } from '../components/figma/ImageWithFallback';
 import { fetchQuote, fetchWallet, type Quote, type WalletInfo } from '../api';
 import { DEFAULT_EVENT_IMAGE } from '../components/media';
-import { urgencyCues, urgencyToneStyle } from '../components/urgency';
 
 export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: string; role: Role; go: (r: Route) => void; events: EventItem[]; qty?: number; onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card', attemptId?: string) => Promise<string | undefined> }) {
   const event = events.find((e) => e.id === id);
@@ -51,8 +50,6 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   // University-restricted event the signed-in user can't attend — block the pledge (server enforces too).
   const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
   const canPay = !universityBlocked && (method === 'wallet' ? !walletShort : hasCard);
-  const topCue = universityBlocked ? undefined : urgencyCues(event)[0];
-  const topCueStyle = topCue ? urgencyToneStyle(topCue.tone) : null;
 
   const handleConfirm = async () => {
     setSubmitError(null);
@@ -69,12 +66,12 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   };
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8">
       <button onClick={() => go({ name: 'event', id })} className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground" style={{ color: 'var(--muted-foreground)' }}>
         <ChevronLeft size={14} /> Back to event
       </button>
 
-      <h1 className="mb-6" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>Checkout</h1>
+      <h1 className="mb-6 text-[24px] sm:text-[32px]" style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>Checkout</h1>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
         {/* Payment source */}
@@ -153,15 +150,6 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               {universityBlocked && (
                 <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.4)', color: '#ff6b85' }}>
                   This event is open to {event.restrictedUniversity} members only.
-                </div>
-              )}
-
-              {topCue && topCueStyle && (
-                <div
-                  className="rounded-lg px-3 py-2 text-xs"
-                  style={{ color: topCueStyle.color, background: topCueStyle.bg, border: `1px solid ${topCueStyle.border}`, fontWeight: 700 }}
-                >
-                  {topCue.text}
                 </div>
               )}
 

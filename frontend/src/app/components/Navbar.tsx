@@ -68,11 +68,11 @@ export function Navbar({
                   type="button"
                   aria-label="Wallet"
                   onClick={() => go({ name: 'wallet' })}
-                  className="inline-flex items-center gap-1.5 rounded-full px-3 text-sm text-white transition hover:bg-white/10"
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 text-sm text-white transition hover:bg-white/10 sm:px-3"
                   style={{ height: 36, background: 'rgba(255,255,255,0.06)', fontWeight: 600 }}
                 >
                   <WalletIcon size={15} color="#ffffff" />
-                  {walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}
+                  <span className="hidden sm:inline">{walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}</span>
                 </button>
               )}
               <button

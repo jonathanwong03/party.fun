@@ -12,7 +12,6 @@ import { DEFAULT_EVENT_IMAGE } from '../components/media';
 import { fetchAttendees, fetchQuote, fetchWeather, type Attendee, type WeatherAssessment } from '../api';
 import { formatEventLocation } from '../components/eventDisplay';
 import { universityLabel } from '../components/universities';
-import { urgencyCues, urgencyToneStyle } from '../components/urgency';
 
 const AVATAR_COLORS = ['#ec2727', '#91e357', '#a1b3e0', '#dbe12b', '#30b2ea', '#ff8a3d', '#b07cff'];
 function avatarColor(seed: string) {
@@ -78,10 +77,9 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
   // Show the short code (e.g. "SMU members only") so the notice fits.
   const restrictedUniCode = event.restrictedUniversity ?? '';
   const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
-  const detailCues = urgencyCues(event);
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8">
       <button
         onClick={() => go(fromOrganiser ? { name: 'hosted-events' } : { name: 'landing' })}
         className="mb-4 inline-flex items-center gap-1 text-sm transition hover:text-foreground"
@@ -92,16 +90,16 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
 
       {/* banner */}
       <div className="relative mb-8 overflow-hidden rounded-3xl">
-        <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="h-72 w-full object-cover md:h-96" />
+        <ImageWithFallback src={event.image || DEFAULT_EVENT_IMAGE} alt={event.title} className="h-56 w-full object-cover sm:h-72 md:h-96" />
         {!event.image && <div className="absolute inset-0" style={{ background: 'rgba(0,0,0,0.28)' }} />}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0b0b0f] via-[#0b0b0f]/30 to-transparent" />
-        <div className="absolute inset-x-6 bottom-6 flex flex-wrap items-end justify-between gap-4">
+        <div className="absolute inset-x-4 bottom-4 flex flex-wrap items-end justify-between gap-4 sm:inset-x-6 sm:bottom-6">
           <div>
-            <h1 className="text-white" style={{ fontSize: 36, fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
+            <h1 className="text-white text-[22px] sm:text-[30px] md:text-[36px]" style={{fontWeight: 800, letterSpacing: '-0.02em', lineHeight: 1.1 }}>
               {event.title}
             </h1>
-            <p className="mt-2 text-white/85" style={{ fontSize: 17, fontWeight: 700 }}>Hosted by {event.organiser}</p>
-            {hostUniversity && <p className="mt-1 text-white/80" style={{ fontSize: 16, fontWeight: 600 }}>{hostUniversity}</p>}
+            <p className="mt-1 text-sm text-white/85 sm:mt-2 sm:text-[17px]" style={{ fontWeight: 700 }}>Hosted by {event.organiser}</p>
+            {hostUniversity && <p className="mt-0.5 text-sm text-white/80 sm:mt-1 sm:text-base" style={{ fontWeight: 600 }}>{hostUniversity}</p>}
             {restrictedUniCode && (
               <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: '#ff6b85', fontWeight: 700 }}>
                 <Shield size={12} /> {restrictedUniCode} members only
@@ -351,23 +349,6 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                   </div>
                 </div>
                 <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{available} ticket{available === 1 ? '' : 's'} left</div>
-              </div>
-            )}
-
-            {!alreadyPurchased && !unavailable && !universityBlocked && detailCues.length > 0 && (
-              <div className="mt-4 space-y-1.5">
-                {detailCues.map((c) => {
-                  const s = urgencyToneStyle(c.tone);
-                  return (
-                    <div
-                      key={c.key}
-                      className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
-                      style={{ color: s.color, background: s.bg, border: `1px solid ${s.border}`, fontWeight: 700 }}
-                    >
-                      <Timer size={14} className="shrink-0" /> {c.text}
-                    </div>
-                  );
-                })}
               </div>
             )}
 

@@ -1,6 +1,6 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
-import { forecastForEvent } from '../../forecastService.js';
+import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
 import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees } from '../../eventService.js';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
@@ -243,7 +243,7 @@ export const getEventDetailsTool = makeTool(
 
 export const getEventForecastTool = makeTool(
   'get_event_forecast',
-  "Get the projected ticket sales, revenue, estimated operational costs and projected PROFIT for one of the ORGANISER'S OWN events (host only). Use this to give revenue/profit advice. Forecasts are estimates, and operational costs are NOT charged through party.fun.",
+  "Get the profit-calculator figures for one of the ORGANISER'S OWN events (host only): the ticket target the organiser set, total revenue at that target, average price, total operational cost, and PROFIT (revenue − cost). Use this to give revenue/profit advice. Operational costs are entered by the organiser and are NOT charged through party.fun.",
   z.object({ eventId: z.string().describe('The event id (must be hosted by the caller).') }),
 );
 
@@ -533,32 +533,24 @@ export const EXECUTORS = {
   },
 
   async get_event_forecast(args, ctx) {
-    // Resolve id-or-name to the real event id before forecasting.
+    // Resolve id-or-name to the real event, then read its profit-calculator economics.
     const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
     if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ref = resolved.event;
     if (!ref) return { error: 'Event not found or not visible to you.' };
-    let result;
-    try {
-      result = await forecastForEvent(ref.id);
-    } catch (e) {
-      return { error: e.message };
+    if (ref.hostId !== ctx.userId && !ref.canEdit && !ref.isCoOrganiser && ctx.role !== 'admin') {
+      return { error: 'You can only see the profit calculator for events you host.' };
     }
-    if (!result) return { error: 'Event not found.' };
-    if (result.event.hostId !== ctx.userId && ctx.role !== 'admin') {
-      return { error: 'You can only forecast events you host.' };
-    }
-    const f = result.forecast;
+    const state = await loadCalculator(ctx.supabase, ref);
+    const e = computeEconomics(state);
     return {
-      title: result.event.title,
-      projectedTicketsSold: f.projectedTicketsSold,
-      projectedRevenue: f.projectedRevenue,
-      avgTicketPrice: f.avgTicketPrice,
-      totalOperationalCost: f.totalOperationalCost,
-      estimatedNet: f.estimatedNet,
-      projectedProfit: f.estimatedNet, // profit = revenue − operational costs (an estimate; costs are NOT charged by the app)
-      operationalCosts: f.operationalCosts,
-      benchmark: f.benchmark ?? null, // similar past events' real sell-through, for grounding advice
+      title: ref.title,
+      pricingModel: ref.hypeDrivenPricing ? 'hype' : 'tiered',
+      ticketTarget: e.ticketCount, // tickets the organiser is aiming to sell in the calculator
+      totalRevenue: e.totalRevenue,
+      avgTicketPrice: e.avgTicketPrice,
+      totalOperationalCost: e.totalCost, // costs are entered by the organiser; NOT charged by the app
+      profit: e.profit, // profit = total revenue − total cost
     };
   },
 

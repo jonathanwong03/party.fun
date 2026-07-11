@@ -94,8 +94,25 @@ test('normal users asking to manage events are refused before branch tools run',
 test('organisers can still enter the event management branch', async () => {
   useModel(); useClassify('event_mgmt');
   useAgents(fakeAgent([say('organiser branch')]));
-  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'i want to create an event' }], ctx: { ...ctxWith([]), role: 'organiser' } });
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'change my event price' }], ctx: { ...ctxWith([]), role: 'organiser' } });
   assert.equal(out.reply, 'organiser branch');
+});
+
+test('organisers asking to create an event get an immediate draft proposal', async () => {
+  useModel(); useClassify('event_mgmt');
+  let branchCalled = false;
+  __setAgentsForTests(() => allBranches({ invoke: async ({ messages }) => { branchCalled = true; return { messages: [...messages, say('should not ask follow-up')] }; } }));
+  const out = await runGraph({
+    system: 's',
+    messages: [{ role: 'user', content: 'can you create an event for me' }],
+    ctx: { ...ctxWith([]), role: 'organiser' },
+  });
+  assert.equal(out.status, 'awaiting_confirmation');
+  assert.equal(branchCalled, false);
+  assert.equal(out.proposals.length, 1);
+  assert.equal(out.proposals[0].action, 'create_event_draft');
+  assert.ok(out.proposals[0].payload.title);
+  assert.ok(out.proposals[0].payload.startDate);
 });
 
 test('branch toolsets are scoped (only management/transaction expose write proposals)', () => {
