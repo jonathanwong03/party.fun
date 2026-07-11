@@ -10,14 +10,20 @@ import { makeCodeStore } from './codeStore.js';
 const CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const MAX_ATTEMPTS = 5;
 
-// email (lowercased) -> { code, expiresAt, attempts, userId, username }
-const store = makeCodeStore('otp:reset:', CODE_TTL_MS);
+// Injectable seam so unit tests can stub Supabase/Resend/SMS and inspect the code store.
+// `store` is Redis-backed when REDIS_URL is set, in-memory otherwise (see codeStore.js).
+export const dependencies = {
+  adminClient,
+  notifyPasswordReset,
+  sendSms,
+  store: makeCodeStore('otp:reset:', CODE_TTL_MS),
+  sixDigit: () => String(Math.floor(100000 + Math.random() * 900000)),
+};
 
 const normalise = (email) => (email ?? '').trim().toLowerCase();
-const sixDigit = () => String(Math.floor(100000 + Math.random() * 900000));
 
 async function findUser(email) {
-  const { data, error } = await adminClient()
+  const { data, error } = await dependencies.adminClient()
     .from('USER')
     .select('id, email, username, role, contact')
     .ilike('email', normalise(email))
@@ -37,7 +43,7 @@ function normalisePhone(raw) {
 async function findUserByPhone(phone) {
   const target = normalisePhone(phone);
   if (!target) return null;
-  const { data, error } = await adminClient()
+  const { data, error } = await dependencies.adminClient()
     .from('USER')
     .select('id, email, username, role, contact')
     .not('contact', 'is', null);
@@ -48,13 +54,13 @@ async function findUserByPhone(phone) {
 // Validate a stored code; returns the entry on success or an error string.
 async function checkCode(email, code) {
   const key = normalise(email);
-  const entry = await store.get(key);
+  const entry = await dependencies.store.get(key);
   if (!entry) return { error: 'invalid_code' };
-  if (Date.now() > entry.expiresAt) { await store.del(key); return { error: 'expired_code' }; }
-  if (entry.attempts >= MAX_ATTEMPTS) { await store.del(key); return { error: 'too_many_attempts' }; }
+  if (Date.now() > entry.expiresAt) { await dependencies.store.del(key); return { error: 'expired_code' }; }
+  if (entry.attempts >= MAX_ATTEMPTS) { await dependencies.store.del(key); return { error: 'too_many_attempts' }; }
   if (entry.code !== String(code ?? '').trim()) {
     entry.attempts += 1;
-    await store.set(key, entry);
+    await dependencies.store.set(key, entry);
     return { error: 'invalid_code' };
   }
   return { entry };
@@ -71,15 +77,15 @@ export async function requestReset(identifier, channel = 'email') {
   // SMS delivery needs a phone on file.
   if (channel === 'sms' && !user.contact) return { error: 'no_phone' };
 
-  const code = sixDigit();
-  await store.set(normalise(user.email), { code, expiresAt: Date.now() + CODE_TTL_MS, attempts: 0, userId: user.id, username: user.username });
+  const code = dependencies.sixDigit();
+  await dependencies.store.set(normalise(user.email), { code, expiresAt: Date.now() + CODE_TTL_MS, attempts: 0, userId: user.id, username: user.username });
 
   // Awaited so the HTTP response reflects whether the message was dispatched.
   if (channel === 'sms') {
-    const result = await sendSms(user.contact, `Your party.fun password reset code is ${code}. It expires in 10 minutes.`);
+    const result = await dependencies.sendSms(user.contact, `Your party.fun password reset code is ${code}. It expires in 10 minutes.`);
     if (!result.success) return { error: 'sms_failed' };
   } else {
-    await notifyPasswordReset({ email: user.email, username: user.username, role: user.role, code });
+    await dependencies.notifyPasswordReset({ email: user.email, username: user.username, role: user.role, code });
   }
   return { status: 'ok', email: user.email };
 }
@@ -95,9 +101,9 @@ export async function completeReset(email, code, password) {
   const result = await checkCode(email, code);
   if (result.error) return { error: result.error };
 
-  const { error } = await adminClient().auth.admin.updateUserById(result.entry.userId, { password });
+  const { error } = await dependencies.adminClient().auth.admin.updateUserById(result.entry.userId, { password });
   if (error) return { error: error.message };
 
-  await store.del(normalise(email));
+  await dependencies.store.del(normalise(email));
   return { status: 'ok' };
 }
