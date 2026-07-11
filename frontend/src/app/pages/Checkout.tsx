@@ -66,12 +66,12 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   };
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8">
       <button onClick={() => go({ name: 'event', id })} className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground" style={{ color: 'var(--muted-foreground)' }}>
         <ChevronLeft size={14} /> Back to event
       </button>
 
-      <h1 className="mb-6" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>Checkout</h1>
+      <h1 className="mb-6 text-[24px] sm:text-[32px]" style={{ fontWeight: 800, letterSpacing: '-0.02em' }}>Checkout</h1>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_400px]">
         {/* Payment source */}

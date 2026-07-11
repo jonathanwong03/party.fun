@@ -235,7 +235,7 @@ export function AiAssistant({ role, onDataChanged }: { role: Role; onDataChanged
       <button
         onClick={() => setOpen(true)}
         title="Ask the party.fun assistant"
-        className="fixed bottom-6 right-6 z-50 flex size-14 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105"
+        className="fixed bottom-24 right-4 z-50 flex size-14 items-center justify-center rounded-full text-white shadow-lg transition hover:scale-105 md:bottom-6 md:right-6"
         style={{ background: '#ff4d2e' }}
       >
         <MessageCircle size={24} />
