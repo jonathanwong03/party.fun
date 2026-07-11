@@ -29,6 +29,20 @@ npm install
 npm run dev
 ```
 
+#### Redis (optional)
+
+The backend can use a **managed Redis** (Upstash / Redis Cloud) for three things. It is entirely optional — leave `REDIS_URL` unset and everything falls back to per-process in-memory behaviour (fine for a single dev instance); set it to light up all three at once:
+
+```
+REDIS_URL=rediss://default:<password>@<host>:<port>   # optional; unset = in-memory fallback
+```
+
+- **Caching** — public event lists (`GET /api/events`, keyed `events:list:anon` / `events:list:u:<id>`, 45s TTL, invalidated on any event write), Google Weather forecasts (`wx:*`, 30 min), and Gemini embeddings (`emb:*`, 24 h).
+- **Shared OTP / reset codes** — phone-login and password-reset codes (`otp:phone:*`, `otp:reset:*`) live in Redis so they survive a backend restart and work across multiple instances (with `REDIS_URL` unset they stay in an in-memory `Map`, as before).
+- **Rate limiting** — OTP/reset **send** endpoints are throttled per identifier+IP (1 / 30s, 5 / hour) across instances (`rl:*`). No-op when Redis is off.
+
+All Redis access is **fail-open**: if Redis is unreachable, requests still succeed (cache misses / no limiting), errors are logged, and the process never crashes.
+
 ### 2. Frontend
 
 The frontend talks to Supabase Auth directly, so it needs a `frontend/.env` (gitignored):

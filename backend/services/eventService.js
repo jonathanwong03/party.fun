@@ -6,8 +6,21 @@
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
+import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix } from './cache.js';
 
 const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
+
+// Public event listing is read-hot (every Landing load) but write-hot too (hype
+// counts change on each pledge), so we use a short TTL plus explicit invalidation
+// on writes. RLS makes the mapped rows viewer-specific (mine/canEdit/…), so anon
+// callers share one key while signed-in callers are keyed by user id.
+const EVENTS_TTL_S = 45;
+const eventsCacheKey = (userId) => (userId == null ? 'events:list:anon' : `events:list:u:${userId}`);
+
+// Drop every cached event list after a mutation so the next read reflects it.
+async function invalidateEventCaches() {
+  await Promise.all([cacheDel('events:list:anon'), cacheDelByPrefix('events:list:u:')]);
+}
 
 function sgDate(iso, opts) {
   return new Intl.DateTimeFormat('en-SG', { timeZone: 'Asia/Singapore', ...opts }).format(new Date(iso));
@@ -122,6 +135,10 @@ export function mapEventRow(row, userId) {
 // ── Reads ──────────────────────────────────────────────────────────────────
 
 export async function listEvents(sb, userId) {
+  const cacheKey = eventsCacheKey(userId);
+  const cached = await cacheGetJson(cacheKey);
+  if (cached != null) return cached;
+
   const { data, error } = await sb.rpc('get_events');
   if (error) throw new Error(error.message);
   const events = (data ?? []).map((row) => mapEventRow(row, userId));
@@ -133,6 +150,7 @@ export async function listEvents(sb, userId) {
     if (!featured || (e.hypeRatio ?? 0) > (featured.hypeRatio ?? 0)) featured = e;
   }
   if (featured) featured.featured = true;
+  await cacheSetJson(cacheKey, events, EVENTS_TTL_S);
   return events;
 }
 
@@ -283,6 +301,7 @@ export async function getEventAttendeesPrivate(sb, eventId) {
 
 // Re-reads events + profile after a mutation so the frontend can refresh in one round-trip.
 async function mutationResult(sb, userId, eventId) {
+  await invalidateEventCaches(); // the mutation changed event data; re-read below is fresh
   const [events, profile] = await Promise.all([listEvents(sb, userId), getProfile(sb)]);
   return {
     event: eventId ? events.find((e) => e.id === eventId) ?? null : null,
@@ -381,6 +400,7 @@ export async function createEvent(sb, e) {
   const { data, error } = await sb.rpc('create_event', eventRpcArgs(e));
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  await invalidateEventCaches();
   syncEventEmbedding(sb, data.eventId, e); // fire-and-forget (semantic search/recommendation)
   return { eventId: data.eventId };
 }
@@ -389,6 +409,7 @@ export async function updateEvent(sb, e) {
   const { data, error } = await sb.rpc('update_event', { p_event_id: e.id, ...eventRpcArgs(e) });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  await invalidateEventCaches();
   syncEventEmbedding(sb, e.id, e); // re-embed on edit
   return { status: 'ok' };
 }
@@ -397,6 +418,7 @@ export async function deleteEvent(sb, eventId) {
   const { data, error } = await sb.rpc('delete_event', { p_event_id: eventId });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  await invalidateEventCaches();
   return { status: 'ok' };
 }
 
@@ -406,6 +428,7 @@ export async function cancelEvent(sb, eventId, reason) {
   const { data, error } = await sb.rpc('cancel_event', { p_event_id: eventId, p_reason: reason });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  await invalidateEventCaches();
   return { status: 'ok' };
 }
 
@@ -414,6 +437,7 @@ export async function hideEvent(sb, eventId) {
   const { data, error } = await sb.rpc('hide_event', { p_event_id: eventId });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
+  await invalidateEventCaches();
   return { status: 'ok' };
 }
 
