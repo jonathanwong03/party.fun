@@ -1,4 +1,4 @@
-import { getRedis, isRedisEnabled } from './redisClient.js';
+import { getReadyRedis, isRedisEnabled } from './redisClient.js';
 
 // Fail-open cache helpers over the optional Redis client. Every function swallows
 // Redis errors and behaves as a cache miss / no-op, so a Redis outage degrades to
@@ -9,7 +9,7 @@ export { isRedisEnabled };
 
 // Parsed JSON value for `key`, or null on miss / error / Redis-off.
 export async function cacheGetJson(key) {
-  const redis = getRedis();
+  const redis = getReadyRedis();
   if (!redis) return null;
   try {
     const raw = await redis.get(key);
@@ -22,7 +22,7 @@ export async function cacheGetJson(key) {
 
 // Best-effort SET with a TTL in seconds. Returns true on success, false otherwise.
 export async function cacheSetJson(key, value, ttlSeconds) {
-  const redis = getRedis();
+  const redis = getReadyRedis();
   if (!redis) return false;
   try {
     await redis.set(key, JSON.stringify(value), 'EX', Math.max(1, Math.floor(ttlSeconds)));
@@ -35,7 +35,7 @@ export async function cacheSetJson(key, value, ttlSeconds) {
 
 // Delete one or more keys. Safe to call with no keys.
 export async function cacheDel(...keys) {
-  const redis = getRedis();
+  const redis = getReadyRedis();
   if (!redis || keys.length === 0) return;
   try {
     await redis.del(...keys);
@@ -47,7 +47,7 @@ export async function cacheDel(...keys) {
 // Delete every key beginning with `prefix`. Uses SCAN (not KEYS) so it never blocks
 // the Redis server on large keyspaces.
 export async function cacheDelByPrefix(prefix) {
-  const redis = getRedis();
+  const redis = getReadyRedis();
   if (!redis) return;
   try {
     const stream = redis.scanStream({ match: `${prefix}*`, count: 100 });

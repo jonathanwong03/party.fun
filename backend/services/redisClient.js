@@ -35,6 +35,15 @@ export function getRedis() {
   return client;
 }
 
+// The client only if it's fully connected and ready to accept commands. During the
+// initial TLS handshake (or a reconnect) ioredis reports a non-'ready' status; issuing
+// a command then throws "Stream isn't writeable". Callers use this to skip the cache
+// silently (a plain miss) instead of attempting — and logging — a doomed command.
+export function getReadyRedis() {
+  const c = getRedis();
+  return c && c.status === 'ready' ? c : null;
+}
+
 export function isRedisEnabled() {
   return !!process.env.REDIS_URL;
 }

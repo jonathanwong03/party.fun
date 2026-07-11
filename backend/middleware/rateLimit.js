@@ -1,4 +1,4 @@
-import { getRedis } from '../services/redisClient.js';
+import { getReadyRedis } from '../services/redisClient.js';
 
 // Cross-instance rate limiting backed by Redis (INCR + EXPIRE on a per-window key).
 // Fail-open: if Redis is off or errors, requests pass through — matching the rest of
@@ -15,8 +15,8 @@ export function rateLimit({ keyFn, limit, windowSec, message } = {}) {
   const resolveKey = typeof keyFn === 'function' ? keyFn : (req) => req.ip;
 
   return async function rateLimitMiddleware(req, res, next) {
-    const redis = getRedis();
-    if (!redis) return next(); // Redis off → no limiting
+    const redis = getReadyRedis();
+    if (!redis) return next(); // Redis off / not yet connected → no limiting
 
     let count;
     try {

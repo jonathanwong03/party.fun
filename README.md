@@ -31,17 +31,26 @@ npm run dev
 
 #### Redis (optional)
 
-The backend can use a **managed Redis** (Upstash / Redis Cloud) for three things. It is entirely optional — leave `REDIS_URL` unset and everything falls back to per-process in-memory behaviour (fine for a single dev instance); set it to light up all three at once:
+The backend can use a **managed Redis** (Upstash / Redis Cloud) as a shared, fast in-memory store. It is **entirely optional** — leave `REDIS_URL` unset and everything falls back to per-process in-memory behaviour (fine for a single dev instance). Set it, and the backend uses Redis for three jobs: **caching** slow reads, **storing short-lived login/reset codes** so they survive restarts, and **rate limiting** across instances.
 
 ```
 REDIS_URL=rediss://default:<password>@<host>:<port>   # optional; unset = in-memory fallback
 ```
 
-- **Caching** — public event lists (`GET /api/events`, keyed `events:list:anon` / `events:list:u:<id>`, 45s TTL, invalidated on any event write), Google Weather forecasts (`wx:*`, 30 min), and Gemini embeddings (`emb:*`, 24 h).
-- **Shared OTP / reset codes** — phone-login and password-reset codes (`otp:phone:*`, `otp:reset:*`) live in Redis so they survive a backend restart and work across multiple instances (with `REDIS_URL` unset they stay in an in-memory `Map`, as before).
-- **Rate limiting** — OTP/reset **send** endpoints are throttled per identifier+IP (1 / 30s, 5 / hour) across instances (`rl:*`). No-op when Redis is off.
+> Use the TLS scheme `rediss://` (Upstash requires it). The URL itself is the credential — there is no separate API key. Set it as a secret env var in production, not in a committed file.
 
-All Redis access is **fail-open**: if Redis is unreachable, requests still succeed (cache misses / no limiting), errors are logged, and the process never crashes.
+**What exactly it does** — every piece of data Redis holds:
+
+| Purpose | Key(s) | TTL | What it saves / why |
+|---|---|---|---|
+| **Cache event lists** | `events:list:anon`, `events:list:u:<userId>` | 45s | Avoids re-running the `get_events` Supabase RPC on every landing/events page load. Guests share one key; signed-in users get their own (results are per-user via RLS). **Invalidated immediately** on any event write (create/edit/cancel/hide, and every pledge) so it's never stale. |
+| **Cache weather forecasts** | `wx:<lat>,<lon>` | 30 min | Caches the Google Weather API response per venue location, so repeat checks (event detail page, create/edit form, AI `get_weather` tool) don't re-hit the paid API. |
+| **Cache AI embeddings** | `emb:<model>:<taskType>:<hash>` | 24h | Caches the Gemini embedding vector for a given text. Semantic search re-uses the same query embedding instead of paying for a fresh Gemini call each time. |
+| **Store phone-login OTP** | `otp:phone:<number>` | ~11 min | The 6-digit SMS login code + attempt counter. In Redis it survives a backend restart and works across multiple instances (unset ⇒ in-memory `Map`, lost on restart). |
+| **Store password-reset OTP** | `otp:reset:<email>` | ~11 min | Same as above, for the emailed/SMS password-reset code. |
+| **Rate limiting** | `rl:<window>:<limit>:<id>` | window length | Throttles the OTP/reset **send** endpoints per identifier+IP (**1 / 30s** and **5 / hour**) using `INCR`+`EXPIRE`, enforced across all instances. Protects the paid SMS/email senders from spam. |
+
+**Fail-open by design:** if Redis is unreachable (or still connecting at startup), every path degrades gracefully — cache reads count as a miss and fall back to Supabase/the live API, rate limiting is skipped, and OTP codes fall back to the in-memory map. Requests still succeed and the process never crashes. Implemented in [backend/services/redisClient.js](backend/services/redisClient.js) (connection) and [backend/services/cache.js](backend/services/cache.js) (helpers); the client is only used once its connection status is `ready`.
 
 ### 2. Frontend
 
