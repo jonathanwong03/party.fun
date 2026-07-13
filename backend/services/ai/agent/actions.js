@@ -65,8 +65,8 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
 
   // ── Create a DRAFT (no existing event / ownership check needed) ──────────────
   if (action === 'create_event_draft') {
-    if (user.role !== 'organiser' && user.role !== 'admin') {
-      return { error: 'not_organiser', message: 'Only organisers can create events.' };
+    if (user.role !== 'organiser') {
+      return { error: 'not_organiser', message: 'Only organisers can create events. Admins can edit and cancel events, but not create them.' };
     }
     const p = payload ?? {};
     const title = String(p.title ?? '').trim();
@@ -121,8 +121,8 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
 
   // ── Top up the wallet (Stripe charge → wallet credit; no event) ──────────────
   if (action === 'publish_draft') {
-    if (user.role !== 'organiser' && user.role !== 'admin') {
-      return { error: 'not_organiser', message: 'Only organisers can create events.' };
+    if (user.role !== 'organiser') {
+      return { error: 'not_organiser', message: 'Only organisers can create events. Admins can edit and cancel events, but not create them.' };
     }
     const draftId = String(payload?.draftId ?? '').trim();
     if (!draftId) return { error: 'bad_request', message: 'Missing draft id.' };
@@ -240,11 +240,17 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
   if (error) return { error: 'error', message: error.message };
   const row = (rows ?? []).find((r) => r.id === eventId);
   if (!row) return { error: 'not_found', message: 'Event not found.' };
-  // Editing is allowed for owners AND accepted co-organisers (matches the update_event
-  // RPC's can_manage_event check); inviting and cancelling stay owner-only.
-  const ownerOnly = action === 'invite_coorganiser' || action === 'cancel_event';
-  const canManage = row.hostId === user.id || row.isCoOrganiser;
-  if (ownerOnly ? row.hostId !== user.id : !canManage) return { error: 'not_owner', message: ERROR_MESSAGES.not_owner };
+  // Editing is allowed for owners, accepted co-organisers AND admins (matches the
+  // update_event RPC's can_manage_event check). Cancelling is owner OR admin (admins
+  // moderate any event); inviting stays owner-only. Co-organisers cannot cancel/invite.
+  const isAdmin = user.role === 'admin';
+  const canManage = row.hostId === user.id || row.isCoOrganiser || isAdmin;
+  const allowed = action === 'invite_coorganiser'
+    ? row.hostId === user.id
+    : action === 'cancel_event'
+      ? (row.hostId === user.id || isAdmin)
+      : canManage;
+  if (!allowed) return { error: 'not_owner', message: ERROR_MESSAGES.not_owner };
   const item = mapEventRow(row, user.id);
   if (item.status === 'cancelled' || item.status === 'completed') {
     return { error: 'locked', message: 'This event can no longer be edited.' };
@@ -319,6 +325,17 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
   }
 
   if (action === 'cancel_event') {
+    // An admin moderating someone else's event uses the admin_cancel_event RPC and
+    // MUST supply a reason (any non-empty text). The host's own cancellation keeps the
+    // existing refund flow (reason optional).
+    if (isAdmin && row.hostId !== user.id) {
+      const reason = String(payload?.reason ?? '').trim();
+      if (reason.length < 1) return { error: 'reason_required', message: 'A reason is required to delete this event (any short reason is fine).' };
+      const { data, error: rpcErr } = await sb.rpc('admin_cancel_event', { p_event_id: eventId, p_reason: reason });
+      if (rpcErr) return { error: 'error', message: rpcErr.message };
+      if (data?.error) return { error: data.error, message: msg(data.error, 'Unable to cancel the event.') };
+      return { status: 'ok', message: `Cancelled "${item.title}" (admin) and refunded every backer.` };
+    }
     const r = await cancelEventWithRefunds(sb, user.id, eventId, payload?.reason);
     if (r?.error) return { error: r.error, message: msg(r.error, 'Unable to cancel the event.') };
     return { status: 'ok', message: `Cancelled "${item.title}" and refunded every backer.` };

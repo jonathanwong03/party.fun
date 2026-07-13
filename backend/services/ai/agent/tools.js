@@ -1,7 +1,7 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
-import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, getEventAttendeesPrivate, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
 import { cacheGetJson, cacheSetJson } from '../../cache.js';
 import { createHash } from 'node:crypto';
 import { assessEvent } from '../../weatherService.js';
@@ -429,10 +429,10 @@ export const proposePledgeTool = makeTool(
 
 export const proposeCancelEventTool = makeTool(
   'propose_cancel_event',
-  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. A reason is OPTIONAL — if the organiser gives one, pass it as-is (any reason is fine, even informal); if they do not, proceed without it. Does NOT cancel — returns a proposal the user must confirm.',
+  "PROPOSE cancelling a live event. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. ORGANISERS may cancel their OWN events (reason OPTIONAL). ADMINS may cancel ANY event for moderation, but a reason is MANDATORY — accept any non-empty reason (even one word); if the admin gave none, ask for one first and do NOT call this tool until you have it. Does NOT cancel — returns a proposal the user must confirm.",
   z.object({
-    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
-    reason: z.string().optional().describe('Optional reason shown to backers. Pass whatever the organiser gives; leave empty if none.'),
+    eventId: z.string().describe('The event id OR its name.'),
+    reason: z.string().optional().describe('Reason shown to backers. Optional for the host organiser; REQUIRED (any non-empty text) when an admin deletes another organiser\'s event.'),
   }),
 );
 
@@ -566,11 +566,32 @@ export const EXECUTORS = {
     } catch (e) {
       return { error: e?.message ?? 'Unable to load attendees.' };
     }
+    // Managers (host / co-organiser / admin) additionally get contact details. The
+    // private RPC is host/co-org/admin-only via can_manage_event; non-managers get
+    // { error: 'forbidden' } and we return names only.
+    let contactsByUsername = null;
+    try {
+      const priv = await getEventAttendeesPrivate(ctx.supabase, ev.id);
+      if (!priv?.error && Array.isArray(priv?.attendees)) {
+        contactsByUsername = new Map(priv.attendees.map((p) => [p.username, p]));
+      }
+    } catch { /* non-managers: names only */ }
+    const rows = attendees.map((a) => {
+      const row = { name: a.name ?? a.username ?? null, username: a.username ?? null };
+      const c = contactsByUsername?.get(a.username);
+      if (c) {
+        row.email = c.email ?? null;
+        row.telegram = c.socialLink || null; // optional — may be null/blank
+        row.phone = c.contact || null;       // optional — may be null/blank
+      }
+      return row;
+    });
     return {
       eventId: ev.id,
       title: ev.title,
       attendeeCount: attendees.length, // distinct people holding active tickets (one buyer of many tickets = one attendee)
-      attendees: attendees.map((a) => ({ name: a.name ?? a.username ?? null, username: a.username ?? null })),
+      canSeeContacts: !!contactsByUsername, // true for host/co-organiser/admin
+      attendees: rows,
     };
   },
 
@@ -999,9 +1020,15 @@ export const EXECUTORS = {
     if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
-    if (ev.hostId !== ctx.userId) return { error: 'You can only cancel events you host.' };
+    const isAdmin = String(ctx.role || '').toLowerCase() === 'admin';
+    const isHost = ev.hostId === ctx.userId;
+    if (!isHost && !isAdmin) return { error: 'You can only cancel events you host.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be cancelled.' };
     const reason = String(args.reason ?? '').trim();
+    // Admins moderating another organiser's event MUST supply a reason.
+    if (isAdmin && !isHost && reason.length < 1) {
+      return { error: 'A reason is required to delete this event. Ask the admin for a short reason (any text is fine), then propose again.' };
+    }
     return {
       proposal: {
         id: `cancel_event:${ev.id}:${Date.now()}`,
