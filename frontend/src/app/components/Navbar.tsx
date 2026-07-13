@@ -53,14 +53,14 @@ export function Navbar({
           </button>
         </div>
 
-        <nav className="hidden items-center gap-1 justify-self-center md:flex">
+        <nav className="col-start-2 hidden items-center gap-1 justify-self-center md:flex">
           {role !== 'admin' && navItem('All Events', { name: 'landing' }, route.name === 'landing')}
           {(role === 'user' || role === 'organiser') && navItem('Joined Events', { name: 'joined-events' }, route.name === 'joined-events')}
           {role === 'organiser' && navItem('Hosted Events', { name: 'hosted-events' }, route.name === 'hosted-events')}
           {role === 'admin' && navItem('Manage Events', { name: 'manage-events' }, route.name === 'manage-events')}
         </nav>
 
-        <div className="flex items-center gap-2 justify-self-end">
+        <div className="col-start-3 flex items-center gap-2 justify-self-end">
           {role ? (
             <>
               {role !== 'admin' && (
@@ -72,7 +72,7 @@ export function Navbar({
                   style={{ height: 36, background: 'rgba(255,255,255,0.06)', fontWeight: 600 }}
                 >
                   <WalletIcon size={15} color="#ffffff" />
-                  <span className="hidden sm:inline">{walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}</span>
+                  <span>{walletBalance != null ? `$${walletBalance.toFixed(2)}` : 'Wallet'}</span>
                 </button>
               )}
               <button
