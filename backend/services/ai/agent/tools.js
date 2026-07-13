@@ -1,8 +1,8 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
-import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, listEventsRaw } from '../../eventService.js';
-import { withCache, cacheGetJson, cacheSetJson } from '../../cache.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
+import { cacheGetJson, cacheSetJson } from '../../cache.js';
 import { createHash } from 'node:crypto';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
@@ -196,16 +196,10 @@ const sim2 = (s) => Math.round(Number(s) * 100) / 100;
 // Net revenue-so-far per event the caller HOSTS, keyed by eventId (host-only RPC).
 // Returns an empty map on any error/unexpected shape so callers can degrade gracefully.
 async function hostedRevenueById(ctx) {
-  const key = `agent:hostrev:u:${ctx.userId}`;
-  const cached = await cacheGetJson(key); // Redis-first; invalidated on writes
-  if (cached != null) return cached;
   try {
-    const { data, error } = await ctx.supabase.rpc('get_hosted_revenue');
-    if (error) return {};
-    const map = {};
-    for (const r of data?.events ?? []) map[r.eventId] = Number(r.revenue);
-    await cacheSetJson(key, map, 60); // only cache a successful result
-    return map;
+    // Shared, cached (data:hostrev:u:<id>) — same entry the organiser dashboard uses.
+    const rev = await hostedRevenue(ctx.supabase, ctx.userId);
+    return rev.byEvent;
   } catch {
     return {};
   }
@@ -548,7 +542,7 @@ export const EXECUTORS = {
     if (ref.hostId !== ctx.userId && !ref.canEdit && !ref.isCoOrganiser && ctx.role !== 'admin') {
       return { error: 'You can only see the profit calculator for events you host.' };
     }
-    const state = await loadCalculator(ctx.supabase, ref);
+    const state = await loadCalculator(ctx.supabase, ref, ctx.userId); // shared cache: data:calculator:u:<id>:e:<id>
     const e = computeEconomics(state);
     return {
       title: ref.title,
@@ -568,7 +562,7 @@ export const EXECUTORS = {
     if (!ev) return { error: 'Event not found or not visible to you.' };
     let attendees;
     try {
-      attendees = await withCache(`agent:attendees:e:${ev.id}`, 30, () => getEventAttendees(ctx.supabase, ev.id));
+      attendees = await getEventAttendees(ctx.supabase, ev.id); // shared cache: data:attendees:e:<id>
     } catch (e) {
       return { error: e?.message ?? 'Unable to load attendees.' };
     }
@@ -617,7 +611,7 @@ export const EXECUTORS = {
   async get_my_joined_events(_args, ctx) {
     let profile;
     try {
-      profile = await withCache(`agent:profile:u:${ctx.userId}`, 30, () => getProfile(ctx.supabase));
+      profile = await getProfile(ctx.supabase, ctx.userId); // shared cache: data:profile:u:<id>
     } catch (e) {
       return { error: e?.message ?? 'Unable to load your joined events.' };
     }
@@ -674,11 +668,7 @@ export const EXECUTORS = {
   async research_event_ideas(args, ctx) {
     let university = '';
     try {
-      // University changes at most once and only via Settings, so cache it (10-min TTL).
-      university = await withCache(`agent:umeta:u:${ctx.userId}`, 600, async () => {
-        const { data } = await ctx.supabase.from('USER').select('university').eq('id', ctx.userId).single();
-        return data?.university || '';
-      });
+      university = await getUserUniversity(ctx.supabase, ctx.userId); // shared cache: data:umeta:u:<id>
     } catch {
       /* university is optional — proceed without it */
     }
@@ -916,7 +906,7 @@ export const EXECUTORS = {
   async list_my_drafts(args, ctx) {
     let drafts;
     try {
-      drafts = await withCache(`agent:drafts:u:${ctx.userId}`, 60, () => listDrafts(ctx.supabase));
+      drafts = await listDrafts(ctx.supabase, ctx.userId); // shared cache: data:drafts:u:<id>
     } catch (e) {
       return { error: e?.message ?? 'Unable to load drafts.' };
     }

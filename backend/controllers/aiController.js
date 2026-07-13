@@ -9,6 +9,7 @@ import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
 import { computeEconomics, loadCalculator } from '../services/eventEconomics.js';
+import { listEventsRaw, getProfile } from '../services/eventService.js';
 
 // ── Simple per-user rate limit (cost guard) ───────────────────────────────────
 const WINDOW_MS = 60 * 1000;
@@ -53,15 +54,16 @@ export async function suggestEventCopy(req, res) {
 // POST /api/ai/revenue-tips/:eventId  (host-scoped)
 export async function revenueTips(req, res) {
   if (!guard(req, res)) return;
-  const { data: events, error } = await req.supabase.rpc('get_events');
-  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  let events;
+  try { events = await listEventsRaw(req.supabase, req.user.id); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
   const ev = (events ?? []).find((e) => e.id === req.params.eventId);
   if (!ev) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
   if (ev.hostId !== req.user.id && !ev.canEdit && !ev.isCoOrganiser && req.user.role !== 'admin') {
     return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
   }
 
-  const state = await loadCalculator(req.supabase, ev);
+  const state = await loadCalculator(req.supabase, ev, req.user.id);
   const economics = computeEconomics(state);
   const event = {
     title: ev.title,
@@ -77,8 +79,9 @@ export async function revenueTips(req, res) {
 export async function recommendEvents(req, res) {
   if (!guard(req, res)) return;
   const { interests } = req.body ?? {};
-  const { data: rows, error } = await req.supabase.rpc('get_events');
-  if (error) return res.status(400).json({ status: 'error', message: error.message });
+  let rows;
+  try { rows = await listEventsRaw(req.supabase, req.user.id); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
   const userId = req.user?.id ?? null;
 
   let candidates = (rows ?? [])
@@ -122,13 +125,13 @@ export async function recommendEvents(req, res) {
 // there's no history/interests or embeddings are off.
 export async function forYou(req, res) {
   if (!isEmbeddingEnabled()) return res.json({ ids: [] });
-  const [memories, profileRes, eventsRes] = await Promise.all([
+  const [memories, profile, events] = await Promise.all([
     loadMemory(req.supabase, req.user.id),
-    req.supabase.rpc('get_profile'),
-    req.supabase.rpc('get_events'),
+    getProfile(req.supabase, req.user.id),
+    listEventsRaw(req.supabase, req.user.id),
   ]);
-  const joined = new Set((profileRes.data?.tickets ?? []).map((t) => t.eventId));
-  const joinedTitles = (eventsRes.data ?? []).filter((e) => joined.has(e.id)).map((e) => e.title);
+  const joined = new Set((profile?.tickets ?? []).map((t) => t.eventId));
+  const joinedTitles = (events ?? []).filter((e) => joined.has(e.id)).map((e) => e.title);
   const profileText = [...memories.map((m) => m.content), ...joinedTitles].filter(Boolean).join('\n');
   if (!profileText.trim()) return res.json({ ids: [] });
   const vec = await embedText(profileText, { taskType: 'RETRIEVAL_QUERY' });

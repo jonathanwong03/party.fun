@@ -4,6 +4,8 @@
 // prices/quantities (respecting the hype or tiered model) and operational-cost line
 // items, and we just add them up.
 
+import { withCache } from './cache.js';
+
 const roundMoney = (n) => Math.round((Number(n) || 0) * 100) / 100;
 
 const statusPrice = (ev, name) => (ev?.statuses ?? []).find((s) => s.statusName === name)?.price ?? 0;
@@ -82,16 +84,21 @@ export function computeEconomics(state = {}) {
 }
 
 // The saved calculator state for an event, or the prefilled defaults when none exists.
-export async function loadCalculator(supabase, ev) {
-  try {
-    const { data } = await supabase
-      .from('EVENT_CALCULATOR')
-      .select('state')
-      .eq('eventId', ev.id)
-      .maybeSingle();
-    if (data?.state && typeof data.state === 'object' && Object.keys(data.state).length) {
-      return data.state;
-    }
-  } catch { /* fall through to defaults */ }
-  return defaultCalculatorState(ev);
+// Host-only (RLS). Cached per user+event when userId is passed (avoids serving one
+// organiser's saved calculator to another); live when omitted.
+export async function loadCalculator(supabase, ev, userId = null) {
+  const load = async () => {
+    try {
+      const { data } = await supabase
+        .from('EVENT_CALCULATOR')
+        .select('state')
+        .eq('eventId', ev.id)
+        .maybeSingle();
+      if (data?.state && typeof data.state === 'object' && Object.keys(data.state).length) {
+        return data.state;
+      }
+    } catch { /* fall through to defaults */ }
+    return defaultCalculatorState(ev);
+  };
+  return userId ? withCache(`data:calculator:u:${userId}:e:${ev.id}`, 60, load) : load();
 }

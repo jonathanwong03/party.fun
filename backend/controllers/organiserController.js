@@ -11,6 +11,7 @@ import {
   listCoOrganiserInvites,
   inviteCoOrganiser,
   respondCoOrganiserInvite,
+  getAllAttendees as readAllAttendees,
 } from '../services/eventService.js';
 import { cancelEventWithRefunds } from '../services/eventCancellationService.js';
 import { notifyCoOrganiserInvite, notifyEventCreated, notifyEventUpdated } from '../services/notificationService.js';
@@ -96,7 +97,7 @@ export async function getSummary(req, res) {
 
 export async function getCoOrganiserInvites(req, res) {
   try {
-    res.json(await listCoOrganiserInvites(req.supabase));
+    res.json(await listCoOrganiserInvites(req.supabase, req.user.id));
   } catch (error) {
     res.status(400).json({ status: 'error', message: error.message });
   }
@@ -146,14 +147,17 @@ export async function declineCoOrganiserInvite(req, res) {
   res.json(result);
 }
 
-// Aggregated attendee list across all of the organiser's events.
+// Aggregated attendee list across all of the organiser's events (cached per-user).
 export async function getAllAttendees(req, res) {
-  const { data, error } = await req.supabase.rpc('get_all_attendees');
-  if (error) return res.status(400).json({ status: 'error', message: error.message });
-  res.json(data ?? []);
+  try {
+    res.json(await readAllAttendees(req.supabase, req.user.id));
+  } catch (error) {
+    res.status(400).json({ status: 'error', message: error.message });
+  }
 }
 
-// Tickets for one of the organiser's events (check-in list).
+// Tickets for one of the organiser's events (check-in list). NOT cached — this is the
+// live door check-in view and must reflect scans in real time.
 export async function getEventTickets(req, res) {
   const { data, error } = await req.supabase.rpc('get_event_tickets', { p_event_id: req.params.eventId });
   if (error) return res.status(400).json({ status: 'error', message: error.message });
@@ -173,7 +177,7 @@ export async function postCheckIn(req, res) {
 }
 
 export async function getDrafts(req, res) {
-  res.json(await listDrafts(req.supabase));
+  res.json(await listDrafts(req.supabase, req.user.id));
 }
 
 export async function postDraft(req, res) {

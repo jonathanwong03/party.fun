@@ -6,7 +6,7 @@
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
-import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix } from './cache.js';
+import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache } from './cache.js';
 
 export const dependencies = {
   syncEventEmbedding,
@@ -41,16 +41,22 @@ export async function listEventsRaw(sb, userId) {
   return rows;
 }
 
-// Drop every cached event list (mapped + raw) and the agent read caches that reflect
-// event/hype/attendee/revenue changes, so the next read is fresh after a mutation.
+// Drop every cached event list (mapped + raw) and the shared read caches that reflect
+// event / hype / attendee / revenue / analytics changes, so the next read (UI or agent)
+// is fresh after a mutation. Short TTLs bound anything a broad prefix-clear misses.
 async function invalidateEventCaches() {
   await Promise.all([
     cacheDel('events:list:anon'),
     cacheDelByPrefix('events:list:u:'),
     cacheDelByPrefix('events:raw:'),
-    cacheDelByPrefix('agent:attendees:'),
-    cacheDelByPrefix('agent:hostrev:'),
-    cacheDelByPrefix('agent:profile:'),
+    cacheDelByPrefix('data:attendees:'),
+    cacheDelByPrefix('data:hostsummary:'),
+    cacheDelByPrefix('data:hostrev:'),
+    cacheDelByPrefix('data:profile:'),
+    cacheDelByPrefix('data:analytics:'),
+    cacheDelByPrefix('data:allattendees:'),
+    cacheDelByPrefix('data:calculator:'),
+    cacheDelByPrefix('data:invites:'),
   ]);
 }
 
@@ -282,46 +288,66 @@ export async function quotePledge(sb, eventId, qty) {
   return withGst({ ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) });
 }
 
-export async function getProfile(sb) {
-  const { data, error } = await sb.rpc('get_profile');
-  if (error) throw new Error(error.message);
-  const tickets = data?.tickets ?? [];
-  const counts = {
-    upcoming: tickets.filter((t) => t.tab === 'upcoming').length,
-    past: tickets.filter((t) => t.tab === 'past').length,
-    cancelled: tickets.filter((t) => t.tab === 'cancelled').length,
+// RLS-scoped to the caller (auth.uid()); cache per-user so one user's cache never
+// serves another's data. `userId` optional — omitted → live (keeps old callers/tests).
+export async function getProfile(sb, userId = null) {
+  const load = async () => {
+    const { data, error } = await sb.rpc('get_profile');
+    if (error) throw new Error(error.message);
+    const tickets = data?.tickets ?? [];
+    const counts = {
+      upcoming: tickets.filter((t) => t.tab === 'upcoming').length,
+      past: tickets.filter((t) => t.tab === 'past').length,
+      cancelled: tickets.filter((t) => t.tab === 'cancelled').length,
+    };
+    return { ...data, counts };
   };
-  return { ...data, counts };
+  return userId ? withCache(`data:profile:u:${userId}`, 30, load) : load();
 }
 
-// Organiser dashboard summary: per-event net revenue (host-only RPC) + aggregate
-// counts derived from the backend event statuses.
+// Per-event net revenue (host-only RPC) as { byEvent, total }, cached per-user.
+// Shared by getHostedSummary AND the AI agent so both hit the same entry.
+export async function hostedRevenue(sb, userId) {
+  return withCache(`data:hostrev:u:${userId}`, 60, async () => {
+    const { data, error } = await sb.rpc('get_hosted_revenue');
+    if (error) throw new Error(error.message);
+    const rev = data ?? { events: [], totalRevenue: 0 };
+    const byEvent = {};
+    for (const r of rev.events ?? []) byEvent[r.eventId] = Number(r.revenue);
+    return { byEvent, total: Number(rev.totalRevenue ?? 0) };
+  });
+}
+
+// Organiser dashboard summary: per-event net revenue + aggregate counts derived from
+// the backend event statuses. Cached per-user.
 export async function getHostedSummary(sb, userId) {
-  const [revRes, events] = await Promise.all([sb.rpc('get_hosted_revenue'), listEvents(sb, userId)]);
-  if (revRes.error) throw new Error(revRes.error.message);
-  const rev = revRes.data ?? { events: [], totalRevenue: 0 };
-  const mine = events.filter((e) => e.hostId === userId || e.isCoOrganiser);
-  const revenueByEvent = {};
-  for (const r of rev.events ?? []) revenueByEvent[r.eventId] = Number(r.revenue);
-  return {
-    revenueByEvent,
-    totalRevenue: Number(rev.totalRevenue ?? 0),
-    totalEvents: mine.length,
-    upcoming: mine.filter((e) => e.status !== 'cancelled').length,
-    confirmed: mine.filter((e) => e.status === 'greenlit').length,
-  };
+  return withCache(`data:hostsummary:u:${userId}`, 45, async () => {
+    const [rev, events] = await Promise.all([hostedRevenue(sb, userId), listEvents(sb, userId)]);
+    const mine = events.filter((e) => e.hostId === userId || e.isCoOrganiser);
+    return {
+      revenueByEvent: rev.byEvent,
+      totalRevenue: rev.total,
+      totalEvents: mine.length,
+      upcoming: mine.filter((e) => e.status !== 'cancelled').length,
+      confirmed: mine.filter((e) => e.status === 'greenlit').length,
+    };
+  });
 }
 
 // Public attendee list: name, username, avatarUrl of the distinct users with active tickets.
-// One buyer of many tickets is still one attendee — no padding.
+// One buyer of many tickets is still one attendee — no padding. Public → cache per-event.
 export async function getEventAttendees(sb, eventId) {
-  const { data, error } = await sb.rpc('get_event_attendees', { p_event_id: eventId });
-  if (error) throw new Error(error.message);
-  return data ?? [];
+  return withCache(`data:attendees:e:${eventId}`, 30, async () => {
+    const { data, error } = await sb.rpc('get_event_attendees', { p_event_id: eventId });
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
 }
 
-// Host-only attendee list with contact details. The RPC raises (errcode 42501)
+// Host-only attendee list with contact details (PII). The RPC raises (errcode 42501)
 // if the caller is not the event's host; surface that as a forbidden result.
+// NOT cached: a per-event cache could serve host-only contacts to a non-host, and a
+// per-user cache buys little for this rare, host-only read — keep it live.
 export async function getEventAttendeesPrivate(sb, eventId) {
   const { data, error } = await sb.rpc('get_event_attendees_private', { p_event_id: eventId });
   if (error) {
@@ -390,10 +416,14 @@ export async function deleteBooking(sb, userId, bookingId) {
 const isUuid = (v) => typeof v === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v);
 const asDraft = (row) => ({ ...row.payload, id: row.id });
 
-export async function listDrafts(sb) {
-  const { data, error } = await sb.from('EVENT_DRAFTS').select('id, payload').order('updatedAt', { ascending: false });
-  if (error) throw new Error(error.message);
-  return (data ?? []).map(asDraft);
+// Per-organiser (RLS owner-only); cache per-user. `userId` optional → live when omitted.
+export async function listDrafts(sb, userId = null) {
+  const load = async () => {
+    const { data, error } = await sb.from('EVENT_DRAFTS').select('id, payload').order('updatedAt', { ascending: false });
+    if (error) throw new Error(error.message);
+    return (data ?? []).map(asDraft);
+  };
+  return userId ? withCache(`data:drafts:u:${userId}`, 60, load) : load();
 }
 
 export async function saveDraft(sb, userId, draft) {
@@ -407,7 +437,7 @@ export async function saveDraft(sb, userId, draft) {
     if (error) throw new Error(error.message);
     const saved = asDraft(data);
     dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
-    await cacheDel(`agent:drafts:u:${userId}`);
+    await cacheDel(`data:drafts:u:${userId}`);
     return saved;
   }
   const { data, error } = await sb
@@ -425,7 +455,7 @@ export async function deleteDraft(sb, id) {
   const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
   if (error) throw new Error(error.message);
   dependencies.deleteDraftEmbedding(sb, id);
-  await cacheDelByPrefix('agent:drafts:');
+  await cacheDelByPrefix('data:drafts:');
 }
 
 // ── Organiser writes ───────────────────────────────────────────────────────
@@ -476,10 +506,41 @@ export async function hideEvent(sb, eventId) {
   return { status: 'ok' };
 }
 
-export async function listCoOrganiserInvites(sb) {
-  const { data, error } = await sb.rpc('get_coorganiser_invites');
-  if (error) throw new Error(error.message);
-  return data ?? [];
+// Per-user (RLS); cache per-user. `userId` optional → live when omitted.
+export async function listCoOrganiserInvites(sb, userId = null) {
+  const load = async () => {
+    const { data, error } = await sb.rpc('get_coorganiser_invites');
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  };
+  return userId ? withCache(`data:invites:u:${userId}`, 60, load) : load();
+}
+
+// Organiser dashboards + all-attendees, keyed per-user and cached. Read-only RPCs
+// that were previously called straight from their controllers.
+export async function getAnalytics(sb, userId) {
+  return withCache(`data:analytics:u:${userId}`, 45, async () => {
+    const { data, error } = await sb.rpc('get_analytics');
+    if (error) throw new Error(error.message);
+    return data ?? {};
+  });
+}
+
+export async function getAllAttendees(sb, userId) {
+  return withCache(`data:allattendees:u:${userId}`, 45, async () => {
+    const { data, error } = await sb.rpc('get_all_attendees');
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
+}
+
+// The caller's university (rarely changes; used by the AI to pick a venue). Cached per-user.
+export async function getUserUniversity(sb, userId) {
+  if (!userId) return '';
+  return withCache(`data:umeta:u:${userId}`, 600, async () => {
+    const { data } = await sb.from('USER').select('university').eq('id', userId).single();
+    return data?.university || '';
+  });
 }
 
 export async function inviteCoOrganiser(sb, eventId, identifier) {
@@ -488,6 +549,7 @@ export async function inviteCoOrganiser(sb, eventId, identifier) {
     p_identifier: identifier,
   });
   if (error) throw new Error(error.message);
+  await cacheDelByPrefix('data:invites:');
   return data;
 }
 
@@ -497,6 +559,8 @@ export async function respondCoOrganiserInvite(sb, inviteId, action) {
     p_action: action,
   });
   if (error) throw new Error(error.message);
+  // Co-organiser membership changes canEdit on events + the invite list for both users.
+  await invalidateEventCaches();
   return data;
 }
 

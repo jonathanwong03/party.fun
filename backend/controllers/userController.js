@@ -28,7 +28,7 @@ async function reissueBookingTicket(sb, userId, bookingId) {
 }
 
 export async function getProfile(req, res) {
-  const profile = await readProfile(req.supabase);
+  const profile = await readProfile(req.supabase, req.user.id);
   res.json(profile);
 }
 
