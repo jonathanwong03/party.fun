@@ -23,10 +23,35 @@ const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 // callers share one key while signed-in callers are keyed by user id.
 const EVENTS_TTL_S = 45;
 const eventsCacheKey = (userId) => (userId == null ? 'events:list:anon' : `events:list:u:${userId}`);
+const rawEventsCacheKey = (userId) => (userId == null ? 'events:raw:anon' : `events:raw:u:${userId}`);
 
-// Drop every cached event list after a mutation so the next read reflects it.
+// Raw get_events rows, cached in Redis with the same 45s TTL + write-invalidation as
+// the mapped listEvents cache. The AI agent's tools need the RAW RPC shape
+// (derived_status, active_ticket_count, statuses[].ticketCapacity, hostId, …), which
+// differs from the mapped EventItem, so this is a separate cache entry. Cache-first,
+// Supabase on miss — and fails open to Supabase when Redis is off (via cacheGetJson).
+export async function listEventsRaw(sb, userId) {
+  const cacheKey = rawEventsCacheKey(userId);
+  const cached = await cacheGetJson(cacheKey);
+  if (cached != null) return cached;
+  const { data, error } = await sb.rpc('get_events');
+  if (error) throw new Error(error.message);
+  const rows = data ?? [];
+  await cacheSetJson(cacheKey, rows, EVENTS_TTL_S);
+  return rows;
+}
+
+// Drop every cached event list (mapped + raw) and the agent read caches that reflect
+// event/hype/attendee/revenue changes, so the next read is fresh after a mutation.
 async function invalidateEventCaches() {
-  await Promise.all([cacheDel('events:list:anon'), cacheDelByPrefix('events:list:u:')]);
+  await Promise.all([
+    cacheDel('events:list:anon'),
+    cacheDelByPrefix('events:list:u:'),
+    cacheDelByPrefix('events:raw:'),
+    cacheDelByPrefix('agent:attendees:'),
+    cacheDelByPrefix('agent:hostrev:'),
+    cacheDelByPrefix('agent:profile:'),
+  ]);
 }
 
 function sgDate(iso, opts) {
@@ -382,6 +407,7 @@ export async function saveDraft(sb, userId, draft) {
     if (error) throw new Error(error.message);
     const saved = asDraft(data);
     dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
+    await cacheDel(`agent:drafts:u:${userId}`);
     return saved;
   }
   const { data, error } = await sb
@@ -399,6 +425,7 @@ export async function deleteDraft(sb, id) {
   const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
   if (error) throw new Error(error.message);
   dependencies.deleteDraftEmbedding(sb, id);
+  await cacheDelByPrefix('agent:drafts:');
 }
 
 // ── Organiser writes ───────────────────────────────────────────────────────

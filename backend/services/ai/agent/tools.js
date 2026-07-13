@@ -1,7 +1,9 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
-import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees } from '../../eventService.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, listEventsRaw } from '../../eventService.js';
+import { withCache, cacheGetJson, cacheSetJson } from '../../cache.js';
+import { createHash } from 'node:crypto';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
@@ -170,8 +172,9 @@ function richRow(ev, ctx) {
 }
 
 async function visibleEvents(ctx) {
-  const { data, error } = await ctx.supabase.rpc('get_events');
-  if (error) throw new Error(error.message);
+  // Redis-first (via listEventsRaw): serve from cache within its 45s TTL, else hit
+  // Supabase and refresh. Falls through to Supabase automatically when Redis is off.
+  const data = await listEventsRaw(ctx.supabase, ctx.userId ?? null);
   // get_events exposes the live status as `derived_status`; surface it as `status`
   // so every executor's `.status` read (filters, details, proposals) works.
   return (data ?? []).map((e) => ({ ...e, status: e.derived_status ?? e.status ?? 'early_bird' }));
@@ -193,11 +196,15 @@ const sim2 = (s) => Math.round(Number(s) * 100) / 100;
 // Net revenue-so-far per event the caller HOSTS, keyed by eventId (host-only RPC).
 // Returns an empty map on any error/unexpected shape so callers can degrade gracefully.
 async function hostedRevenueById(ctx) {
+  const key = `agent:hostrev:u:${ctx.userId}`;
+  const cached = await cacheGetJson(key); // Redis-first; invalidated on writes
+  if (cached != null) return cached;
   try {
     const { data, error } = await ctx.supabase.rpc('get_hosted_revenue');
     if (error) return {};
     const map = {};
     for (const r of data?.events ?? []) map[r.eventId] = Number(r.revenue);
+    await cacheSetJson(key, map, 60); // only cache a successful result
     return map;
   } catch {
     return {};
@@ -561,7 +568,7 @@ export const EXECUTORS = {
     if (!ev) return { error: 'Event not found or not visible to you.' };
     let attendees;
     try {
-      attendees = await getEventAttendees(ctx.supabase, ev.id);
+      attendees = await withCache(`agent:attendees:e:${ev.id}`, 30, () => getEventAttendees(ctx.supabase, ev.id));
     } catch (e) {
       return { error: e?.message ?? 'Unable to load attendees.' };
     }
@@ -610,7 +617,7 @@ export const EXECUTORS = {
   async get_my_joined_events(_args, ctx) {
     let profile;
     try {
-      profile = await getProfile(ctx.supabase);
+      profile = await withCache(`agent:profile:u:${ctx.userId}`, 30, () => getProfile(ctx.supabase));
     } catch (e) {
       return { error: e?.message ?? 'Unable to load your joined events.' };
     }
@@ -667,11 +674,15 @@ export const EXECUTORS = {
   async research_event_ideas(args, ctx) {
     let university = '';
     try {
-      const { data } = await ctx.supabase.from('USER').select('university').eq('id', ctx.userId).single();
-      university = data?.university || '';
+      // University changes at most once and only via Settings, so cache it (10-min TTL).
+      university = await withCache(`agent:umeta:u:${ctx.userId}`, 600, async () => {
+        const { data } = await ctx.supabase.from('USER').select('university').eq('id', ctx.userId).single();
+        return data?.university || '';
+      });
     } catch {
       /* university is optional — proceed without it */
     }
+    university = university || '';
     return await researchEventIdeas({ theme: args.theme, audience: args.audience, university });
   },
 
@@ -729,6 +740,11 @@ export const EXECUTORS = {
     const vec = await embedText(query, { taskType: 'RETRIEVAL_QUERY' });
     if (!vec) return { count: 0, semantic: false, events: [] };
     const count = Math.max(1, Math.min(10, Number(args.count ?? 5) || 5));
+    // Past events are historical/stable, so cache the match by query (Redis-first,
+    // 10-min TTL). Only a non-empty result is cached so a transient miss isn't sticky.
+    const cacheKey = `agent:similarpast:${createHash('sha1').update(`${query}|${count}`).digest('hex')}`;
+    const cached = await cacheGetJson(cacheKey);
+    if (cached != null) return cached;
     const { data, error } = await ctx.supabase.rpc('match_similar_past_events', {
       p_embedding: toVectorLiteral(vec),
       p_count: count,
@@ -742,7 +758,9 @@ export const EXECUTORS = {
       sellThroughPct: Number(r.capacity ?? 0) > 0 ? Math.round((Number(r.sold ?? 0) / Number(r.capacity)) * 100) : null,
       similarity: sim2(r.similarity),
     }));
-    return { count: rows.length, semantic: true, events: rows };
+    const result = { count: rows.length, semantic: true, events: rows };
+    if (rows.length) await cacheSetJson(cacheKey, result, 600);
+    return result;
   },
 
   // Learning: persist a durable preference about the user (executes immediately —
@@ -879,6 +897,9 @@ export const EXECUTORS = {
 
   // ── Wallet / transactions ────────────────────────────────────────────────────
   async get_wallet(_args, ctx) {
+    // Deliberately NOT cached: wallet balance/card is money-sensitive, so the agent
+    // must always read it live (a stale balance could mislead a pledge suggestion).
+    // The actual charge re-validates in create_pledge regardless.
     const { data: me } = await ctx.supabase.from('USER').select('walletBalance, cardBrand, cardLast4').eq('id', ctx.userId).single();
     const { data: txns } = await ctx.supabase
       .from('WALLET_TRANSACTIONS')
@@ -895,7 +916,7 @@ export const EXECUTORS = {
   async list_my_drafts(args, ctx) {
     let drafts;
     try {
-      drafts = await listDrafts(ctx.supabase);
+      drafts = await withCache(`agent:drafts:u:${ctx.userId}`, 60, () => listDrafts(ctx.supabase));
     } catch (e) {
       return { error: e?.message ?? 'Unable to load drafts.' };
     }
