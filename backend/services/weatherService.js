@@ -7,11 +7,16 @@
 // AddressPicker) pass them for precision; everything else falls back to Singapore.
 // Node 22 has a global `fetch`, so no HTTP dependency is needed.
 
+import { isRedisEnabled, cacheGetJson, cacheSetJson } from './cache.js';
+
 const SINGAPORE = { lat: 1.3521, lon: 103.8198 };
 const RAIN_THRESHOLD_PCT = 70; // "> 70% chance of precipitation" → warn
 const HORIZON_DAYS = 10; // Google's daily forecast reaches ~10 days
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min per location
+const CACHE_TTL_S = CACHE_TTL_MS / 1000;
 
+// In-memory fallback used when Redis is off (local dev, tests). With Redis on, the
+// forecast is cached there instead so the 30-min TTL is shared across instances.
 const cache = new Map(); // `${lat.toFixed(2)},${lon.toFixed(2)}` -> { at, days }
 
 // Real fetch against the Weather API. Returns the `forecastDays` array, or null
@@ -75,6 +80,19 @@ function dayPrecipProb(day) {
 
 async function getForecastDays(lat, lon) {
   const key = `${lat.toFixed(2)},${lon.toFixed(2)}`;
+
+  // Redis path (shared, persisted). Only used when a real fetcher is active — tests
+  // inject a seam and run with Redis off, so they always take the in-memory path.
+  if (isRedisEnabled() && dependencies.fetchForecast === defaultFetchForecast) {
+    const cached = await cacheGetJson(`wx:${key}`);
+    if (cached != null) return cached;
+    const days = await dependencies.fetchForecast(lat, lon);
+    if (days == null) return null; // unavailable (no key)
+    await cacheSetJson(`wx:${key}`, days, CACHE_TTL_S);
+    return days;
+  }
+
+  // In-memory fallback.
   const hit = cache.get(key);
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.days;
   const days = await dependencies.fetchForecast(lat, lon);

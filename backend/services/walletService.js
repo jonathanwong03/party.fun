@@ -1,12 +1,17 @@
 import { randomUUID } from 'crypto';
 import { stripe, stripeEnabled } from './stripeClient.js';
 
+export const dependencies = {
+  stripe,
+  stripeEnabled,
+};
+
 // Shared wallet top-up core: charge the user's linked card, then credit the wallet
 // via the wallet_topup RPC. Used by both the HTTP controller (POST /api/wallet/topup)
 // and the AI agent's confirmed `topup` action so the two never diverge. Runs through
 // the caller's own (RLS-scoped) Supabase client. Never throws — returns a tagged result.
 export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) {
-  if (!stripeEnabled()) return { error: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' };
+  if (!dependencies.stripeEnabled()) return { error: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' };
   const amt = Number(amount);
   if (!amt || amt <= 0) return { error: 'bad_amount', message: 'Enter a valid top-up amount.' };
 
@@ -17,7 +22,7 @@ export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) 
 
   let pi;
   try {
-    pi = await stripe().paymentIntents.create({
+    pi = await dependencies.stripe().paymentIntents.create({
       amount: Math.round(amt * 100),
       currency: 'sgd',
       customer: me.stripeCustomerId,
@@ -35,3 +40,4 @@ export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) 
   if (error) return { error: 'error', message: error.message };
   return { status: 'ok', balance: data?.balance };
 }
+

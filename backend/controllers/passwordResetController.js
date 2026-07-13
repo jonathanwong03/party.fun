@@ -21,8 +21,8 @@ export async function postRequest(req, res) {
   res.json({ status: 'ok', email: result.email });
 }
 
-export function postVerify(req, res) {
-  const result = verifyReset(req.body?.email ?? '', req.body?.code ?? '');
+export async function postVerify(req, res) {
+  const result = await verifyReset(req.body?.email ?? '', req.body?.code ?? '');
   if (result.error) {
     res.status(400).json({ status: result.error, message: msg(result.error, 'That code is invalid.') });
     return;
