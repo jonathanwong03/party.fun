@@ -506,6 +506,7 @@ function AppShell() {
         />
       )}
 
+      <main className="md:px-[5%]">
       <Routes>
         <BrowserRoute path="/" element={<Navigate to="/events" replace />} />
         <BrowserRoute path="/login" element={<Login go={go} onLogin={handleLogin} />} />
@@ -539,6 +540,7 @@ function AppShell() {
         <BrowserRoute path="/hosted-events/events/:eventId/edit" element={(role === 'organiser' || role === 'admin') ? <EditEventRoute activeRoute={activeRoute} go={go} events={events} hostUniversity={user?.university} organiserName={user?.username} onCancel={cancelEvent} onUpdate={updateEvent} onInvite={inviteCoOrganiser} /> : <Navigate to="/events" replace />} />
         <BrowserRoute path="*" element={<Navigate to="/events" replace />} />
       </Routes>
+      </main>
 
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />

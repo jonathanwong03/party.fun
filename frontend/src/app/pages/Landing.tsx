@@ -41,6 +41,15 @@ export function Landing({
     return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
 
+  // On the deployed free-tier backend, the first request after idle can take ~30s
+  // (Render cold start). After a few seconds of loading, reassure the visitor.
+  const [slowHint, setSlowHint] = useState(false);
+  useEffect(() => {
+    if (!loading) { setSlowHint(false); return; }
+    const t = setTimeout(() => setSlowHint(true), 4000);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   // Organiser-owned, globally cancelled, and completed events do not belong in discovery.
   const available = useMemo(
     () => events.filter((e) => !e.mine && e.status !== 'cancelled' && e.status !== 'completed'),
@@ -73,8 +82,14 @@ export function Landing({
 
   if (loading) {
     return (
-      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
-        Loading campus campaigns...
+      <div className="mx-auto flex max-w-[1536px] flex-col items-center justify-center gap-4 px-4 py-24 text-center sm:px-6">
+        <div className="size-9 animate-spin rounded-full border-2 border-white/15 border-t-[#ff4d2e]" />
+        <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>Loading events…</p>
+        {slowHint && (
+          <p className="max-w-xs text-xs" style={{ color: 'var(--muted-foreground)' }}>
+            Waking up the server — this can take up to ~30 seconds on the first visit. Thanks for your patience!
+          </p>
+        )}
       </div>
     );
   }
