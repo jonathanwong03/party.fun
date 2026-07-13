@@ -790,8 +790,10 @@ export const EXECUTORS = {
     if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
-    // Owners AND accepted co-organisers can edit (mirrors the update_event RPC's can_manage_event check).
-    if (ev.hostId !== ctx.userId && !ev.isCoOrganiser) return { error: 'You can only edit events you host or co-organise.' };
+    // Owners, accepted co-organisers AND admins can edit (mirrors the update_event RPC's
+    // can_manage_event check — host OR co-organiser OR admin).
+    const canEdit = ev.hostId === ctx.userId || ev.isCoOrganiser || String(ctx.role || '').toLowerCase() === 'admin';
+    if (!canEdit) return { error: 'You can only edit events you host or co-organise.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be edited.' };
 
     const FIELDS = ['title', 'description', 'venue', 'address', 'startDate', 'endDate', 'deadline', 'maxCapacity', 'hypeThreshold', 'earlyPrice', 'greenlitPrice'];

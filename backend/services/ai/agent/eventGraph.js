@@ -109,6 +109,8 @@ export const OFF_TOPIC_REPLY = "I'm the party.fun events assistant, so I can onl
 
 export const ROLE_BLOCK_REPLY = "Your current role is attendee/user, so you cannot create, host, edit, cancel or delete events. Event hosting is only available from organiser accounts. To host an event, sign up with or switch to an organiser account.";
 
+export const ADMIN_CREATE_BLOCK_REPLY = "As an admin you moderate the platform — you can edit and cancel/delete any event — but you cannot create or host events. Only organiser accounts can create events. Would you like to edit or cancel an existing event instead?";
+
 const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
 const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
 // Short mid-flow continuations / confirmations — always on-topic (never block these).
@@ -238,6 +240,19 @@ function shouldBlockUserEventManagement(state, ctx) {
   return EVENT_MANAGEMENT_WRITE_RX.test(recentContext(state));
 }
 
+// Admins may edit/cancel/delete ANY event but must NOT create. When an admin's
+// event_mgmt request is a create/host/draft (and not an edit/cancel/delete), hard-refuse
+// deterministically instead of letting the LLM engage the create flow.
+function shouldBlockAdminCreate(state, ctx) {
+  if (String(ctx?.role || 'user').toLowerCase() !== 'admin') return false;
+  // Intentionally NOT gated on the classified intent — an admin's create/host/draft
+  // request must be refused no matter how classify routed it. Only skip when the
+  // message is clearly an edit/cancel/delete (which admins ARE allowed to do).
+  const text = latestUserText(state) || recentContext(state);
+  if (NON_CREATE_MANAGEMENT_RX.test(text)) return false;
+  return CREATE_EVENT_RX.test(text) || /\b(create|host|hosting|draft|plan|planning|organi[sz]e|launch|set\s?up|start)\b.{0,40}\b(event|party|gathering|meetup|mixer|night|session|festival|gala|workshop|social)\b/i.test(text) || /\b(create|host|draft)\s+an?\s+event\b/i.test(text);
+}
+
 function shouldAutoDraft(state, ctx) {
   const role = String(ctx?.role || 'user').toLowerCase();
   if (role !== 'organiser') return false; // only organisers create/draft events (not admins)
@@ -355,6 +370,7 @@ const GraphState = Annotation.Root({
   intent: Annotation(),
   offtopic: Annotation(),
   roleBlocked: Annotation(),
+  adminCreateBlocked: Annotation(),
   autoDraft: Annotation(),
   proposals: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
   decisions: Annotation({ reducer: (a = {}, b = {}) => ({ ...a, ...b }), default: () => ({}) }),
@@ -382,8 +398,10 @@ function buildApp(model, system) {
 
   const roleGate = (state, config) => ({
     roleBlocked: shouldBlockUserEventManagement(state, config?.configurable?.ctx),
+    adminCreateBlocked: shouldBlockAdminCreate(state, config?.configurable?.ctx),
     autoDraft: shouldAutoDraft(state, config?.configurable?.ctx),
   });
+  const adminCreateRefuse = () => ({ messages: [new AIMessage(ADMIN_CREATE_BLOCK_REPLY)] });
 
   const autoDraft = async (state, config) => {
     const ctx = config?.configurable?.ctx;
@@ -451,6 +469,7 @@ function buildApp(model, system) {
     .addNode('classify', classify)
     .addNode('role_gate', roleGate)
     .addNode('role_refuse', roleRefuse)
+    .addNode('admin_create_refuse', adminCreateRefuse)
     .addNode('auto_draft', autoDraft)
     .addNode('answer', runBranch('read_only'))
     .addNode('discover', runBranch('discovery'))
@@ -463,8 +482,9 @@ function buildApp(model, system) {
     .addConditionalEdges('scope', (state) => (state.offtopic ? 'refuse' : 'classify'), { refuse: 'refuse', classify: 'classify' })
     .addEdge('refuse', END)
     .addEdge('classify', 'role_gate')
-    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : state.autoDraft ? 'auto_draft' : routeIntent(state)), { role_refuse: 'role_refuse', auto_draft: 'auto_draft', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
+    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : state.adminCreateBlocked ? 'admin_create_refuse' : state.autoDraft ? 'auto_draft' : routeIntent(state)), { role_refuse: 'role_refuse', admin_create_refuse: 'admin_create_refuse', auto_draft: 'auto_draft', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
     .addEdge('role_refuse', END)
+    .addEdge('admin_create_refuse', END)
     .addConditionalEdges('auto_draft', afterBranch, branchMap)
     .addConditionalEdges('answer', afterBranch, branchMap)
     .addConditionalEdges('discover', afterBranch, branchMap)

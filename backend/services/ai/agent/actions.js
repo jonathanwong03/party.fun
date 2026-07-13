@@ -45,6 +45,9 @@ const ERROR_MESSAGES = {
   not_future: 'Event start and deadline must be in the future.',
   not_owner: 'You can only manage events you host.',
   not_found: 'Event not found.',
+  reason_required: 'Please give a short reason for the cancellation (any non-empty text is fine).',
+  reason_too_short: 'Please give a slightly longer reason for the cancellation.',
+  not_admin: 'Only admins can moderate other organisers\' events.',
   invitee_not_found: 'No organiser account found for that email or username.',
   invite_self: "You can't invite yourself as a co-organiser.",
   // Pledge (wallet deduction) errors, mirrored from the checkout flow.
