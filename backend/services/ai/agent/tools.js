@@ -278,6 +278,12 @@ export const getMyJoinedEventsTool = makeTool(
   z.object({}),
 );
 
+export const listLiveEventsTool = makeTool(
+  'list_live_events',
+  "Every LIVE event across ALL organisers on the platform — the events currently in the early_bird or greenlit stage (open and not yet ended), regardless of who hosts them or whether the caller can buy. Use for 'what live events are hosted by organisers' / 'what events are currently live'. Works for every role, including admins (who host nothing of their own).",
+  z.object({}),
+);
+
 export const getWalletTool = makeTool(
   'get_wallet',
   "The user's wallet: current balance, linked card (brand + last 4), and recent wallet transactions (top-ups, ticket spends, refunds). Use this before proposing a top-up or a wallet-paid purchase.",
@@ -479,7 +485,7 @@ export const proposeGiveAwayTicketsTool = makeTool(
 // All tools + a by-name index for the graph to bind per-branch subsets.
 export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
-  getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
+  getMyHostedEventsTool, getMyJoinedEventsTool, listLiveEventsTool, getWalletTool, listMyDraftsTool,
   getCurrentDateTool, getWeatherTool, researchEventIdeasTool,
   recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, getSimilarPastEventsTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
@@ -659,6 +665,23 @@ export const EXECUTORS = {
     const past = byTab('past');
     const cancelled = byTab('cancelled');
     return { counts: { upcoming: upcoming.length, past: past.length, cancelled: cancelled.length }, upcoming, past, cancelled };
+  },
+
+  // Every LIVE event on the platform (early_bird/greenlit, not ended), across ALL
+  // organisers — independent of ownership/purchase, so it works for admins too.
+  async list_live_events(_args, ctx) {
+    const now = Date.now();
+    const rows = (await visibleEvents(ctx))
+      .filter((e) => (e.status === 'early_bird' || e.status === 'greenlit') && !isPastEvent(e, now))
+      .map((e) => ({
+        title: e.title,
+        organiser: e.organiser_name ?? null,
+        status: e.status, // early_bird | greenlit
+        currentPrice: currentPrice(e),
+        startDate: e.startDate ?? null,
+        venue: e.location ?? null,
+      }));
+    return { count: rows.length, events: rows };
   },
 
   // ── Date ─────────────────────────────────────────────────────────────────────

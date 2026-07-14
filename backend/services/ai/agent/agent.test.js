@@ -622,10 +622,11 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 26 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 26);
+test('AGENT_TOOLS exposes all 27 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 27);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
+  assert.ok(names.includes('list_live_events'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));

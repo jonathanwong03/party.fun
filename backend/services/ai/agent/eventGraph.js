@@ -42,11 +42,11 @@ const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wal
 const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
 
 export const BRANCH_TOOLS = {
-  read_only: withPersonal('search_events', 'list_available_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
+  read_only: withPersonal('search_events', 'list_available_events', 'list_live_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
   // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
-  discovery: withPersonal('list_available_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
+  discovery: withPersonal('list_available_events', 'list_live_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
   best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'get_similar_past_events', 'research_event_ideas', 'remember'),
   event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
@@ -60,7 +60,7 @@ const DIRECTIVES = {
     + "CREATE (research to full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "RAG PLANNING: for event creation, planning, pricing, capacity or revenue advice, call get_similar_past_events when a useful theme/reference exists. Use examples only as historical benchmarks, never as current availability, and never expose example IDs.\n"
     + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), FIND it BY NAME with search_events (organisers can also use get_my_hosted_events for their own; ADMINS use search_events to find ANY event) — NEVER ask the user for an event id. Once you have the event, ASK which field(s) they want to change (title, description, venue, address, start/end date-time, deadline, capacity, hype threshold, early-bird price, greenlit price) if they haven't said, accept ONE OR MORE, then call propose_update_event with the event's NAME and ONLY those fields. To change an unpublished DRAFT (including one you just created), call list_my_drafts then propose_edit_draft with its draftId. NEVER create a new event to make an edit. Co-organisers and admins can edit; co-organisers cannot cancel/delete.\n"
-    + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). Never assume the suggestion is correct.\n"
+    + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). If the user says no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
   transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). Then ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
@@ -165,10 +165,14 @@ function defaultBuildAgents(model, system) {
 async function instantiate(provider, model, maxTokens) {
   if (provider === 'gemini') {
     const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
-    // thinkingBudget:0 disables the model's hidden reasoning so the token budget
-    // isn't spent thinking instead of answering (Gemini Flash models otherwise
-    // spend output tokens on hidden "thinking").
-    return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } });
+    // thinkingBudget:-1 = DYNAMIC thinking: the model decides how much hidden
+    // reasoning to spend. It was previously 0 (thinking off) as a free-tier
+    // workaround — thinking tokens were billed against the output budget and
+    // truncated replies. With billing enabled, dynamic thinking meaningfully
+    // improves tool choice and instruction-following on the agent branches.
+    // (The cheap-tier classifier/guard in modelRouter stays as-is — one-word
+    // classifications don't need reasoning.)
+    return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: -1 } });
   }
   return null;
 }
