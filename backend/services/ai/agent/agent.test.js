@@ -421,8 +421,12 @@ test('event action tools resolve natural references semantically and ask when am
     },
   };
 
-  const ok = await EXECUTORS.propose_pledge({ eventId: 'the esports one', qty: 1 }, ctx);
-  assert.equal(ok.proposal.eventId, 'e1');
+  // A non-exact reference is NEVER auto-resolved — the closest embedding match is
+  // surfaced as a "Did you mean …?" the user must confirm before anything happens.
+  const suggest = await EXECUTORS.propose_pledge({ eventId: 'the esports one', qty: 1 }, ctx);
+  assert.equal(suggest.proposal, undefined);
+  assert.match(suggest.error, /did you mean/i);
+  assert.match(suggest.error, /Retro Arcade & Esports Night/i);
 
   const ambiguous = {
     ...ctx,
@@ -436,7 +440,7 @@ test('event action tools resolve natural references semantically and ask when am
     },
   };
   const ask = await EXECUTORS.get_event_details({ eventId: 'the night event' }, ambiguous);
-  assert.match(ask.error, /more than one matching event/i);
+  assert.match(ask.error, /did you mean/i);
 });
 
 test('propose_cancel_event proposes a refund/cancel for own event only, reason optional', async () => {

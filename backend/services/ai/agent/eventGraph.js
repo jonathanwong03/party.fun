@@ -59,7 +59,8 @@ const DIRECTIVES = {
   event_mgmt: "INTENT: manage events. ROLE GATE: a regular USER/attendee CANNOT create, edit, cancel or delete events — do NOT call any propose_* tool; briefly tell them event hosting is for organiser accounts. ORGANISERS can create, edit, cancel and delete their OWN events. ADMINS can EDIT and CANCEL/DELETE ANY event (moderation) but CANNOT create/draft events — if an admin asks to create an event, tell them creating is organiser-only and do NOT call propose_create_event/propose_edit_draft. ADMIN DELETE: when an admin deletes/cancels an event, a reason is MANDATORY — ask for one if they didn't give it (accept ANY non-empty reason, even one word), then call propose_cancel_event with it.\n"
     + "CREATE (research to full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "RAG PLANNING: for event creation, planning, pricing, capacity or revenue advice, call get_similar_past_events when a useful theme/reference exists. Use examples only as historical benchmarks, never as current availability, and never expose example IDs.\n"
-    + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
+    + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), FIND it BY NAME with search_events (organisers can also use get_my_hosted_events for their own; ADMINS use search_events to find ANY event) — NEVER ask the user for an event id. Once you have the event, ASK which field(s) they want to change (title, description, venue, address, start/end date-time, deadline, capacity, hype threshold, early-bird price, greenlit price) if they haven't said, accept ONE OR MORE, then call propose_update_event with the event's NAME and ONLY those fields. To change an unpublished DRAFT (including one you just created), call list_my_drafts then propose_edit_draft with its draftId. NEVER create a new event to make an edit. Co-organisers and admins can edit; co-organisers cannot cancel/delete.\n"
+    + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
   transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). Then ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
@@ -234,6 +235,20 @@ function latestUserText(state) {
   return '';
 }
 
+// True when the assistant's previous turn asked the user for input (a reason, a
+// quantity, which event/field, etc.). Its reply is then a continuation of an on-topic
+// flow — even a bare "q" or "not nice" — so the scope guard must not reject it.
+const ASSISTANT_ASK_RX = /\b(reason|how many|which|what (would|do) you|please (provide|give|specify|confirm)|provide (a|an|the)|give (me )?(a|an|the)|specify|would you like|did you mean|what is the)\b/i;
+function priorAssistantAsked(state) {
+  const msgs = state?.messages ?? [];
+  let i = msgs.length - 1;
+  while (i >= 0 && msgs[i]?._getType?.() === 'human') i -= 1; // skip the current user reply
+  if (i < 0 || msgs[i]?._getType?.() !== 'ai') return false;
+  const text = textOf(msgs[i].content).trim();
+  if (!text) return false;
+  return /\?\s*$/.test(text) || ASSISTANT_ASK_RX.test(text);
+}
+
 function shouldBlockUserEventManagement(state, ctx) {
   if (String(ctx?.role || 'user').toLowerCase() !== 'user') return false;
   if (state?.intent !== 'event_mgmt') return false;
@@ -384,7 +399,10 @@ function buildApp(model, system) {
 
   // Strict scope gate: runs first. Off-topic → a canned refusal and END (no branch/tools).
   const scope = async (state, config) => {
-    // Judge ONLY the latest user message (not the rolling context) so earlier
+    // A reply to the agent's OWN question (e.g. a cancellation reason like "q", a
+    // quantity, or a field name) is always a continuation — never off-topic.
+    if (priorAssistantAsked(state)) return { offtopic: false };
+    // Otherwise judge ONLY the latest user message (not the rolling context) so earlier
     // on-topic turns can't let an off-topic question through.
     const onTopic = await dependencies.guard(latestUserText(state), config?.configurable?.ctx);
     return { offtopic: !onTopic };

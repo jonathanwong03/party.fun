@@ -172,6 +172,14 @@ async function apiFetch<T>(
 
   const response = await fetch(path, { ...options, headers });
   if (!response.ok) {
+    // 401 = the session is expired/invalid. Sign out and send the user to /login so
+    // they're never stuck on a "backend unavailable" screen with a dead session.
+    if (response.status === 401) {
+      try { await supabase.auth.signOut(); } catch { /* ignore */ }
+      if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
+        window.location.assign('/login');
+      }
+    }
     let message = `Request failed (${response.status}).`;
     try {
       const body = await response.json();

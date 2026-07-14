@@ -106,22 +106,25 @@ function findEvent(events, ref) {
 }
 
 function ambiguousEvent(names = []) {
-  return { error: `I found more than one matching event: ${names.join(', ')}. Which one do you mean?` };
+  if (names.length === 1) {
+    return { error: `I couldn't find an exact match for that. Did you mean "${names[0]}"? Say yes (or give the exact name) and I'll continue.` };
+  }
+  return { error: `I couldn't find an exact match. Did you mean one of these: ${names.join(', ')}? Which one?` };
 }
 
+// Resolve an event reference to an event. An EXACT (name/id) match is used directly.
+// Otherwise we NEVER auto-pick — we surface the closest embedding match(es) as a
+// "Did you mean …?" suggestion so the agent confirms with the user before acting.
 async function resolveEvent(ctx, events, ref) {
   const exact = findEvent(events, ref);
   if (exact) return { event: exact };
   const ranked = await semanticMatch(ctx, ref, { count: 8 });
-  if (!ranked.length) return { event: null };
   const byId = new Map((events ?? []).map((e) => [e.id, e]));
-  const scoped = ranked.filter((r) => byId.has(r.eventId));
+  // A low similarity floor keeps genuine typos (which score high) while dropping noise.
+  const scoped = ranked.filter((r) => byId.has(r.eventId) && Number(r.similarity ?? 0) >= 0.3);
   if (!scoped.length) return { event: null };
-  const [first, second] = scoped;
-  const confident = Number(first.similarity ?? 0) >= 0.55;
-  const clear = !second || (Number(first.similarity ?? 0) - Number(second.similarity ?? 0)) >= 0.06;
-  if (confident && clear) return { event: byId.get(first.eventId), similarity: first.similarity };
-  return { ambiguous: scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean) };
+  const titles = scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean);
+  return { ambiguous: titles };
 }
 
 function draftRefText(d = {}) {
@@ -364,9 +367,9 @@ export const rememberTool = makeTool(
 // ── Write tools (each returns a PROPOSAL the user must confirm) ─────────────────
 export const proposeUpdateEventTool = makeTool(
   'propose_update_event',
-  "PROPOSE editing one of the organiser's OWN events. Provide ONLY the fields to change. Does NOT apply the change — returns a proposal to confirm. Editable: title, description, venue, address, startDate, endDate, deadline (ISO 8601 datetimes), maxCapacity, hypeThreshold, earlyPrice, greenlitPrice.",
+  "PROPOSE editing an event. Organisers edit their OWN events; ADMINS may edit ANY event for moderation. Pass the event by NAME (never ask the user for an id) plus ONLY the fields to change. Does NOT apply the change — returns a proposal to confirm. Editable: title, description, venue, address, startDate, endDate, deadline (ISO 8601 datetimes), maxCapacity, hypeThreshold, earlyPrice, greenlitPrice.",
   z.object({
-    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
+    eventId: z.string().describe('The event id OR its NAME (name is fine — the tool resolves it).'),
     title: z.string().optional(),
     description: z.string().optional(),
     venue: z.string().optional(),
