@@ -47,3 +47,14 @@ export function getReadyRedis() {
 export function isRedisEnabled() {
   return !!process.env.REDIS_URL;
 }
+
+// Test seams: swap in a fake client (needs `status: 'ready'` to be handed out by
+// getReadyRedis) so the cache helpers can be tested without a real Redis.
+export function __setRedisForTests(fake) {
+  client = fake;
+  initialised = true;
+}
+export function __resetRedisForTests() {
+  client = null;
+  initialised = false;
+}

@@ -6,7 +6,7 @@
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
-import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache } from './cache.js';
+import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache } from './cache.js';
 
 export const dependencies = {
   syncEventEmbedding,
@@ -21,24 +21,26 @@ const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 // counts change on each pledge), so we use a short TTL plus explicit invalidation
 // on writes. RLS makes the mapped rows viewer-specific (mine/canEdit/…), so anon
 // callers share one key while signed-in callers are keyed by user id.
-const EVENTS_TTL_S = 45;
+const EVENTS_TTL_S = 60;
+// After the fresh window, a cached copy is still served INSTANTLY for this long while it
+// refreshes in the background (stale-while-revalidate). get_events is ~3s uncached, so
+// without this every visit after a quiet minute paid the full cost. Freshness is
+// unaffected in practice: writes call invalidateEventCaches(), and the background refresh
+// starts on the very first stale hit. Only ~11 min of ZERO traffic goes fully cold.
+const EVENTS_STALE_S = 600;
 const eventsCacheKey = (userId) => (userId == null ? 'events:list:anon' : `events:list:u:${userId}`);
 const rawEventsCacheKey = (userId) => (userId == null ? 'events:raw:anon' : `events:raw:u:${userId}`);
 
-// Raw get_events rows, cached in Redis with the same 45s TTL + write-invalidation as
-// the mapped listEvents cache. The AI agent's tools need the RAW RPC shape
-// (derived_status, active_ticket_count, statuses[].ticketCapacity, hostId, …), which
-// differs from the mapped EventItem, so this is a separate cache entry. Cache-first,
-// Supabase on miss — and fails open to Supabase when Redis is off (via cacheGetJson).
+// Raw get_events rows, cached in Redis (stale-while-revalidate) with write-invalidation.
+// The AI agent's tools need the RAW RPC shape (derived_status, active_ticket_count,
+// statuses[].ticketCapacity, hostId, …), which differs from the mapped EventItem, so this
+// is a separate cache entry. Fails open to Supabase when Redis is off (via withSwrCache).
 export async function listEventsRaw(sb, userId) {
-  const cacheKey = rawEventsCacheKey(userId);
-  const cached = await cacheGetJson(cacheKey);
-  if (cached != null) return cached;
-  const { data, error } = await sb.rpc('get_events');
-  if (error) throw new Error(error.message);
-  const rows = data ?? [];
-  await cacheSetJson(cacheKey, rows, EVENTS_TTL_S);
-  return rows;
+  return withSwrCache(rawEventsCacheKey(userId), EVENTS_TTL_S, EVENTS_STALE_S, async () => {
+    const { data, error } = await sb.rpc('get_events');
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
 }
 
 // Drop every cached event list (mapped + raw) and the shared read caches that reflect
