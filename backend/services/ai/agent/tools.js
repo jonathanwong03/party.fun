@@ -92,17 +92,17 @@ async function attendableEvents(ctx) {
 // Resolve an event reference that may be an id OR a name/slug (users say "late-night
 // supper crawl", the model sometimes passes "late-night-supper-crawl") to the event.
 const normName = (s) => String(s ?? '').toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+// EXACT resolution only — an event id or a full normalized-title match. A partial /
+// substring reference is deliberately NOT resolved here; resolveEvent turns those into
+// a "Did you mean …?" confirmation instead of silently picking one.
 function findEvent(events, ref) {
   const r = String(ref ?? '').trim();
   if (!r) return null;
-  let ev = (events ?? []).find((e) => e.id === r); // exact id (uuid)
+  const ev = (events ?? []).find((e) => e.id === r); // exact id (uuid)
   if (ev) return ev;
   const nr = normName(r);
   if (!nr) return null;
-  ev = events.find((e) => normName(e.title) === nr); // exact name, hyphen/space/case-insensitive
-  if (ev) return ev;
-  const sub = events.filter((e) => normName(e.title).includes(nr) || nr.includes(normName(e.title)));
-  return sub[0] ?? null; // best substring match
+  return events.find((e) => normName(e.title) === nr) ?? null; // exact name, hyphen/space/case-insensitive
 }
 
 // Sørensen–Dice similarity over character bigrams of two normalized strings (0..1).
@@ -161,25 +161,44 @@ function ambiguousEvent(names = []) {
   return { error: `I couldn't find an exact match. Did you mean one of these: ${names.join(', ')}? Which one?` };
 }
 
-// Resolve an event reference to an event. An EXACT (name/id) match is used directly.
-// Otherwise we NEVER auto-pick — we surface the closest embedding match(es) as a
-// "Did you mean …?" suggestion so the agent confirms with the user before acting.
+// Resolve an event reference to an event. ONLY an EXACT id/full-name match resolves
+// straight through. Any non-exact reference — a partial ("game nig"), a substring, or a
+// typo — is NEVER auto-picked; we surface the closest match(es) (substring, then semantic,
+// then fuzzy) as a "Did you mean …?" suggestion so the agent confirms before acting.
 async function resolveEvent(ctx, events, ref) {
   const exact = findEvent(events, ref);
   if (exact) return { event: exact };
-  const ranked = await semanticMatch(ctx, ref, { count: 8 });
-  const byId = new Map((events ?? []).map((e) => [e.id, e]));
-  // A low similarity floor keeps genuine typos (which score high) while dropping noise.
-  const scoped = ranked.filter((r) => byId.has(r.eventId) && Number(r.similarity ?? 0) >= 0.3);
-  if (scoped.length) {
-    const titles = scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean);
-    return { ambiguous: titles };
+  const list = events ?? [];
+  const suggestions = [];
+  const push = (title) => { if (title && !suggestions.includes(title)) suggestions.push(title); };
+  // 1. Substring / partial-name overlap (e.g. "game nig" ⊂ "game night and escape rooms").
+  const nr = normName(ref);
+  if (nr) {
+    for (const e of list) {
+      const en = normName(e.title);
+      if (en && (en.includes(nr) || nr.includes(en))) push(e.title);
+    }
   }
-  // Fallback: deterministic string-similarity so typos still get a "Did you mean …?"
-  // even when embeddings are off or the event isn't indexed yet (e.g. just created).
-  const fuzzy = fuzzyEventMatches(events, ref);
-  if (fuzzy.length) return { ambiguous: fuzzy };
+  // 2. Semantic matches (embeddings), low floor so genuine typos still score in.
+  const ranked = await semanticMatch(ctx, ref, { count: 8 });
+  const byId = new Map(list.map((e) => [e.id, e]));
+  for (const r of ranked) {
+    if (byId.has(r.eventId) && Number(r.similarity ?? 0) >= 0.3) push(byId.get(r.eventId)?.title);
+  }
+  // 3. Deterministic string-similarity fallback (works with no embeddings / unindexed events).
+  for (const t of fuzzyEventMatches(list, ref)) push(t);
+  if (suggestions.length) return { ambiguous: suggestions.slice(0, 3) };
   return { event: null };
+}
+
+// Resolve a free-text event reference against the events the caller can actually BUY.
+// Reads Redis-first (attendableEvents → visibleEvents → listEventsRaw), falling back to
+// Supabase, then layers exact → substring → semantic (embeddings) → fuzzy matching.
+// Returns { event } on an exact hit, { ambiguous: [titles] } for close matches, or
+// { event: null } when nothing resembles it. Used by the deterministic buy-intent check
+// so a typo is caught before the LLM can invent an event.
+export async function resolveAttendableRef(ctx, ref) {
+  return resolveEvent(ctx, await attendableEvents(ctx), ref);
 }
 
 function draftRefText(d = {}) {

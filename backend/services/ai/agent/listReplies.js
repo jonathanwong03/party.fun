@@ -5,7 +5,7 @@
 // the same cached executors the agent would use. Anything qualified (a price cap,
 // a specific event name) returns null and falls through to the LLM graph.
 
-import { EXECUTORS } from './tools.js';
+import { EXECUTORS, resolveAttendableRef } from './tools.js';
 
 // A qualifier/price cap or a quoted specific-event name means the ask is NOT a plain
 // list request — let the LLM handle it (it can apply the filter / resolve the name).
@@ -21,18 +21,65 @@ const JOINED_RX = /\b(?:my\s+)?joined\s+events?\b|\bevents?\s+(?:that\s+)?i(?:'v
 const JOINABLE_RX = /\b(?:(?:what|which)\s+)?(?:are\s+the\s+)?(?:events?\s+)?(?:that\s+)?(?:i\s+can|can\s+i)\s+(?:join|attend|buy)(?:\s+(?:an?\s+|to\s+)?events?)?\s*[?.!]*$/i;
 // "live events (hosted by all organisers)" / "what events are currently live".
 const LIVE_RX = /\blive\s+events?\b|\bevents?\b[^?.!]*\blive\b|\bevents?\s+hosted\s+by\s+(?:all|every|the)\b|\ball\s+(?:the\s+)?(?:current\s+|live\s+)?events?\s+hosted\b/i;
+// The caller's OWN events — synonyms of "hosted"/"created". Requires an "I/my" tied to the
+// verb so it never collides with the `live` "hosted by all organisers" case.
+// Past-tense forms first so alternation prefers them (harmless either way).
+const HOST_VERB_ANY = '(?:hosted|host|created|create|made|make|organi[sz]ed|organi[sz]e|launched|launch|ran|run|put\\s+on|thrown|threw|throw|held|hold)';
+const HOSTED_RX = new RegExp(
+  `\\bmy\\s+(?:hosted|created|own)\\s+events?\\b`
+  // "events (which/that) i (have) hosted" — also covers "what are the events which i have hosted?"
+  + `|\\bevents?\\s+(?:which|that\\s+)?\\s*i(?:'ve|\\s+have)?\\s+${HOST_VERB_ANY}\\b`
+  + `|\\b(?:what|which)\\s+events?\\s+(?:have|did|do)\\s+i\\s+${HOST_VERB_ANY}`
+  + `|\\bwhat\\s+have\\s+i\\s+${HOST_VERB_ANY}\\b`,
+  'i',
+);
 
-// Classify the LATEST user message into one of the three deterministic list intents,
-// or null (no match / qualified → fall through to the LLM). Past-tense "joined" is
-// checked before the modal "can join" so they never collide.
+// Classify the LATEST user message into one of the deterministic list intents, or null
+// (no match / qualified → fall through to the LLM). Past-tense "joined" is checked before
+// the modal "can join"; "hosted/created" (own events) before "live" (all organisers').
 export function matchListQuery(text) {
   const t = String(text ?? '').trim();
   if (!t) return null;
   if (HAS_QUALIFIER_RX.test(t) || HAS_QUOTE_RX.test(t)) return null;
   if (JOINED_RX.test(t) && !/\bcan\b|\bcould\b|\bable\b/i.test(t)) return 'joined';
+  if (HOSTED_RX.test(t)) return 'hosted';
   if (JOINABLE_RX.test(t)) return 'joinable';
   if (LIVE_RX.test(t)) return 'live';
   return null;
+}
+
+// ── Buy intent: catch a typo'd event name BEFORE the LLM can invent one ────────
+// "i want to purchase tickets for game nigjt and esakn rooms" → "game nigjt and esakn rooms".
+// Tolerates a quantity ("buy 2 tickets for X"). Returns the named event, or null when the
+// user named no event (then the LLM asks which one, as before).
+const BUY_INTENT_RX = /\b(?:buy|purchase|get|book|grab)\b[^.?!]*?\btickets?\b\s+(?:for|to)\s+(.+)$/i;
+
+export function matchBuyIntent(text) {
+  const m = BUY_INTENT_RX.exec(String(text ?? '').trim());
+  if (!m) return null;
+  const name = m[1].trim().replace(/[?.!,]+$/, '').replace(/^["“”'‘’]|["“”'‘’]$/g, '').trim();
+  return name || null;
+}
+
+// Deterministic reply for a named purchase. Returns null when the name resolves EXACTLY
+// (the normal LLM flow then asks payment method → quantity), otherwise a "Did you mean …?"
+// built from the closest attendable events (Redis-first, Supabase fallback).
+export async function buildBuyIntentReply(name, ctx) {
+  try {
+    const resolved = await resolveAttendableRef(ctx, name);
+    if (resolved?.event) return null; // exact → let the agent continue the purchase
+    const suggestions = resolved?.ambiguous ?? [];
+    if (suggestions.length === 1) {
+      return `I'm sorry, I cannot find an event named "${name}". Did you mean "${suggestions[0]}"?`;
+    }
+    if (suggestions.length > 1) {
+      const list = suggestions.map((s) => `"${s}"`).join(', ');
+      return `I'm sorry, I cannot find an event named "${name}". Did you mean one of these: ${list}?`;
+    }
+    return `I'm sorry, I cannot find an event named "${name}". Ask me what events you can join and I'll list them.`;
+  } catch {
+    return null; // any snag → let the normal graph answer instead
+  }
 }
 
 const isoDate = (v) => (v ? String(v).slice(0, 10) : null);
@@ -84,6 +131,27 @@ export async function buildListReply(kind, ctx) {
       if (upcoming.length) sections.push(`Upcoming events:\n${numberedGroup(upcoming, (e) => joinedLine(e, 'have'))}`);
       if (past.length) sections.push(`Past events:\n${numberedGroup(past, (e) => joinedLine(e, 'had'))}`);
       if (cancelled.length) sections.push(`Cancelled events:\n${numberedGroup(cancelled, (e) => joinedLine(e, 'had'))}`);
+      return sections.join('\n\n');
+    }
+
+    if (kind === 'hosted') {
+      const { events = [] } = await EXECUTORS.get_my_hosted_events({}, ctx);
+      if (!events.length) return "You haven't created any events yet.";
+      const hostedLine = (e) => {
+        const bits = [`"${e.title}"`];
+        if (e.currentPrice != null) bits.push(money(e.currentPrice));
+        bits.push(`${tickets(Number(e.ticketsSold ?? 0))} sold`);
+        bits.push(`${money(e.revenueSoFar)} revenue`);
+        return `${bits[0]} — ${bits.slice(1).join(', ')}.`;
+      };
+      const groups = [
+        ['Live events', events.filter((e) => e.status === 'early_bird' || e.status === 'greenlit')],
+        ['Completed events', events.filter((e) => e.status === 'completed')],
+        ['Cancelled events', events.filter((e) => e.status === 'cancelled')],
+      ];
+      const sections = groups
+        .filter(([, rows]) => rows.length)
+        .map(([header, rows]) => `${header}:\n${numberedGroup(rows, hostedLine)}`);
       return sections.join('\n\n');
     }
 

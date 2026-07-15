@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { __resetProvidersForTests } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, looksClearlyOffTopic, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
@@ -79,6 +79,33 @@ test('classify routes to the matching branch agent', async () => {
   }));
   const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'edit my event' }], ctx: ctxWith([], 'organiser') });
   assert.match(out.reply, /manage-branch/);
+});
+
+test('looksClearlyOffTopic flags math/coding/trivia but not event asks', () => {
+  assert.equal(looksClearlyOffTopic('what is 3*3'), true);
+  assert.equal(looksClearlyOffTopic('what is 4 + 4'), true);
+  assert.equal(looksClearlyOffTopic('3*3'), true);
+  assert.equal(looksClearlyOffTopic('calculate the square root of 9'), true);
+  assert.equal(looksClearlyOffTopic('write me some python code'), true);
+  assert.equal(looksClearlyOffTopic('what is the capital of France'), true);
+  // Event-related asks (incl. bare numbers as a reply) are NOT flagged.
+  assert.equal(looksClearlyOffTopic('3'), false);
+  assert.equal(looksClearlyOffTopic('3 tickets'), false);
+  assert.equal(looksClearlyOffTopic('what events can I join'), false);
+  assert.equal(looksClearlyOffTopic('gymming for newbie'), false);
+});
+
+test('a clearly off-topic question is refused even after an event-related turn', async () => {
+  useModel(); useAgents(fakeAgent([say('branch-should-not-run')]));
+  const out = await runGraph({
+    system: 's',
+    messages: [
+      { role: 'assistant', content: 'Here are the live events hosted across all organisers.' },
+      { role: 'user', content: 'what is 3*3' },
+    ],
+    ctx: ctxWith([]),
+  });
+  assert.equal(out.reply, OFF_TOPIC_REPLY);
 });
 
 test('normal users asking to manage events are refused before branch tools run', async () => {
@@ -402,6 +429,19 @@ test('a typo in an event name surfaces a "Did you mean" suggestion (fuzzy fallba
   assert.equal(search.count, 0);
   assert.match(search.didYouMean, /did you mean/i);
   assert.ok(search.suggestions.includes('Gymming for Newbies'));
+});
+
+test('a PARTIAL event name is confirmed, not silently auto-resolved', async () => {
+  const events = [{ id: 'e1', title: 'Game night and escape rooms', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 20 }] }];
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  // "game nig" is a substring of the title — must ask to confirm, not proceed.
+  const buy = await EXECUTORS.propose_pledge({ eventId: 'game nig', qty: 3 }, ctx);
+  assert.equal(buy.proposal, undefined);
+  assert.match(buy.error, /did you mean/i);
+  assert.match(buy.error, /Game night and escape rooms/);
+  // The exact full name still resolves straight through.
+  const exact = await EXECUTORS.propose_pledge({ eventId: 'Game night and escape rooms', qty: 1, paymentMethod: 'wallet' }, ctx);
+  assert.equal(exact.proposal.eventId, 'e1');
 });
 
 test('propose_pledge honours the chosen payment method (wallet vs card) with a stable attemptId', async () => {
@@ -880,11 +920,11 @@ test('scope guard judges ONLY the latest user message (not prior on-topic turns)
     messages: [
       { role: 'user', content: 'what are the cheapest events?' },
       { role: 'assistant', content: 'Here are a few.' },
-      { role: 'user', content: 'what is 2+2?' },
+      { role: 'user', content: 'what should I wear tonight?' },
     ],
     ctx: ctxWith([]),
   });
-  assert.equal(seen, 'what is 2+2?');
+  assert.equal(seen, 'what should I wear tonight?');
 });
 
 test('guardAllows lets short/continuation answers through, still blocks off-topic questions', () => {

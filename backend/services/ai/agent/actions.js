@@ -62,6 +62,7 @@ const ERROR_MESSAGES = {
   no_card: 'Link a card in Wallet before paying.',
   university_restricted: 'This event is open to members of a specific university only.',
   price_mismatch: 'The ticket price changed — try again.',
+  invalid_pricing: "This event's ticket pricing is incomplete, so it can't be bought right now. The organiser needs to set the missing price.",
   stripe_disabled: 'Card payments are not configured right now — try paying with your wallet.',
   charge_failed: 'Your card was declined. Try another card or pay with your wallet.',
   charge_incomplete: 'The card payment could not be completed. Try again or use your wallet.',

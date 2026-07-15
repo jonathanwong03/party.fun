@@ -34,10 +34,12 @@ const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|
 // Deterministically number lists the model failed to number. A list = an intro
 // paragraph ending with ":" followed by >=2 item TITLES (paragraphs that aren't
 // detail lines). Non-list replies are left untouched.
+// A paragraph that itself ends with ":" is a group HEADER ("Completed events:"), not an
+// item — it must never be numbered, otherwise grouped replies render as "1. Completed events:".
 function autoNumberList(paras: string[]): string[] {
   const introIdx = paras.findIndex((p) => /:\s*$/.test(p));
   if (introIdx === -1) return paras;
-  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p);
+  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p) && !/:\s*$/.test(p);
   const titleCount = paras.slice(introIdx + 1).filter(isTitle).length;
   if (titleCount < 2) return paras;
   let n = 0;

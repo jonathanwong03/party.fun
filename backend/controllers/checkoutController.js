@@ -72,6 +72,7 @@ const PLEDGE_MESSAGES = {
   no_card: 'Link a card before paying by card.',
   university_restricted: 'This event is open to members of a specific university only.',
   price_mismatch: 'The ticket price changed — refresh and try again.',
+  invalid_pricing: "This event's ticket pricing is incomplete, so it can't be bought right now.",
   admin_forbidden: 'Admin accounts cannot attend events or buy tickets.',
 };
 

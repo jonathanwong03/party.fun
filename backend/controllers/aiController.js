@@ -5,7 +5,7 @@ import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
-import { matchListQuery, buildListReply } from '../services/ai/agent/listReplies.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply } from '../services/ai/agent/listReplies.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
@@ -186,7 +186,7 @@ const AGENT_SYSTEM = () => [
   '- propose_create_event: create a NEW event as a DRAFT. Create flow: when asked to plan/create an event, IMMEDIATELY research (research_event_ideas) and check get_current_date, then propose ONE COMPLETE draft filling every field — title, description, start/end date-time (STRICTLY after today), venue, a chosen pricingModel with a one-line rationale, and all prices+quantities (tiered: earlyPrice+greenlitPrice+early qty+capacity; hype: basePrice+maxPrice+threshold+capacity) — then wait; if they dislike it, offer alternatives. It saves a draft the user reviews and publishes.',
   "- propose_invite_coorganiser: invite a co-organiser to the user's own event (owner only).",
   '- propose_topup: add money to the wallet by charging the linked card. Requires a linked card.',
-  '- propose_pledge: buy ticket(s), paid by the WALLET balance OR the linked CARD. ALWAYS ask the payment method FIRST — "in-app wallet or debit/credit card?" — then ask how many tickets, then propose with paymentMethod set. For wallet: state the total and wallet balance (get_wallet); if short, offer a card top-up (propose_topup) for the shortfall, or paying by card instead, then pledge. For card: it charges the linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Only for attendable events (someone else\'s, open, future-start, not already bought).',
+  '- propose_pledge: buy ticket(s), paid by the WALLET balance OR the linked CARD. ORDER: (1) IDENTIFY and CONFIRM the event FIRST — look it up by name; if it is not an exact match, ask "Did you mean X?" and wait for yes/no before anything else; (2) ask the payment method — "in-app wallet or debit/credit card?"; (3) ask how many tickets; (4) propose with paymentMethod set. Do NOT ask quantity or payment method until the exact event is confirmed. For wallet: state the total and wallet balance (get_wallet); if short, offer a card top-up (propose_topup) for the shortfall, or paying by card instead, then pledge. For card: it charges the linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Only for attendable events (someone else\'s, open, future-start, not already bought).',
   '- propose_give_away_tickets: give away some of the user\'s OWN tickets for an event they joined. They MUST say how many (more than 0, at most what they hold). Final and non-refundable — the released spots return to the public pool.',
   '- propose_cancel_event: cancel/DELETE a live event — this REFUNDS every backer. ORGANISERS cancel their OWN events; a reason is OPTIONAL (accept ANY reason, even informal, and never demand a "formal" one). ADMINS can cancel/delete ANY event for moderation, but a reason is MANDATORY — if the admin did not give one, ask for a short reason first (any non-empty text is fine) and only then propose.',
   '- propose_edit_draft: edit fields of an unpublished DRAFT (find it with list_my_drafts). Use this — NOT propose_update_event — to change an event that is still a draft. Pass draftId + only the fields to change.',
@@ -298,6 +298,19 @@ async function persistTurn(supabase, { conversationId, titleSeed, userText, repl
 
 const modelLabelOf = (result) => (result.model ? `${result.provider} · ${result.model}` : null);
 
+// Send a deterministic (no-LLM) reply, persisting the turn like a normal answer.
+async function respondDirect(req, res, { list, lastUserMsg, conversationId, reply }) {
+  const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+  const convoId = await persistTurn(req.supabase, {
+    conversationId: conversationId || null,
+    titleSeed: firstUser?.content,
+    userText: lastUserMsg?.content,
+    reply,
+    modelLabel: null,
+  });
+  return res.json({ available: true, status: 'done', reply, proposals: [], results: [], threadId: null, conversationId: convoId });
+}
+
 // Deterministic backstop for the "never show internal IDs" prompt rule: strip any
 // leaked event/draft/database IDs (UUIDs) from a user-facing reply, whether bare,
 // labelled ("ID: <uuid>"), or parenthetical ("(ID: <uuid>)"). Trailing/duplicate
@@ -348,17 +361,15 @@ export async function chat(req, res) {
   const listKind = matchListQuery(lastUserMsg?.content);
   if (listKind) {
     const reply = await buildListReply(listKind, ctx);
-    if (reply) {
-      const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
-      const convoId = await persistTurn(req.supabase, {
-        conversationId: conversationId || null,
-        titleSeed: firstUser?.content,
-        userText: lastUserMsg?.content,
-        reply,
-        modelLabel: null,
-      });
-      return res.json({ available: true, status: 'done', reply, proposals: [], results: [], threadId: null, conversationId: convoId });
-    }
+    if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
+  }
+  // Deterministic typo check on a NAMED purchase: resolve the event (Redis-first) before the
+  // LLM gets a chance to invent one. Only intercepts when the name is NOT an exact match —
+  // an exact name falls through so the agent runs its normal method → quantity flow.
+  const buyName = matchBuyIntent(lastUserMsg?.content);
+  if (buyName) {
+    const reply = await buildBuyIntentReply(buyName, ctx);
+    if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
   }
   if (!guard(req, res)) return;
   const [memories, chatHistory] = await Promise.all([

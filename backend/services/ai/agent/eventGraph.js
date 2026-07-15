@@ -63,7 +63,7 @@ const DIRECTIVES = {
     + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). If the user says no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
-  transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). If the name is a close-but-not-exact match, confirm 'Did you mean \"X\"?' first. Then ALWAYS ask the PAYMENT METHOD first — in-app wallet or debit/credit card — and THEN how many tickets, before calling propose_pledge with paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+  transaction: "INTENT: wallet/ticket action. For BUYING tickets, follow these STEPS IN ORDER. STEP 1 — IDENTIFY THE EVENT FIRST: the user names the event (not an id); look it up by name with get_event_details or search_events. If the tool does NOT return an exact event — it replies 'Did you mean \"X\"?' or a didYouMean suggestion — relay that and WAIT for the user to confirm yes/no. Do NOT ask for quantity or payment method until the exact event is confirmed (or the user picks one). If they say no, tell them there is no such event. STEP 2 — once the event is confirmed, ALWAYS ask the PAYMENT METHOD (in-app wallet or debit/credit card). STEP 3 — then ask HOW MANY tickets. STEP 4 — call propose_pledge with the confirmed event name + paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -166,10 +166,12 @@ async function instantiate(provider, model, maxTokens) {
   if (provider === 'gemini') {
     const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
     // thinkingBudget:-1 = DYNAMIC thinking: the model decides how much hidden
-    // reasoning to spend. It was previously 0 (thinking off) as a free-tier
-    // workaround — thinking tokens were billed against the output budget and
-    // truncated replies. With billing enabled, dynamic thinking meaningfully
-    // improves tool choice and instruction-following on the agent branches.
+    // reasoning to spend, which meaningfully improves tool choice and
+    // instruction-following on the agent branches.
+    // IMPORTANT: Gemini counts thinking tokens against maxOutputTokens, so that
+    // budget must cover the hidden reasoning PLUS the answer. It is 4096 (not
+    // 1024) for exactly this reason — at 1024 a long list (e.g. 16 hosted events)
+    // got truncated mid-item because thinking had eaten the budget.
     // (The cheap-tier classifier/guard in modelRouter stays as-is — one-word
     // classifications don't need reasoning.)
     return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: -1 } });
@@ -257,13 +259,32 @@ function priorAssistantAsked(state) {
   return /\?\s*$/.test(text) || ASSISTANT_ASK_RX.test(text);
 }
 // True when the assistant's previous turn was clearly about events (a listing, a
-// "no events matching"/"did you mean" reply, etc.). A short follow-up (e.g. correcting
+// "no events matching"/"did you mean" reply, etc.). A SHORT follow-up (e.g. correcting
 // a typo'd event name) is then a continuation of an on-topic flow — never off-topic —
 // so the scope guard must not refuse it even though it lacks an event keyword itself.
 const EVENT_CONTEXT_RX = /\b(no events?|did you mean|couldn't find|could not find|which (event|one)|event|events|ticket|tickets|pledge|wallet|organiser|organizer)\b/i;
+// A short reply that continues the flow (a name correction, "the second one", etc.) — NOT
+// a full standalone question. A wh-question ("what is 3*3") is not a mere continuation.
+function isShortContinuation(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 6) return false;
+  if (/^(what|why|how|who|whom|whose|when|where|which|is|are|was|were|can|could|would|should|do|does|did|explain|tell|calculate|compute|solve|define)\b/i.test(t)) return false;
+  return true;
+}
 function inEventFlow(state) {
-  const text = previousAssistantText(state);
-  return !!text && (ON_TOPIC_RX.test(text) || EVENT_CONTEXT_RX.test(text));
+  const prev = previousAssistantText(state);
+  if (!prev || !(ON_TOPIC_RX.test(prev) || EVENT_CONTEXT_RX.test(prev))) return false;
+  // Only bypass the guard for a short continuation, not a full new question.
+  return isShortContinuation(latestUserText(state));
+}
+
+// Deterministic hard block for clearly off-topic questions (arithmetic, coding, trivia)
+// that must be refused even mid-flow — the LLM guard is bypassed for continuations, so
+// this catches "what is 3*3" / "what is 4 + 4" regardless of the prior turn.
+const OFF_TOPIC_HARD_RX = /\d+(?:\.\d+)?\s*[-+*/×÷^]\s*\d|\bwhat\s+is\s+[-\d(][^?]*[-+*/×÷^]|\b(calculate|compute|solve|square\s+root|sqrt|factorial|derivative|integral)\b|\b(capital\s+of|who\s+(is|was)\s+the\b|president\s+of|prime\s+minister|translate|in\s+(french|spanish|chinese|german))\b|\b(write|give\s+me|generate)\s+(me\s+)?(a|some|the)?\s*(code|program|script|poem|essay|story|function|algorithm)\b|\b(python|javascript|typescript|java|c\+\+|html|css)\b/i;
+export function looksClearlyOffTopic(text) {
+  return OFF_TOPIC_HARD_RX.test(String(text || '').trim());
 }
 
 function shouldBlockUserEventManagement(state, ctx) {
@@ -416,14 +437,17 @@ function buildApp(model, system) {
 
   // Strict scope gate: runs first. Off-topic → a canned refusal and END (no branch/tools).
   const scope = async (state, config) => {
+    const latest = latestUserText(state);
+    // A clearly off-topic question (math/coding/trivia) is ALWAYS refused, even mid-flow,
+    // so an event-related prior turn can't let "what is 3*3" slip through.
+    if (looksClearlyOffTopic(latest)) return { offtopic: true };
     // A reply to the agent's OWN question (e.g. a cancellation reason like "q", a
-    // quantity, or a field name) — or a follow-up while the assistant's last turn was
-    // about events (e.g. correcting a typo'd event name after a "no events matching"
-    // reply) — is always a continuation, never off-topic.
+    // quantity, or a field name) — or a SHORT follow-up while the assistant's last turn
+    // was about events (e.g. correcting a typo'd event name) — is a continuation.
     if (priorAssistantAsked(state) || inEventFlow(state)) return { offtopic: false };
     // Otherwise judge ONLY the latest user message (not the rolling context) so earlier
     // on-topic turns can't let an off-topic question through.
-    const onTopic = await dependencies.guard(latestUserText(state), config?.configurable?.ctx);
+    const onTopic = await dependencies.guard(latest, config?.configurable?.ctx);
     return { offtopic: !onTopic };
   };
   const refuse = () => ({ messages: [new AIMessage(OFF_TOPIC_REPLY)] });
@@ -550,7 +574,7 @@ function shape(state, interrupted, { threadId, provider, modelId }) {
 // Start a run. `ctx` = { supabase, userId, role }; `mode` = 'ask'|'auto';
 // Returns { available, status, reply, proposals, results, threadId, provider, model }.
 export async function runGraph({ system, messages, ctx, preferred, mode: runMode = 'ask', threadId } = {}) {
-  const built = await dependencies.buildModel(preferred, 1024);
+  const built = await dependencies.buildModel(preferred, 4096);
   if (!built) return { available: false };
   const { model, provider, modelId } = built;
 
@@ -571,7 +595,7 @@ export async function runGraph({ system, messages, ctx, preferred, mode: runMode
 
 // Resume a parked thread with the user's decision on one proposal (confirm/reject).
 export async function resumeGraph({ system, ctx, preferred, threadId, proposalId, decision } = {}) {
-  const built = await dependencies.buildModel(preferred, 1024);
+  const built = await dependencies.buildModel(preferred, 4096);
   if (!built) return { available: false };
   const { model, provider, modelId } = built;
 

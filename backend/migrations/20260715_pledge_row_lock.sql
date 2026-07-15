@@ -6,7 +6,22 @@
 -- Fix: take a per-event row lock on EVENT_SETTINGS immediately after loading the event,
 -- BEFORE counting. Concurrent pledges for the SAME event then serialize (the second waits
 -- for the first to commit and re-reads the true count); different events are unaffected.
--- Body is otherwise identical to 20260629_gst_and_costs.sql.
+--
+-- Also null-safes the tiered total. An event whose greenlit price (or PRICE_STATUSES row)
+-- is NULL made v_total NULL even when NO greenlit tickets were bought, because Postgres
+-- evaluates 0 * NULL = NULL. That nulled v_gst and crashed the BOOKINGS insert on
+-- gstAmount NOT NULL. Now each tier term is only evaluated when that tier is actually used,
+-- and a genuinely NULL price on a USED tier returns a clean 'invalid_pricing' error rather
+-- than a constraint violation (or a silent $0 charge).
+--
+-- Finally, drops three stale create_pledge overloads left behind by earlier CREATE OR
+-- REPLACE migrations (which never drop other signatures). They predate the row lock, GST,
+-- idempotency and university gating, so any call to them would silently bypass all of it.
+-- Nothing calls them: the backend always sends 6 named args (eventService.createPledge).
+
+DROP FUNCTION IF EXISTS public.create_pledge(uuid, integer);
+DROP FUNCTION IF EXISTS public.create_pledge(uuid, integer, text, text);
+DROP FUNCTION IF EXISTS public.create_pledge(uuid, integer, text, text, numeric);
 
 CREATE OR REPLACE FUNCTION public.create_pledge(
   p_event_id uuid, p_qty integer, p_payment_method text DEFAULT 'wallet'::text,
@@ -76,7 +91,13 @@ begin
       where bi."priceStatusId"=v_early.id and t.status in('active','used') and b."deletedAt" is null;
     v_early_avail:=greatest(0,v_early."ticketCapacity"-v_early_sold);
     v_ec:=least(v_early_avail,p_qty); v_gc:=p_qty-v_ec;
-    v_total := v_ec*v_early.price + v_gc*v_greenlit.price;
+    -- Only price a tier that is actually used: an unused tier contributes exactly 0 rather
+    -- than 0 * NULL (= NULL in Postgres), which used to poison v_total and v_gst.
+    v_total := (case when v_ec > 0 then v_ec*v_early.price else 0 end)
+             + (case when v_gc > 0 then v_gc*v_greenlit.price else 0 end);
+    -- A USED tier with no price is a misconfigured event — fail cleanly instead of
+    -- violating gstAmount NOT NULL (or silently charging $0).
+    if v_total is null then return json_build_object('error','invalid_pricing'); end if;
   end if;
 
   -- price_mismatch guard compares the GST-free ticket total (the client sends total excl GST).
