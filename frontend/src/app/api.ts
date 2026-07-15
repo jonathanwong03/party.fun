@@ -23,13 +23,9 @@ export type Quote = {
   qty: number;
   lines: QuoteLine[];
   subtotal: number;
-  total: number;        // ticket total (GST-exclusive)
+  total: number;        // total payable — ticket prices are GST-inclusive
   subtotalText: string;
   totalText: string;
-  gst: number;          // 9% GST on the ticket total
-  grandTotal: number;   // total payable = total + gst
-  gstText: string;
-  grandTotalText: string;
   pricingModel?: 'hype_driven' | 'static';
 };
 
@@ -154,32 +150,43 @@ export type AttendeeDetail = {
 // Data operations go through the Express backend, which forwards this Supabase
 // access token to Supabase so RLS + the RPC functions enforce access.
 
+async function send(path: string, options: RequestInit, accessToken: string | null): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
+  if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  return fetch(path, { ...options, headers });
+}
+
 async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const headers = new Headers(options.headers);
+  const { data: { session } } = await supabase.auth.getSession();
+  let response = await send(path, options, session?.access_token ?? null);
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  if (session) {
-    headers.set("Authorization", `Bearer ${session.access_token}`);
-  }
-  if (options.body && !headers.has("Content-Type")) {
-    headers.set("Content-Type", "application/json");
-  }
-
-  const response = await fetch(path, { ...options, headers });
-  if (!response.ok) {
-    // 401 = the session is expired/invalid. Sign out and send the user to /login so
-    // they're never stuck on a "backend unavailable" screen with a dead session.
+  // A 401 usually means the access token was stale (it expires hourly, and a refresh can
+  // still be in flight — or the backend cold-started). Refresh and retry ONCE before
+  // concluding the session is dead: signing out on the first 401 killed live sessions
+  // (e.g. mid card-linking). Only a genuinely unrecoverable session logs the user out.
+  if (response.status === 401 && session) {
+    let refreshed = null;
+    try {
+      const { data } = await supabase.auth.refreshSession();
+      refreshed = data.session;
+    } catch { /* treated as unrecoverable below */ }
+    if (refreshed?.access_token) {
+      response = await send(path, options, refreshed.access_token);
+    }
     if (response.status === 401) {
+      // Session is genuinely invalid — sign out so the user isn't stuck on a dead session.
       try { await supabase.auth.signOut(); } catch { /* ignore */ }
       if (typeof window !== 'undefined' && window.location.pathname !== '/login') {
         window.location.assign('/login');
       }
     }
+  }
+
+  if (!response.ok) {
     let message = `Request failed (${response.status}).`;
     try {
       const body = await response.json();
@@ -810,7 +817,10 @@ export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 export type AgentProposal = { id: string; action: string; eventId: string; title: string; summary: string; payload?: Record<string, unknown> };
 export type AgentResult = { proposalId: string; action: string; ok: boolean; message?: string; status?: string };
 export type ChatStatus = 'awaiting_confirmation' | 'done';
-export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
+// `action` is a UI hint from the backend, e.g. 'open_card_form' → open the secure Stripe
+// card form (card details are never collected in the chat itself).
+export type ChatAction = 'open_card_form';
+export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; action?: ChatAction | null; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
 export type ActionResult = { status?: string; message?: string };
 
 export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {

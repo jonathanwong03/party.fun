@@ -81,6 +81,38 @@ test('classify routes to the matching branch agent', async () => {
   assert.match(out.reply, /manage-branch/);
 });
 
+test('a purchase ask is force-routed to the transaction branch (never "no functionality")', async () => {
+  useModel();
+  // Classifier deliberately returns the WRONG label — the deterministic override must win.
+  useClassify('read_only');
+  __setAgentsForTests(() => ({
+    read_only: fakeAgent([say('read-only-branch')]),
+    discovery: fakeAgent([say('discovery-branch')]),
+    best_fit: fakeAgent([say('bestfit-branch')]),
+    event_mgmt: fakeAgent([say('manage-branch')]),
+    transaction: fakeAgent([say('transact-branch')]),
+  }));
+  const buy = await runGraph({ system: 's', messages: [{ role: 'user', content: 'help me purchase 4 tickets' }], ctx: ctxWith([]) });
+  assert.match(buy.reply, /transact-branch/);
+
+  // "yes" to the assistant's own purchase offer also enters the buy flow.
+  const yes = await runGraph({
+    system: 's',
+    messages: [
+      { role: 'assistant', content: 'Would you like to purchase tickets for this event?' },
+      { role: 'user', content: 'yes' },
+    ],
+    ctx: ctxWith([]),
+  });
+  assert.match(yes.reply, /transact-branch/);
+});
+
+test('read_only and discovery branches still bind the buy tool as a safety net', () => {
+  assert.ok(BRANCH_TOOLS.read_only.includes('propose_pledge'));
+  assert.ok(BRANCH_TOOLS.discovery.includes('propose_pledge'));
+  assert.ok(BRANCH_TOOLS.transaction.includes('propose_pledge'));
+});
+
 test('looksClearlyOffTopic flags math/coding/trivia but not event asks', () => {
   assert.equal(looksClearlyOffTopic('what is 3*3'), true);
   assert.equal(looksClearlyOffTopic('what is 4 + 4'), true);
@@ -142,11 +174,15 @@ test('organisers asking to create an event get an immediate draft proposal', asy
   assert.ok(out.proposals[0].payload.startDate);
 });
 
-test('branch toolsets are scoped (only management/transaction expose write proposals)', () => {
+test('branch toolsets are scoped (read/discovery expose only the buy proposal, no management writes)', () => {
   assert.ok(BRANCH_TOOLS.transaction.includes('propose_topup'));
   assert.ok(BRANCH_TOOLS.event_mgmt.includes('propose_cancel_event'));
-  assert.ok(!BRANCH_TOOLS.read_only.some((t) => t.startsWith('propose_')));
-  assert.ok(!BRANCH_TOOLS.discovery.some((t) => t.startsWith('propose_')));
+  // propose_pledge is deliberately bound in the read branches as a safety net so a
+  // mis-routed purchase can't produce "I don't have that functionality". It is still a
+  // PROPOSAL the user must confirm. No other write may leak into a read branch.
+  const writesIn = (branch) => BRANCH_TOOLS[branch].filter((t) => t.startsWith('propose_'));
+  assert.deepEqual(writesIn('read_only'), ['propose_pledge']);
+  assert.deepEqual(writesIn('discovery'), ['propose_pledge']);
 });
 
 test('ask mode interrupts for confirmation; confirm executes, reject does not', async () => {

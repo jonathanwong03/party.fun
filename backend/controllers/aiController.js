@@ -5,7 +5,7 @@ import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
-import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply } from '../services/ai/agent/listReplies.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from '../services/ai/agent/listReplies.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
@@ -159,6 +159,8 @@ const AGENT_SYSTEM = () => [
   'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
+  'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
+  'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
   'DID YOU MEAN: whenever a tool reply comes back as \'Did you mean "X"?\' (the name the user gave was a close but not exact match — e.g. a typo like "frisbe" vs "frisbee"), relay that question and WAIT — do not act on any event (details, edit, cancel, buy, attendees) until the user confirms. Once they confirm (yes), retry using the exact suggested name. If they say no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is right.',
   'For "events I can join" or "events I can attend", use list_available_events and list ALL returned events unless the user asks for a shorter list.',
   '"Ongoing events" means buyable All Events items for attendees/users. For organisers, clarify whether they mean buyable All Events or their own active hosted events. Completed events are never ongoing.',
@@ -358,6 +360,25 @@ export async function chat(req, res) {
   // Deterministic short-circuit for three fully-specified list asks (events I can
   // join / events I've joined / live events across organisers) — rendered in code so
   // tool choice and numbering are always correct. Qualified asks return null → LLM.
+  // Card safety + linking: handled deterministically so the model never asks for, echoes
+  // or stores a card number. A "yes" right after our own offer opens the secure form.
+  const prevAssistant = [...list].reverse().find((m) => m && m.role === 'assistant' && String(m.content ?? '').trim());
+  const cardKind = matchLinkCardIntent(lastUserMsg?.content);
+  const confirmingCardForm = /^(yes|yeah|yep|sure|ok|okay|please|go ahead|do it|open it)\b/i.test(String(lastUserMsg?.content ?? '').trim())
+    && /secure card form/i.test(String(prevAssistant?.content ?? ''));
+  if (cardKind || confirmingCardForm) {
+    const { reply, action } = buildLinkCardReply(cardKind ?? 'link_card', confirmingCardForm);
+    const convoId = await persistTurn(req.supabase, {
+      conversationId: conversationId || null,
+      titleSeed: list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim())?.content,
+      // Never persist a pasted card number — store a redacted placeholder instead.
+      userText: cardKind === 'card_number_pasted' ? '[card details redacted]' : lastUserMsg?.content,
+      reply,
+      modelLabel: null,
+    });
+    return res.json({ available: true, status: 'done', reply, action: action ?? null, proposals: [], results: [], threadId: null, conversationId: convoId });
+  }
+
   const listKind = matchListQuery(lastUserMsg?.content);
   if (listKind) {
     const reply = await buildListReply(listKind, ctx);

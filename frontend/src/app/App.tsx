@@ -558,7 +558,13 @@ function AppShell() {
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
-      {!isAuthPage && role && <AiAssistant role={role} onDataChanged={onAiDataChanged} />}
+      {!isAuthPage && role && (
+        <AiAssistant
+          role={role}
+          onDataChanged={onAiDataChanged}
+          onOpenCardForm={() => go({ name: 'wallet' })} // secure Stripe card form lives on the Wallet page
+        />
+      )}
     </div>
   );
 }

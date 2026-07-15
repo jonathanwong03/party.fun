@@ -68,7 +68,7 @@ function renderReply(content: string): string[] {
 // loop. Conversations are saved per user — "New chat" starts a thread, the history
 // list reopens past ones. `onDataChanged` refreshes the app's data after a write so
 // edits show instantly.
-export function AiAssistant({ role, onDataChanged }: { role: Role; onDataChanged?: () => void }) {
+export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Role; onDataChanged?: () => void; onOpenCardForm?: () => void }) {
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
   const [view, setView] = useState<'chat' | 'history'>('chat');
@@ -191,6 +191,9 @@ export function AiAssistant({ role, onDataChanged }: { role: Role; onDataChanged
       // Every write is a proposal the user must confirm via a card.
       setMessages([...next, { role: 'assistant', content: res.reply ?? 'Sorry, I had trouble answering.', proposals: res.proposals, threadId: res.threadId }]);
       if (res.results?.length) onDataChanged?.();
+      // Card details are never collected in chat — the backend asks us to open the secure
+      // Stripe card form instead.
+      if (res.action === 'open_card_form') onOpenCardForm?.();
     } catch {
       setMessages([...next, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
     } finally {

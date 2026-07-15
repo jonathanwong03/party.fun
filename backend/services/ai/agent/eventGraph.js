@@ -40,13 +40,17 @@ const pickTools = (names) => names.map((n) => TOOLS_BY_NAME[n]).filter(Boolean);
 // "what have I hosted?" lands in a branch without the tool and the model guesses).
 const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date'];
 const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
+// Safety net: bind the buy tool in the read/discovery branches too, so a mis-routed
+// purchase ask can never again make the model say "I don't have that functionality".
+// (classify already force-routes clear purchases to `transaction`.)
+const withBuy = (...names) => withPersonal(...names, 'propose_pledge');
 
 export const BRANCH_TOOLS = {
-  read_only: withPersonal('search_events', 'list_available_events', 'list_live_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
+  read_only: withBuy('search_events', 'list_available_events', 'list_live_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
   // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
-  discovery: withPersonal('list_available_events', 'list_live_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
+  discovery: withBuy('list_available_events', 'list_live_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
   best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'get_similar_past_events', 'research_event_ideas', 'remember'),
   event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
@@ -63,7 +67,7 @@ const DIRECTIVES = {
     + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). If the user says no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
-  transaction: "INTENT: wallet/ticket action. For BUYING tickets, follow these STEPS IN ORDER. STEP 1 — IDENTIFY THE EVENT FIRST: the user names the event (not an id); look it up by name with get_event_details or search_events. If the tool does NOT return an exact event — it replies 'Did you mean \"X\"?' or a didYouMean suggestion — relay that and WAIT for the user to confirm yes/no. Do NOT ask for quantity or payment method until the exact event is confirmed (or the user picks one). If they say no, tell them there is no such event. STEP 2 — once the event is confirmed, ALWAYS ask the PAYMENT METHOD (in-app wallet or debit/credit card). STEP 3 — then ask HOW MANY tickets. STEP 4 — call propose_pledge with the confirmed event name + paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+  transaction: "INTENT: wallet/ticket action. You CAN buy tickets — you have propose_pledge. NEVER say you cannot help with purchases or that you lack the functionality. NEVER ask for a card number, expiry or CVC: if no card is linked, tell them you'll open the secure card form (or offer the wallet) — card details are only ever entered in the app's secure Stripe form, never in chat. For BUYING tickets, follow these STEPS IN ORDER. STEP 1 — IDENTIFY THE EVENT FIRST: the user names the event (not an id); look it up by name with get_event_details or search_events. If the tool does NOT return an exact event — it replies 'Did you mean \"X\"?' or a didYouMean suggestion — relay that and WAIT for the user to confirm yes/no. Do NOT ask for quantity or payment method until the exact event is confirmed (or the user picks one). If they say no, tell them there is no such event. STEP 2 — once the event is confirmed, ALWAYS ask the PAYMENT METHOD (in-app wallet or debit/credit card). STEP 3 — then ask HOW MANY tickets. STEP 4 — call propose_pledge with the confirmed event name + paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -287,6 +291,26 @@ export function looksClearlyOffTopic(text) {
   return OFF_TOPIC_HARD_RX.test(String(text || '').trim());
 }
 
+// Clear purchase intent — "help me purchase 4 tickets", "buy tickets for X", "i want to
+// pledge". Routed deterministically to the transaction branch: the cheap LLM classifier
+// sometimes labelled these read_only, landing them in a branch with no propose_pledge, and
+// the model then (truthfully) answered "I don't have that functionality".
+const BUY_INTENT_RX = /\b(buy|buying|purchase|purchasing|pledge|pledging|book|reserve)\b/i;
+const TICKETY_RX = /\b(ticket|tickets|pledge|pledging|seat|seats|spot|spots)\b/i;
+export function looksLikePurchase(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (!BUY_INTENT_RX.test(t)) return false;
+  // "buy/purchase" alone is enough when it's about tickets or an event, else require a
+  // ticket-ish noun so "buy" in an unrelated sentence doesn't hijack the routing.
+  return TICKETY_RX.test(t) || /\b(event|events)\b/i.test(t) || /^(help me |i want to |can you )?(buy|purchase)\b/i.test(t);
+}
+// "yes" (etc.) right after the assistant offered a purchase → continue into the buy flow.
+export function affirmsPurchase(latest, previousAssistant) {
+  return AFFIRMATION_RX.test(String(latest || '').trim())
+    && /\b(purchase|buy|ticket|tickets|pledge)\b/i.test(String(previousAssistant || ''));
+}
+
 function shouldBlockUserEventManagement(state, ctx) {
   if (String(ctx?.role || 'user').toLowerCase() !== 'user') return false;
   if (state?.intent !== 'event_mgmt') return false;
@@ -454,6 +478,14 @@ function buildApp(model, system) {
   const roleRefuse = () => ({ messages: [new AIMessage(ROLE_BLOCK_REPLY)] });
 
   const classify = async (state, config) => {
+    // Deterministic override: a purchase ask (or a "yes" to the assistant's own purchase
+    // offer) MUST land in the transaction branch, which is the only one with the full buy
+    // flow. The cheap LLM classifier mis-labelled these, so the model ended up in a
+    // read-only branch and claimed it couldn't buy tickets.
+    const latest = latestUserText(state);
+    if (looksLikePurchase(latest) || affirmsPurchase(latest, previousAssistantText(state))) {
+      return { intent: 'transaction' };
+    }
     return { intent: await dependencies.classify(recentContext(state), config?.configurable?.ctx) };
   };
 

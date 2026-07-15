@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply } from './listReplies.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from './listReplies.js';
 import { EXECUTORS } from './tools.js';
 
 // buildListReply calls the real EXECUTORS; stub the three it uses and restore after.
@@ -53,6 +53,30 @@ test('matchBuyIntent extracts the named event (and ignores unnamed buys)', () =>
   // No event named → the agent asks which one, as before.
   assert.equal(matchBuyIntent('i want to buy tickets'), null);
   assert.equal(matchBuyIntent('what events can I join'), null);
+});
+
+// ── link-card intent (card details must never enter the chat) ──────────────────
+test('matchLinkCardIntent detects link requests and pasted card numbers', () => {
+  assert.equal(matchLinkCardIntent('i want to link a card'), 'link_card');
+  assert.equal(matchLinkCardIntent('add a credit card please'), 'link_card');
+  assert.equal(matchLinkCardIntent('can you save my debit card'), 'link_card');
+  // A pasted PAN must be caught so it is never echoed or stored.
+  assert.equal(matchLinkCardIntent('4242424242424242'), 'card_number_pasted');
+  assert.equal(matchLinkCardIntent('my card is 4242 4242 4242 4242'), 'card_number_pasted');
+  // Unrelated asks fall through to the agent.
+  assert.equal(matchLinkCardIntent('what events can I join'), null);
+});
+
+test('buildLinkCardReply never asks for a number and opens the form only on confirm', () => {
+  const offer = buildLinkCardReply('link_card', false);
+  assert.match(offer.reply, /secure card form/i);
+  assert.equal(offer.action, undefined); // not opened until confirmed
+  const confirmed = buildLinkCardReply('link_card', true);
+  assert.equal(confirmed.action, 'open_card_form');
+  // A pasted number is refused, not echoed.
+  const pasted = buildLinkCardReply('card_number_pasted', false);
+  assert.match(pasted.reply, /don't share card numbers/i);
+  assert.doesNotMatch(pasted.reply, /\d{13,}/);
 });
 
 test('buildBuyIntentReply confirms a typo and passes an exact name through', async () => {

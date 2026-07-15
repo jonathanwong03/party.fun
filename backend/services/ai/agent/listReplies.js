@@ -82,6 +82,40 @@ export async function buildBuyIntentReply(name, ctx) {
   }
 }
 
+// ── Link-a-card intent ────────────────────────────────────────────────────────
+// Card details must NEVER be typed into chat (messages are stored, sent to the model and
+// embedded), so the agent never asks for a number — it confirms, then the UI opens the
+// app's secure Stripe card form. Handled deterministically so the model can't improvise.
+const LINK_CARD_RX = /\b(?:link|add|save|register|connect|set\s*up|setup)\b[^.?!]{0,20}\b(?:card|credit\s*card|debit\s*card|payment\s*method)\b|\b(?:card|payment\s*method)\b[^.?!]{0,20}\b(?:link|add|save|register|connect)\b/i;
+// A user typing something that looks like a card number — never echo it back.
+const PAN_RX = /(?:\d[ -]*?){13,19}/;
+
+export function matchLinkCardIntent(text) {
+  const t = String(text ?? '').trim();
+  if (!t) return null;
+  if (PAN_RX.test(t.replace(/[^\d -]/g, ''))) return 'card_number_pasted';
+  return LINK_CARD_RX.test(t) ? 'link_card' : null;
+}
+
+// Reply for the link-card intents. Returns { reply, action? } — `action: 'open_card_form'`
+// tells the UI to open the secure Stripe card form.
+export function buildLinkCardReply(kind, confirmed) {
+  if (kind === 'card_number_pasted') {
+    return {
+      reply: "Please don't share card numbers in this chat — messages here are stored, so card details must only be entered in the secure card form. I can open that form for you: just say \"link a card\".",
+    };
+  }
+  if (confirmed) {
+    return {
+      reply: "Opening the secure card form now — enter your card there and it'll be linked to your wallet. Come back and tell me when you're done and we can carry on.",
+      action: 'open_card_form',
+    };
+  }
+  return {
+    reply: 'I can open the secure card form so you can link a card — your details go straight to our payment provider and are never entered in this chat. Would you like me to open it?',
+  };
+}
+
 const isoDate = (v) => (v ? String(v).slice(0, 10) : null);
 const money = (n) => `$${Number(n ?? 0).toFixed(2)}`;
 const tickets = (n) => `${n} ticket${Number(n) === 1 ? '' : 's'}`;

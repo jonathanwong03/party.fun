@@ -201,13 +201,8 @@ function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
-// 9% GST is added on top of the ticket total (buyer-paid; excluded from organiser revenue).
-const GST_RATE = 0.09;
-function withGst(quote) {
-  const gst = roundMoney(Number(quote.total || 0) * GST_RATE);
-  const grandTotal = roundMoney(Number(quote.total || 0) + gst);
-  return { ...quote, gst, grandTotal, gstText: money(gst), grandTotalText: money(grandTotal) };
-}
+// Ticket prices are GST-INCLUSIVE: the buyer pays the ticket total, with no separate GST
+// line anywhere (quote, checkout, booking). See migrations/20260716_remove_gst.sql.
 
 function pricingContextFromRow(row) {
   if (!row) return null;
@@ -251,7 +246,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       };
     });
     const subtotal = roundMoney(curve.total);
-    return withGst({
+    return {
       eventId,
       qty: normalizedQty,
       pricingModel: 'hype_driven',
@@ -261,7 +256,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       total: subtotal,
       subtotalText: money(subtotal),
       totalText: money(subtotal),
-    });
+    };
   } catch (err) {
     if (err.message === 'quote exceeds maxCapacity') {
       return { error: 'not_enough_tickets' };
@@ -285,7 +280,7 @@ export async function quotePledge(sb, eventId, qty) {
     const subtotal = Number(l.price) * Number(l.count);
     return { ...l, subtotal, subtotalText: money(subtotal) };
   });
-  return withGst({ ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) });
+  return { ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) };
 }
 
 // RLS-scoped to the caller (auth.uid()); cache per-user so one user's cache never
