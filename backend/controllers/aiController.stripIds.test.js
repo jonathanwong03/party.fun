@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isRoleQuestion, stripInternalIds } from './aiController.js';
+import { isRoleQuestion, stripInternalIds, roleAnswer } from './aiController.js';
 
 const UUID = '21dcef74-7c3b-4a1e-9b2f-0a1b2c3d4e5f';
 
@@ -57,5 +57,24 @@ describe('isRoleQuestion', () => {
   it('does not treat normal event discovery as a role question', () => {
     assert.equal(isRoleQuestion('show me events I can join'), false);
     assert.equal(isRoleQuestion('can you recommend a cheap music event'), false);
+  });
+});
+
+describe('roleAnswer', () => {
+  it('answers a yes/no role question with Yes/No, not a bare role word', () => {
+    assert.match(roleAnswer('organiser', 'am I an organiser?'), /^Yes — your account is an organiser/);
+    assert.match(roleAnswer('user', 'am I an organiser?'), /^No — your account is a regular user/);
+    // "do I have admin access?" used to answer with the word "organiser", which answers neither.
+    assert.match(roleAnswer('organiser', 'do I have admin access?'), /^No — your account is an organiser, not an admin/);
+    assert.match(roleAnswer('admin', 'do I have admin access?'), /^Yes — your account is an admin/);
+    // "can I host events?" is really "am I an organiser?".
+    assert.match(roleAnswer('user', 'can I host events?'), /^No — .*not an organiser/);
+    assert.match(roleAnswer('organiser', 'can I create events?'), /^Yes — your account is an organiser/);
+  });
+
+  it('answers an open role question with a sentence', () => {
+    assert.match(roleAnswer('organiser', 'what is my role?'), /^You're an organiser —/);
+    assert.match(roleAnswer('user', 'tell me my role'), /^You're a regular user \(attendee\) —/);
+    assert.doesNotMatch(roleAnswer('admin', 'what is my role?'), /^admin$/);
   });
 });

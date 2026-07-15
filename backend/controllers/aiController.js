@@ -80,10 +80,13 @@ export async function revenueTips(req, res) {
 export async function recommendEvents(req, res) {
   if (!guard(req, res)) return;
   const { interests } = req.body ?? {};
-  let rows;
-  try { rows = await listEventsRaw(req.supabase, req.user.id); }
-  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
+  // Guests are supported (optionalAuth → req.user is null, req.supabase is the anon
+  // client): they get the same recommendations, just without the "not your own event"
+  // exclusion below. Dereferencing req.user.id here used to throw → HTTP 400 for guests.
   const userId = req.user?.id ?? null;
+  let rows;
+  try { rows = await listEventsRaw(req.supabase, userId); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
 
   let candidates = (rows ?? [])
     .filter((e) => (!userId || e.hostId !== userId) && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
@@ -161,6 +164,8 @@ const AGENT_SYSTEM = () => [
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
   'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
   'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
+  'BINARY (YES/NO) QUESTIONS: when the user asks a yes/no question ("am I an organiser?", "can I still buy tickets for X?", "is X sold out?", "can I attend X?", "have I already bought tickets for X?", "can I edit X?", "is it too late?", "will I be refunded if X is cancelled?"), LEAD with "Yes" or "No", then ONE short line saying why, grounded in tool data. Never answer a yes/no question with a bare noun and never dodge it. A QUESTION about buying ("can I buy tickets after 24 July?") is a question — ANSWER it; do NOT start the purchase flow unless they actually ask to buy.',
+  'Ground yes/no answers in get_event_details, which returns the authoritative facts — isOpen (can tickets still be bought at all), deadline + deadlinePassed, isPast, soldOut / spotsLeft, alreadyPurchased (they already hold tickets so cannot buy again), restrictedUniversity + canAttendUniversity (false = limited to another university), mine, canEdit, canCancel, canViewAttendees, isCoOrganiser. Use these fields rather than inferring from the description. For DATE questions ("can I buy tickets after <date>?") compare that date with the event\'s deadline using get_current_date. If the question is about an event but NO event is named or clear from the conversation, ask which event they mean FIRST, then answer.',
   'DID YOU MEAN: whenever a tool reply comes back as \'Did you mean "X"?\' (the name the user gave was a close but not exact match — e.g. a typo like "frisbe" vs "frisbee"), relay that question and WAIT — do not act on any event (details, edit, cancel, buy, attendees) until the user confirms. Once they confirm (yes), retry using the exact suggested name. If they say no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is right.',
   'For "events I can join" or "events I can attend", use list_available_events and list ALL returned events unless the user asks for a shorter list.',
   '"Ongoing events" means buyable All Events items for attendees/users. For organisers, clarify whether they mean buyable All Events or their own active hosted events. Completed events are never ongoing.',
@@ -264,6 +269,29 @@ async function loadCurrentRole(req) {
   return ['user', 'organiser', 'admin'].includes(role) ? role : 'user';
 }
 
+// What each role can do, for a one-line role answer.
+const ROLE_BLURB = {
+  organiser: 'you can host, edit and cancel your own events, and also join other people\'s events',
+  admin: 'you can edit and cancel/delete any event for moderation, but you cannot create or join events',
+  user: 'you can browse and buy tickets for events, but only organiser accounts can host them',
+};
+const ROLE_WORDS = { organiser: ['organiser', 'organizer'], admin: ['admin', 'administrator'], user: ['user', 'attendee'] };
+
+// Answer a role question in natural language. A yes/no phrasing ("am I an organiser?",
+// "do I have admin access?") names a role, so answer Yes/No against the real one rather
+// than replying with a bare role word, which answers neither.
+export function roleAnswer(role, question) {
+  const q = String(question ?? '').toLowerCase();
+  const asked = Object.keys(ROLE_WORDS).find((r) => ROLE_WORDS[r].some((w) => new RegExp(`\\b${w}s?\\b`).test(q)))
+    // "can I host/create events?" is really "am I an organiser?"
+    ?? (/\b(host|hosting|create|creating)\b/.test(q) ? 'organiser' : null);
+  if (!asked) return `You're ${role === 'admin' ? 'an admin' : role === 'organiser' ? 'an organiser' : 'a regular user (attendee)'} — ${ROLE_BLURB[role]}.`;
+  const article = (r) => (r === 'user' ? 'a regular user (attendee)' : r === 'admin' ? 'an admin' : 'an organiser');
+  return asked === role
+    ? `Yes — your account is ${article(role)}, so ${ROLE_BLURB[role]}.`
+    : `No — your account is ${article(role)}, not ${article(asked)}. As ${article(role)}, ${ROLE_BLURB[role]}.`;
+}
+
 // Persist chat turns (user + assistant) into a conversation, creating + auto-titling
 // one when needed. Returns the conversationId. Never throws.
 async function persistTurn(supabase, { conversationId, titleSeed, userText, reply, modelLabel }) {
@@ -347,15 +375,16 @@ export async function chat(req, res) {
   const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
   if (isRoleQuestion(lastUserMsg?.content)) {
     const role = await loadCurrentRole(req);
+    const reply = roleAnswer(role, lastUserMsg?.content);
     const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
     const convoId = await persistTurn(req.supabase, {
       conversationId: conversationId || null,
       titleSeed: firstUser?.content,
       userText: lastUserMsg?.content,
-      reply: role,
+      reply,
       modelLabel: null,
     });
-    return res.json({ available: true, status: 'done', reply: role, proposals: [], results: [], threadId: null, conversationId: convoId });
+    return res.json({ available: true, status: 'done', reply, proposals: [], results: [], threadId: null, conversationId: convoId });
   }
   // Deterministic short-circuit for three fully-specified list asks (events I can
   // join / events I've joined / live events across organisers) — rendered in code so

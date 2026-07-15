@@ -297,10 +297,17 @@ export function looksClearlyOffTopic(text) {
 // the model then (truthfully) answered "I don't have that functionality".
 const BUY_INTENT_RX = /\b(buy|buying|purchase|purchasing|pledge|pledging|book|reserve)\b/i;
 const TICKETY_RX = /\b(ticket|tickets|pledge|pledging|seat|seats|spot|spots)\b/i;
+// A yes/no or wh- QUESTION about buying ("can i purchase tickets after 24 July?", "can i
+// still buy tickets for X?", "is it too late to buy tickets?") must be ANSWERED, not turned
+// into a purchase. Only an actual request routes to the buy flow.
+const QUESTION_RX = /\?\s*$|^(can|could|is|are|do|does|did|will|would|am|when|what|which|who|how|may)\b/i;
+// …except a purchase politely phrased as a question ("can you help me buy 2 tickets?").
+const REQUEST_RX = /^(can|could|would|will)\s+(you|u)\b|\b(help me|please)\b/i;
 export function looksLikePurchase(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (!BUY_INTENT_RX.test(t)) return false;
+  if (QUESTION_RX.test(t) && !REQUEST_RX.test(t)) return false; // a question about buying
   // "buy/purchase" alone is enough when it's about tickets or an event, else require a
   // ticket-ish noun so "buy" in an unrelated sentence doesn't hijack the routing.
   return TICKETY_RX.test(t) || /\b(event|events)\b/i.test(t) || /^(help me |i want to |can you )?(buy|purchase)\b/i.test(t);

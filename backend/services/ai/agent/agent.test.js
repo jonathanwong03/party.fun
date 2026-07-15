@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { __resetProvidersForTests } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, looksClearlyOffTopic, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, looksClearlyOffTopic, looksLikePurchase, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
@@ -105,6 +105,66 @@ test('a purchase ask is force-routed to the transaction branch (never "no functi
     ctx: ctxWith([]),
   });
   assert.match(yes.reply, /transact-branch/);
+});
+
+test('looksLikePurchase fires on REQUESTS but never on questions about buying', () => {
+  // Real purchase requests → buy flow.
+  for (const q of ['help me purchase 4 tickets', 'buy tickets for Neon Rave', 'i want to purchase 4 tickets',
+    'can you help me buy 2 tickets?', 'please buy me 2 tickets']) {
+    assert.equal(looksLikePurchase(q), true, `should be a purchase: ${q}`);
+  }
+  // Questions ABOUT buying must be answered, not turned into a purchase.
+  for (const q of ['can i purchase tickets after 24 july?', 'can i still buy tickets for Neon Rave?',
+    'is it too late to buy tickets?', 'am i able to purchase tickets tomorrow?']) {
+    assert.equal(looksLikePurchase(q), false, `should be a question: ${q}`);
+  }
+});
+
+test('a question about buying is NOT force-routed into the transaction branch', async () => {
+  useModel(); useClassify('read_only');
+  __setAgentsForTests(() => ({
+    read_only: fakeAgent([say('read-only-branch')]),
+    discovery: fakeAgent([say('discovery-branch')]),
+    best_fit: fakeAgent([say('bestfit-branch')]),
+    event_mgmt: fakeAgent([say('manage-branch')]),
+    transaction: fakeAgent([say('transact-branch')]),
+  }));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'can i purchase tickets after 24 july?' }], ctx: ctxWith([]) });
+  assert.match(out.reply, /read-only-branch/, 'a question must be answered, not routed to the buy flow');
+});
+
+test('get_event_details returns the eligibility facts that ground yes/no answers', async () => {
+  const events = [{
+    id: 'e1', title: 'Neon Rave', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3),
+    deadline: inDaysIso(1), maxCapacity: 10, active_ticket_count: 10, hypeThreshold: 5,
+    restricted_university: 'SMU', viewer_can_attend: false, canEdit: false, canCancel: false,
+    isCoOrganiser: false, statuses: [{ statusName: 'early_bird', price: 20, ticketCapacity: 10 }],
+  }];
+  const d = await EXECUTORS.get_event_details({ eventId: 'Neon Rave' }, ctxFull({ events }));
+  assert.equal(d.maxCapacity, 10);
+  assert.equal(d.spotsLeft, 0);
+  assert.equal(d.soldOut, true);              // "is it sold out?" → Yes
+  assert.equal(d.isOpen, false);              // sold out ⇒ can't still buy
+  assert.equal(d.restrictedUniversity, 'SMU');
+  assert.equal(d.canAttendUniversity, false); // "can I attend?" → No (other university)
+  assert.equal(d.alreadyPurchased, false);
+  assert.equal(d.canEdit, false);
+  assert.equal(d.isPast, false);
+  assert.equal(d.deadlinePassed, false);
+});
+
+test('get_event_details: an open, unrestricted event reports isOpen', async () => {
+  const events = [{
+    id: 'e1', title: 'Book Fair', status: 'early_bird', hostId: 'other', startDate: inDaysIso(5),
+    deadline: inDaysIso(2), maxCapacity: 50, active_ticket_count: 3, hypeThreshold: 10,
+    restricted_university: '', viewer_can_attend: true, statuses: [{ statusName: 'early_bird', price: 5, ticketCapacity: 50 }],
+  }];
+  const d = await EXECUTORS.get_event_details({ eventId: 'Book Fair' }, ctxFull({ events }));
+  assert.equal(d.isOpen, true);
+  assert.equal(d.soldOut, false);
+  assert.equal(d.spotsLeft, 47);
+  assert.equal(d.restrictedUniversity, null);   // blank ⇒ open to everyone
+  assert.equal(d.canAttendUniversity, true);
 });
 
 test('read_only and discovery branches still bind the buy tool as a safety net', () => {

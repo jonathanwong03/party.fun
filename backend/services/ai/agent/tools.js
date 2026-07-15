@@ -232,6 +232,7 @@ function ambiguousDraft(names = []) {
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
 // date/time, venue, deadline and description without extra tool calls.
 function richRow(ev, ctx) {
+  const spotsLeft = Math.max(0, Number(ev.maxCapacity ?? 0) - Number(ev.active_ticket_count ?? 0));
   return {
     id: ev.id,
     title: ev.title,
@@ -239,6 +240,9 @@ function richRow(ev, ctx) {
     status: ev.status,
     currentPrice: currentPrice(ev),
     hypePct: hypePct(ev),
+    // Cheap eligibility facts so a list answer ("is anything sold out?") needs no extra call.
+    spotsLeft,
+    soldOut: Number(ev.maxCapacity ?? 0) > 0 && spotsLeft === 0,
     startDate: ev.startDate ?? null,
     endDate: ev.endDate ?? null,
     deadline: ev.deadline ?? ev.deadlineAt ?? null,
@@ -315,7 +319,7 @@ export const searchEventsTool = makeTool(
 
 export const getEventDetailsTool = makeTool(
   'get_event_details',
-  "Get full details for one event the user can see, by its id: its current STATUS (early_bird/greenlit/completed/cancelled), the CURRENT PRICE a buyer pays now, tiers, tickets sold vs hype threshold, and — for the user's OWN event — the net revenue so far.",
+  "Get full details for one event the user can see, by its id or name: its current STATUS (early_bird/greenlit/completed/cancelled), the CURRENT PRICE a buyer pays now, tiers, tickets sold vs hype threshold, and — for the user's OWN event — the net revenue so far. ALSO returns the authoritative ELIGIBILITY facts — use these to answer yes/no questions instead of guessing: isOpen (can tickets still be bought at all — open status, not started, deadline not passed, spots left), deadline + deadlinePassed, isPast, spotsLeft / soldOut / maxCapacity, alreadyPurchased (the user already holds tickets, so cannot buy again), restrictedUniversity + canAttendUniversity (false = the event is limited to another university), mine, canEdit, canCancel, canViewAttendees, isCoOrganiser.",
   z.object({ eventId: z.string().describe('The event id OR its name (either works).') }),
 );
 
@@ -595,6 +599,13 @@ export const EXECUTORS = {
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const mine = ev.hostId === ctx.userId;
+    const now = Date.now();
+    const sold = Number(ev.active_ticket_count ?? 0);
+    const maxCapacity = Number(ev.maxCapacity ?? 0);
+    const deadline = ev.deadline ?? ev.deadlineAt ?? null;
+    const deadlinePassed = deadline ? new Date(deadline).getTime() < now : false;
+    const spotsLeft = Math.max(0, maxCapacity - sold);
+    const purchased = await purchasedEventIds(ctx);
     const details = {
       id: ev.id,
       title: ev.title,
@@ -602,15 +613,32 @@ export const EXECUTORS = {
       status: ev.status, // early_bird | greenlit | completed | cancelled
       startDate: ev.startDate,
       endDate: ev.endDate ?? null,
-      deadline: ev.deadline ?? ev.deadlineAt ?? null,
+      deadline,
       venue: ev.location ?? null,
       address: ev.address,
       currentPrice: currentPrice(ev), // the price a buyer pays right now, given the status/pricing model
-      ticketsSold: ev.active_ticket_count ?? 0,
+      ticketsSold: sold,
       hypeThreshold: ev.hypeThreshold ?? 0,
       hypePct: hypePct(ev),
       tiers: (ev.statuses ?? []).map((s) => ({ name: s.statusName, price: s.price, capacity: s.ticketCapacity })),
       mine,
+      // ── Eligibility facts: answer yes/no questions from THESE, never by inferring ──
+      maxCapacity,
+      spotsLeft,
+      soldOut: maxCapacity > 0 && spotsLeft === 0,
+      isPast: isPastEvent(ev, now),
+      deadlinePassed,
+      // The single source of truth for "can I still buy tickets for this?": open status,
+      // not started, deadline not passed, and spots remain.
+      isOpen: (ev.status === 'early_bird' || ev.status === 'greenlit')
+        && isFutureStart(ev, now) && !deadlinePassed && (maxCapacity === 0 || spotsLeft > 0),
+      alreadyPurchased: purchased.has(String(ev.id)), // already holds tickets → cannot buy again
+      restrictedUniversity: ev.restricted_university || null, // null = open to everyone
+      canAttendUniversity: ev.viewer_can_attend !== false,    // false = restricted to another university
+      canEdit: !!ev.canEdit,
+      canCancel: !!ev.canCancel,
+      canViewAttendees: !!ev.canViewAttendees,
+      isCoOrganiser: !!ev.isCoOrganiser,
     };
     // Revenue so far is host-only; only include it for the caller's own event.
     if (mine) {
