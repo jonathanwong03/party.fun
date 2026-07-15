@@ -63,7 +63,7 @@ const DIRECTIVES = {
     + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). If the user says no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
-  transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). Then ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+  transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). If the name is a close-but-not-exact match, confirm 'Did you mean \"X\"?' first. Then ALWAYS ask the PAYMENT METHOD first — in-app wallet or debit/credit card — and THEN how many tickets, before calling propose_pledge with paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -243,14 +243,27 @@ function latestUserText(state) {
 // quantity, which event/field, etc.). Its reply is then a continuation of an on-topic
 // flow — even a bare "q" or "not nice" — so the scope guard must not reject it.
 const ASSISTANT_ASK_RX = /\b(reason|how many|which|what (would|do) you|please (provide|give|specify|confirm)|provide (a|an|the)|give (me )?(a|an|the)|specify|would you like|did you mean|what is the)\b/i;
-function priorAssistantAsked(state) {
+// The assistant's previous turn text (the AI message just before the current user reply).
+function previousAssistantText(state) {
   const msgs = state?.messages ?? [];
   let i = msgs.length - 1;
   while (i >= 0 && msgs[i]?._getType?.() === 'human') i -= 1; // skip the current user reply
-  if (i < 0 || msgs[i]?._getType?.() !== 'ai') return false;
-  const text = textOf(msgs[i].content).trim();
+  if (i < 0 || msgs[i]?._getType?.() !== 'ai') return '';
+  return textOf(msgs[i].content).trim();
+}
+function priorAssistantAsked(state) {
+  const text = previousAssistantText(state);
   if (!text) return false;
   return /\?\s*$/.test(text) || ASSISTANT_ASK_RX.test(text);
+}
+// True when the assistant's previous turn was clearly about events (a listing, a
+// "no events matching"/"did you mean" reply, etc.). A short follow-up (e.g. correcting
+// a typo'd event name) is then a continuation of an on-topic flow — never off-topic —
+// so the scope guard must not refuse it even though it lacks an event keyword itself.
+const EVENT_CONTEXT_RX = /\b(no events?|did you mean|couldn't find|could not find|which (event|one)|event|events|ticket|tickets|pledge|wallet|organiser|organizer)\b/i;
+function inEventFlow(state) {
+  const text = previousAssistantText(state);
+  return !!text && (ON_TOPIC_RX.test(text) || EVENT_CONTEXT_RX.test(text));
 }
 
 function shouldBlockUserEventManagement(state, ctx) {
@@ -404,8 +417,10 @@ function buildApp(model, system) {
   // Strict scope gate: runs first. Off-topic → a canned refusal and END (no branch/tools).
   const scope = async (state, config) => {
     // A reply to the agent's OWN question (e.g. a cancellation reason like "q", a
-    // quantity, or a field name) is always a continuation — never off-topic.
-    if (priorAssistantAsked(state)) return { offtopic: false };
+    // quantity, or a field name) — or a follow-up while the assistant's last turn was
+    // about events (e.g. correcting a typo'd event name after a "no events matching"
+    // reply) — is always a continuation, never off-topic.
+    if (priorAssistantAsked(state) || inEventFlow(state)) return { offtopic: false };
     // Otherwise judge ONLY the latest user message (not the rolling context) so earlier
     // on-topic turns can't let an off-topic question through.
     const onTopic = await dependencies.guard(latestUserText(state), config?.configurable?.ctx);

@@ -389,6 +389,41 @@ test('event tools resolve an event by NAME or slug, not just id', async () => {
   assert.ok(bad.error);
 });
 
+test('a typo in an event name surfaces a "Did you mean" suggestion (fuzzy fallback, no embeddings)', async () => {
+  const events = [{ id: 'e1', title: 'Gymming for Newbies', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  // propose_pledge with a typo'd name → asks to confirm, no proposal.
+  const buy = await EXECUTORS.propose_pledge({ eventId: 'gymming for nes', qty: 1 }, ctx);
+  assert.equal(buy.proposal, undefined);
+  assert.match(buy.error, /did you mean/i);
+  assert.match(buy.error, /Gymming for Newbies/);
+  // search_events keyword miss → didYouMean instead of an empty "no events".
+  const search = await EXECUTORS.search_events({ query: 'gymming for nes' }, ctx);
+  assert.equal(search.count, 0);
+  assert.match(search.didYouMean, /did you mean/i);
+  assert.ok(search.suggestions.includes('Gymming for Newbies'));
+});
+
+test('propose_pledge honours the chosen payment method (wallet vs card) with a stable attemptId', async () => {
+  const events = [{ id: 'e1', title: 'Gala', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
+  // Wallet: default method, balance pre-check, attemptId present.
+  const walletCtx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  const w = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 2, paymentMethod: 'wallet' }, walletCtx);
+  assert.equal(w.proposal.payload.paymentMethod, 'wallet');
+  assert.match(w.proposal.summary, /wallet/i);
+  assert.ok(w.proposal.payload.attemptId);
+  // Card: requires a linked card (stripePaymentMethodId); summary names the card.
+  const cardCtx = ctxFull({ events, user: { walletBalance: 0, cardBrand: 'visa', cardLast4: '4242', stripePaymentMethodId: 'pm_1' } });
+  const c = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 1, paymentMethod: 'card' }, cardCtx);
+  assert.equal(c.proposal.payload.paymentMethod, 'card');
+  assert.match(c.proposal.summary, /ending 4242/i);
+  // Card chosen but none linked → guidance, no proposal.
+  const noCardCtx = ctxFull({ events, user: { walletBalance: 0, cardLast4: null, stripePaymentMethodId: null } });
+  const nc = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 1, paymentMethod: 'card' }, noCardCtx);
+  assert.equal(nc.proposal, undefined);
+  assert.match(nc.error, /card/i);
+});
+
 test('admin accounts cannot receive pledge proposals', async () => {
   const events = [{ id: 'e1', title: 'Public Gig', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
   const ctx = {

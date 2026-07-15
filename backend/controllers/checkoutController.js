@@ -3,7 +3,19 @@ import * as eventService from '../services/eventService.js';
 import * as notificationService from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
+import { pledgeWithPayment } from '../services/checkoutService.js';
 import { formatVenueAddress } from '../utils/eventDisplay.js';
+
+// Error code → HTTP status for a failed pledge (unmapped codes fall back to 409).
+const PLEDGE_STATUS = {
+  not_found: 404,
+  insufficient_funds: 402,
+  university_restricted: 403,
+  stripe_disabled: 503,
+  no_card: 400,
+  charge_failed: 402,
+  charge_incomplete: 402,
+};
 
 const fmtDate = (iso) => (iso ? new Date(iso).toLocaleString('en-SG', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -84,62 +96,18 @@ export async function postPledge(req, res) {
   const eventId = req.params.eventId;
   const qty = Number(req.body.qty) || 1;
   const method = req.body.paymentMethod === 'card' ? 'card' : 'wallet';
-  let paymentIntentId = null;
 
   const eventBefore = await dependencies.getEvent(req.supabase, eventId, req.user.id);
-  let chargedAmount = null;
   // Stable across client retries: keys the Stripe charge AND the booking so a replay never double-charges.
   const attemptId = attemptIdOf(req.body);
 
-  if (method === 'card') {
-    if (!dependencies.stripeEnabled()) {
-      res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured.' });
-      return;
-    }
-    const quote = await dependencies.quotePledge(req.supabase, eventId, qty);
-    if (!quote || quote.error) {
-      res.status(quote ? 409 : 404).json({ status: quote?.error ?? 'not_found', message: quote ? 'Not enough tickets are available.' : 'Event not found.' });
-      return;
-    }
-    const { data: me } = await req.supabase.from('USER').select('stripeCustomerId, stripePaymentMethodId').eq('id', req.user.id).single();
-    if (!me?.stripeCustomerId || !me?.stripePaymentMethodId) {
-      res.status(400).json({ status: 'no_card', message: PLEDGE_MESSAGES.no_card });
-      return;
-    }
-    let pi;
-    try {
-      pi = await dependencies.getStripe().paymentIntents.create({
-        // Buyer pays the GST-inclusive grand total; create_pledge still records GST-free revenue.
-        amount: Math.round((Number(quote.total) + Number(quote.gst || 0)) * 100),
-        currency: 'sgd',
-        customer: me.stripeCustomerId,
-        payment_method: me.stripePaymentMethodId,
-        off_session: true,
-        confirm: true,
-        metadata: { kind: 'pledge', eventId, userId: req.user.id, qty: String(qty), attemptId },
-      }, { idempotencyKey: `pledge:${attemptId}` });
-    } catch (e) {
-      res.status(402).json({ status: 'charge_failed', message: e?.message || 'Your card was declined.' });
-      return;
-    }
-    if (pi.status !== 'succeeded') {
-      res.status(402).json({ status: 'charge_incomplete', message: 'Payment could not be completed.' });
-      return;
-    }
-    paymentIntentId = pi.id;
-    chargedAmount = quote.total;
-  }
-
-  const result = await dependencies.createPledge(req.supabase, req.user.id, eventId, qty, method, paymentIntentId, chargedAmount, attemptId);
+  // Shared orchestration: card → off-session charge (+ refund-on-fail) → createPledge; wallet → createPledge.
+  const result = await pledgeWithPayment({ deps: dependencies, sb: req.supabase, userId: req.user.id, eventId, qty, method, attemptId });
   if (result.error) {
-    // Booking didn't commit — refund the charge (idempotent so a retry never double-refunds).
-    if (method === 'card' && paymentIntentId) {
-      try { await dependencies.getStripe().refunds.create({ payment_intent: paymentIntentId }, { idempotencyKey: `refund:${paymentIntentId}` }); } catch { /* logged by Stripe dashboard */ }
-    }
-    const status = result.error === 'not_found' ? 404 : result.error === 'insufficient_funds' ? 402 : result.error === 'university_restricted' ? 403 : 409;
+    const status = PLEDGE_STATUS[result.error] ?? 409;
     res.status(status).json({
       status: result.error,
-      message: PLEDGE_MESSAGES[result.error] ?? 'Unable to complete pledge.',
+      message: result.message ?? PLEDGE_MESSAGES[result.error] ?? 'Unable to complete pledge.',
     });
     return;
   }

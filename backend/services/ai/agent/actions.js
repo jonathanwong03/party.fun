@@ -1,7 +1,10 @@
-import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createEvent, createPledge, deleteDraft, listDrafts, giveAwayTickets } from '../../eventService.js';
+import { randomUUID } from 'crypto';
+import { mapEventRow, updateEvent, inviteCoOrganiser, saveDraft, createEvent, createPledge, quotePledge, deleteDraft, listDrafts, giveAwayTickets } from '../../eventService.js';
 import { notifyEventUpdated, notifyCoOrganiserInvite, notifyPledgeConfirmed, notifyEventCreated } from '../../notificationService.js';
 import { topupWallet } from '../../walletService.js';
 import { cancelEventWithRefunds } from '../../eventCancellationService.js';
+import { pledgeWithPayment } from '../../checkoutService.js';
+import { stripe, stripeEnabled } from '../../stripeClient.js';
 
 // Executes a user-CONFIRMED agent action. Runs through the caller's own
 // (user-scoped) Supabase client so RLS + the RPCs re-enforce ownership/validation;
@@ -59,6 +62,9 @@ const ERROR_MESSAGES = {
   no_card: 'Link a card in Wallet before paying.',
   university_restricted: 'This event is open to members of a specific university only.',
   price_mismatch: 'The ticket price changed — try again.',
+  stripe_disabled: 'Card payments are not configured right now — try paying with your wallet.',
+  charge_failed: 'Your card was declined. Try another card or pay with your wallet.',
+  charge_incomplete: 'The card payment could not be completed. Try again or use your wallet.',
 };
 const msg = (code, fallback) => ERROR_MESSAGES[code] ?? fallback;
 const money = (n) => `$${Number(n ?? 0).toFixed(2)}`;
@@ -187,13 +193,19 @@ export async function executeAction({ sb, user, action, eventId, payload }) {
     return { status: 'ok', message: `Updated the draft "${merged.title || '(untitled draft)'}".` };
   }
 
-  // ── Buy tickets with the wallet (a deduction; NOT the caller's own event) ─────
+  // ── Buy tickets with the wallet OR the linked card (NOT the caller's own event) ─
   if (action === 'pledge') {
     if (!eventId) return { error: 'bad_request', message: 'Missing event id.' };
     const qty = Math.max(1, Math.floor(Number(payload?.qty ?? 1)) || 1);
+    const method = payload?.paymentMethod === 'card' ? 'card' : 'wallet';
+    const attemptId = payload?.attemptId || randomUUID();
     let result;
     try {
-      result = await createPledge(sb, user.id, eventId, qty, 'wallet');
+      // Same orchestration as the checkout page: card → off-session charge (+ refund-on-fail) → createPledge.
+      result = await pledgeWithPayment({
+        deps: { quotePledge, createPledge, stripeEnabled, getStripe: () => stripe() },
+        sb, userId: user.id, eventId, qty, method, attemptId,
+      });
     } catch (e) {
       return { error: 'error', message: e?.message ?? 'Unable to complete the purchase.' };
     }

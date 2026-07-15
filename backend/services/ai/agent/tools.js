@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
 import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, getEventAttendeesPrivate, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
 import { cacheGetJson, cacheSetJson } from '../../cache.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
@@ -105,6 +105,55 @@ function findEvent(events, ref) {
   return sub[0] ?? null; // best substring match
 }
 
+// Sørensen–Dice similarity over character bigrams of two normalized strings (0..1).
+// Catches typos ("gymming for nes" ≈ "gymming for newbies") with no embeddings needed.
+function bigrams(s) {
+  const out = new Map();
+  for (let i = 0; i < s.length - 1; i += 1) {
+    const g = s.slice(i, i + 2);
+    out.set(g, (out.get(g) ?? 0) + 1);
+  }
+  return out;
+}
+function diceSimilarity(a, b) {
+  const na = normName(a);
+  const nb = normName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  if (na.length < 2 || nb.length < 2) return na === nb ? 1 : 0;
+  const ga = bigrams(na);
+  const gb = bigrams(nb);
+  let overlap = 0;
+  for (const [g, count] of ga) {
+    const other = gb.get(g);
+    if (other) overlap += Math.min(count, other);
+  }
+  const total = (na.length - 1) + (nb.length - 1);
+  return total > 0 ? (2 * overlap) / total : 0;
+}
+
+// Best fuzzy (string-similarity) matches for a ref among events — the fallback when
+// embeddings are off or the event hasn't been indexed yet. Returns titles best-first
+// for matches at/above the threshold.
+function fuzzyEventMatches(events, ref, { threshold = 0.45, limit = 3 } = {}) {
+  const scored = (events ?? [])
+    .map((e) => ({ title: e.title, score: diceSimilarity(ref, e.title) }))
+    .filter((r) => r.title && r.score >= threshold)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((r) => r.title);
+}
+
+// A list-tool result for a query that matched nothing but is a near-miss to an event
+// title — surfaces "Did you mean …?" so the agent confirms instead of saying "none".
+function didYouMeanResult(pool, query) {
+  const names = fuzzyEventMatches(pool, query);
+  if (!names.length) return { count: 0, events: [] };
+  const didYouMean = names.length === 1
+    ? `No exact match for "${query}". Did you mean "${names[0]}"?`
+    : `No exact match for "${query}". Did you mean one of these: ${names.join(', ')}?`;
+  return { count: 0, events: [], didYouMean, suggestions: names };
+}
+
 function ambiguousEvent(names = []) {
   if (names.length === 1) {
     return { error: `I couldn't find an exact match for that. Did you mean "${names[0]}"? Say yes (or give the exact name) and I'll continue.` };
@@ -122,9 +171,15 @@ async function resolveEvent(ctx, events, ref) {
   const byId = new Map((events ?? []).map((e) => [e.id, e]));
   // A low similarity floor keeps genuine typos (which score high) while dropping noise.
   const scoped = ranked.filter((r) => byId.has(r.eventId) && Number(r.similarity ?? 0) >= 0.3);
-  if (!scoped.length) return { event: null };
-  const titles = scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean);
-  return { ambiguous: titles };
+  if (scoped.length) {
+    const titles = scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean);
+    return { ambiguous: titles };
+  }
+  // Fallback: deterministic string-similarity so typos still get a "Did you mean …?"
+  // even when embeddings are off or the event isn't indexed yet (e.g. just created).
+  const fuzzy = fuzzyEventMatches(events, ref);
+  if (fuzzy.length) return { ambiguous: fuzzy };
+  return { event: null };
 }
 
 function draftRefText(d = {}) {
@@ -429,10 +484,11 @@ export const proposeTopupTool = makeTool(
 
 export const proposePledgeTool = makeTool(
   'propose_pledge',
-  "PROPOSE buying ticket(s) to an event using the user's WALLET balance (a deduction). Does NOT charge — returns a proposal the user must confirm. Cannot be their own event.",
+  "PROPOSE buying ticket(s) to an event. FIRST ask the payment method (in-app wallet OR debit/credit card) and the quantity, then call this with paymentMethod set. 'wallet' deducts the wallet balance; 'card' charges the user's linked card. Does NOT charge — returns a proposal the user must confirm. Cannot be their own event.",
   z.object({
     eventId: z.string().describe('The event to buy into — its id OR name (either works).'),
     qty: z.number().optional().describe('Number of tickets (>= 1). Defaults to 1.'),
+    paymentMethod: z.enum(['wallet', 'card']).optional().describe("How to pay: 'wallet' (in-app balance) or 'card' (linked debit/credit card). Ask the user first; defaults to wallet."),
   }),
 );
 
@@ -500,14 +556,17 @@ export const EXECUTORS = {
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const hypeOnly = !!args.hypeOnly;
     const now = Date.now();
-    const rows = (await visibleEvents(ctx))
+    const visible = (await visibleEvents(ctx))
       .filter((e) => e.status !== 'cancelled' && e.status !== 'completed')
       .filter((e) => !isPastEvent(e, now))
-      .filter((e) => (hypeOnly ? e.status === 'greenlit' : true))
+      .filter((e) => (hypeOnly ? e.status === 'greenlit' : true));
+    const rows = visible
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .slice(0, 15)
       .map((e) => richRow(e, ctx));
+    // Typo help: a keyword query that matched nothing → suggest the closest event by name.
+    if (!rows.length && q) return didYouMeanResult(visible, args.query);
     return { count: rows.length, events: rows };
   },
 
@@ -608,10 +667,13 @@ export const EXECUTORS = {
   async list_available_events(args, ctx) {
     const q = String(args.query ?? '').toLowerCase().trim();
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
-    const rows = (await attendableEvents(ctx))
+    const attendable = await attendableEvents(ctx);
+    const rows = attendable
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .map((e) => richRow(e, ctx));
+    // Typo help: a named search with no hit → suggest the closest attendable event.
+    if (!rows.length && q && maxPrice == null) return didYouMeanResult(attendable, args.query);
     return { count: rows.length, events: rows };
   },
 
@@ -1021,24 +1083,49 @@ export const EXECUTORS = {
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
     const price = currentPrice(ev);
     const total = price * qty;
-    // Wallet pre-check: the agent pays from the wallet; if short, guide a card top-up first.
-    const { data: me } = await ctx.supabase.from('USER').select('walletBalance, cardLast4').eq('id', ctx.userId).single();
+    const method = args.paymentMethod === 'card' ? 'card' : 'wallet';
+    // One idempotency key per proposal, reused on execute so a confirm-retry never double-charges.
+    const attemptId = randomUUID();
+    const base = {
+      id: `pledge:${ev.id}:${Date.now()}`,
+      action: 'pledge',
+      eventId: ev.id,
+      title: ev.title,
+    };
+    const { data: me } = await ctx.supabase
+      .from('USER')
+      .select('walletBalance, cardLast4, cardBrand, stripePaymentMethodId')
+      .eq('id', ctx.userId)
+      .single();
+
+    if (method === 'card') {
+      // Card charges the linked card off-session at execute time; require one now.
+      if (!me?.stripePaymentMethodId || !me?.cardLast4) {
+        return { error: 'No card is linked. Ask them to link a card in Wallet before paying by card, or offer to pay with their wallet instead.' };
+      }
+      return {
+        proposal: {
+          ...base,
+          summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your ${me.cardBrand || 'card'} ending ${me.cardLast4} — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}).`,
+          payload: { qty, paymentMethod: 'card', attemptId },
+        },
+      };
+    }
+
+    // Wallet: pre-check the balance; if short, guide a card top-up (or paying by card) first.
     const balance = Number(me?.walletBalance ?? 0);
     if (total > balance) {
       const shortfall = (total - balance).toFixed(2);
       const cardNote = me?.cardLast4
-        ? `Offer to top up $${shortfall} (or more) into the wallet by charging their card ending ${me.cardLast4} (propose_topup), then pledge.`
+        ? `Offer to top up $${shortfall} (or more) into the wallet by charging their card ending ${me.cardLast4} (propose_topup), or to pay for this purchase by card instead, then pledge.`
         : `No card is linked — ask them to link a card in Wallet before buying.`;
       return { error: `Wallet balance is $${balance.toFixed(2)}, which is $${shortfall} short of the $${total.toFixed(2)} for ${qty} ticket${qty > 1 ? 's' : ''}. ${cardNote}` };
     }
     return {
       proposal: {
-        id: `pledge:${ev.id}:${Date.now()}`,
-        action: 'pledge',
-        eventId: ev.id,
-        title: ev.title,
+        ...base,
         summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your wallet — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}). Wallet $${balance.toFixed(2)} → $${(balance - total).toFixed(2)} after.`,
-        payload: { qty },
+        payload: { qty, paymentMethod: 'wallet', attemptId },
       },
     };
   },
