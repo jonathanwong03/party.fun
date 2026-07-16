@@ -5,7 +5,8 @@
 // the same cached executors the agent would use. Anything qualified (a price cap,
 // a specific event name) returns null and falls through to the LLM graph.
 
-import { EXECUTORS, resolveAttendableRef } from './tools.js';
+import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable } from './tools.js';
+import { isBuyQuestion } from './buyIntent.js';
 
 // A qualifier/price cap or a quoted specific-event name means the ask is NOT a plain
 // list request — let the LLM handle it (it can apply the filter / resolve the name).
@@ -53,30 +54,103 @@ export function matchListQuery(text) {
 // Tolerates a quantity ("buy 2 tickets for X"). Returns the named event, or null when the
 // user named no event (then the LLM asks which one, as before).
 const BUY_INTENT_RX = /\b(?:buy|purchase|get|book|grab)\b[^.?!]*?\btickets?\b\s+(?:for|to)\s+(.+)$/i;
+// A quoted span anywhere in the capture is an explicit name: `buy tickets for "gymming for
+// newbies" after 1 august`. cleanName alone can't help there — it only strips quotes at the
+// very START/END of the whole capture, so a quoted name followed by any trailing clause kept
+// its quotes embedded. Double/curly-double only: a bare apostrophe is far more often a
+// possessive ("Alice's party") than a delimiter.
+const QUOTED_NAME_RX = /["“”]\s*([^"“”]{2,}?)\s*["“”]/;
+const cleanName = (s) => String(s).trim().replace(/[?.!,]+$/, '').replace(/^["“”'‘’]|["“”'‘’]$/g, '').trim();
 
 export function matchBuyIntent(text) {
-  const m = BUY_INTENT_RX.exec(String(text ?? '').trim());
+  const t = String(text ?? '').trim();
+  if (!t) return null;
+  // A QUESTION about buying ("can i buy tickets for gymming for newbies after 1 august?") asks
+  // whether the window is still open — it is NOT a purchase, and the greedy (.+) below would
+  // read the whole trailing clause as the event name. Fall through to runGraph instead, where
+  // get_event_details answers it from isOpen/deadline/deadlinePassed. Known limitation, shared
+  // with eventGraph's looksLikePurchase: a question with a non-interrogative lead ("so can i
+  // buy tickets for X?") still intercepts here.
+  if (isBuyQuestion(t)) return null;
+  const m = BUY_INTENT_RX.exec(t);
   if (!m) return null;
-  const name = m[1].trim().replace(/[?.!,]+$/, '').replace(/^["“”'‘’]|["“”'‘’]$/g, '').trim();
-  return name || null;
+  const quoted = QUOTED_NAME_RX.exec(m[1]);
+  return cleanName(quoted ? quoted[1] : m[1]) || null;
 }
 
-// Deterministic reply for a named purchase. Returns null when the name resolves EXACTLY
-// (the normal LLM flow then asks payment method → quantity), otherwise a "Did you mean …?"
-// built from the closest attendable events (Redis-first, Supabase fallback).
+// A trailing time qualifier on an imperative buy ("buy tickets for Neon Rave after 1 august")
+// belongs to the ASK, not to the event name. Stripping it at parse time would maul an event
+// legitimately titled "Party on Friday", so the stripped form is only ever a FALLBACK
+// candidate: a real title resolves on candidate #1 and the strip is never reached, which makes
+// a wrong strip harmless by construction.
+const TEMPORAL_CONNECTIVE = '(?:after|before|by|on|in|until|till|from|around|starting|beginning)';
+// The clause only counts as a DATE when a date-ish token follows the connective — so "Before
+// Sunrise", and the "for" inside "Gymming for newbies", are left alone.
+const DATE_TAIL = '(?:\\d{1,2}(?:st|nd|rd|th)?|\\d{4}'
+  + '|jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?'
+  + '|mon(?:day)?|tue(?:s|sday)?|wed(?:nesday)?|thu(?:rs|rsday)?|fri(?:day)?|sat(?:urday)?|sun(?:day)?'
+  + '|today|tomorrow|tonight|the\\s+deadline|next\\s+\\w+|this\\s+\\w+)';
+const TRAILING_TEMPORAL_RX = new RegExp(`\\s+${TEMPORAL_CONNECTIVE}\\s+${DATE_TAIL}\\b.*$`, 'i');
+const TRAILING_RELATIVE_RX = /\s+(?:today|tomorrow|tonight|this\s+(?:week|weekend|month)|next\s+(?:week|weekend|month))\s*$/i;
+
+// Names to try, best-first: the name as given, then (only if it differs) the same name with a
+// trailing date clause removed.
+function nameCandidates(name) {
+  const raw = String(name ?? '').trim();
+  if (!raw) return [];
+  const stripped = raw.replace(TRAILING_TEMPORAL_RX, '').replace(TRAILING_RELATIVE_RX, '').trim();
+  return stripped && stripped !== raw && stripped.length >= 2 ? [raw, stripped] : [raw];
+}
+
+// Why a real, visible event can't be bought — in the user's words. null = no honest canned
+// answer, so fall through to the LLM (which has get_event_details).
+function notBuyableReply(ev, reason) {
+  const t = ev.title;
+  if (reason === 'already_purchased') return `You already have tickets for "${t}", so you can't buy more for that event. If you no longer need them you can give some away.`;
+  if (reason === 'own_event') return `"${t}" is your own event — you can't buy tickets for an event you're hosting.`;
+  if (reason === 'cancelled') return `"${t}" has been cancelled, so tickets are no longer on sale.`;
+  if (reason === 'completed' || reason === 'ended') return `"${t}" has already ended, so tickets are no longer on sale.`;
+  if (reason === 'started') return `"${t}" has already started, so tickets are no longer on sale.`;
+  return null;
+}
+
+// Deterministic reply for a named purchase. Returns null when the name resolves EXACTLY to a
+// buyable event (the normal LLM flow then asks payment method → quantity), the reason it can't
+// be bought when the event is real but not attendable, otherwise a "Did you mean …?" built from
+// the closest events (Redis-first, Supabase fallback).
 export async function buildBuyIntentReply(name, ctx) {
   try {
-    const resolved = await resolveAttendableRef(ctx, name);
-    if (resolved?.event) return null; // exact → let the agent continue the purchase
-    const suggestions = resolved?.ambiguous ?? [];
+    // Admins have NO attendable pool at all (attendableEvents returns [] for them), so every
+    // admin buy ask would otherwise get the flatly false "I cannot find an event named X".
+    // Let the graph answer with the real role rules instead.
+    if (String(ctx?.role ?? 'user').toLowerCase() === 'admin') return null;
+    let buyableNear = [];
+    let visibleNear = [];
+    for (const candidate of nameCandidates(name)) {
+      const buyable = await resolveAttendableRef(ctx, candidate);
+      if (buyable?.event) return null; // exact + buyable → let the agent continue the purchase
+      // An EXACT hit in the wider visible pool beats any near-miss in the narrow one: the
+      // attendable pool excludes events the user already bought, their own, and past/closed
+      // ones, so "cannot find" was being said about events that plainly exist. Exact-only
+      // (findEvent) means this can never hijack a typo away from the "Did you mean …?" path.
+      const visible = await resolveVisibleRef(ctx, candidate);
+      if (visible?.event) {
+        const reason = await whyNotAttendable(visible.event, ctx);
+        return reason ? notBuyableReply(visible.event, reason) : null;
+      }
+      if (!buyableNear.length) buyableNear = buyable?.ambiguous ?? [];
+      if (!visibleNear.length) visibleNear = visible?.ambiguous ?? [];
+    }
+    const shown = String(name ?? '').trim();
+    const suggestions = buyableNear.length ? buyableNear : visibleNear;
     if (suggestions.length === 1) {
-      return `I'm sorry, I cannot find an event named "${name}". Did you mean "${suggestions[0]}"?`;
+      return `I'm sorry, I cannot find an event named "${shown}". Did you mean "${suggestions[0]}"?`;
     }
     if (suggestions.length > 1) {
       const list = suggestions.map((s) => `"${s}"`).join(', ');
-      return `I'm sorry, I cannot find an event named "${name}". Did you mean one of these: ${list}?`;
+      return `I'm sorry, I cannot find an event named "${shown}". Did you mean one of these: ${list}?`;
     }
-    return `I'm sorry, I cannot find an event named "${name}". Ask me what events you can join and I'll list them.`;
+    return `I'm sorry, I cannot find an event named "${shown}". Ask me what events you can join and I'll list them.`;
   } catch {
     return null; // any snag → let the normal graph answer instead
   }

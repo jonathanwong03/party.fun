@@ -6,6 +6,7 @@ import { resolveCandidates, runTier } from '../modelRouter.js';
 import { EXECUTORS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { sanitizeAiReply } from '../responseSanitizer.js';
+import { INTERROGATIVE_LEAD_RX, TRAILING_QUESTION_RX, REQUEST_RX } from './buyIntent.js';
 
 // ── LangGraph event-planning agent (full workflow) ───────────────────────────
 // The whole diagram is one graph:
@@ -299,15 +300,15 @@ const BUY_INTENT_RX = /\b(buy|buying|purchase|purchasing|pledge|pledging|book|re
 const TICKETY_RX = /\b(ticket|tickets|pledge|pledging|seat|seats|spot|spots)\b/i;
 // A yes/no or wh- QUESTION about buying ("can i purchase tickets after 24 July?", "can i
 // still buy tickets for X?", "is it too late to buy tickets?") must be ANSWERED, not turned
-// into a purchase. Only an actual request routes to the buy flow.
-const QUESTION_RX = /\?\s*$|^(can|could|is|are|do|does|did|will|would|am|when|what|which|who|how|may)\b/i;
-// …except a purchase politely phrased as a question ("can you help me buy 2 tickets?").
-const REQUEST_RX = /^(can|could|would|will)\s+(you|u)\b|\b(help me|please)\b/i;
+// into a purchase. Only an actual request routes to the buy flow. The interrogative/request
+// vocabulary is shared with listReplies' matchBuyIntent (buyIntent.js) so the two layers
+// can't drift; the trailing-"?" clause is this layer's alone — see isBuyQuestion's comment.
 export function looksLikePurchase(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (!BUY_INTENT_RX.test(t)) return false;
-  if (QUESTION_RX.test(t) && !REQUEST_RX.test(t)) return false; // a question about buying
+  const isQuestion = TRAILING_QUESTION_RX.test(t) || INTERROGATIVE_LEAD_RX.test(t);
+  if (isQuestion && !REQUEST_RX.test(t)) return false; // a question about buying
   // "buy/purchase" alone is enough when it's about tickets or an event, else require a
   // ticket-ish noun so "buy" in an unrelated sentence doesn't hijack the routing.
   return TICKETY_RX.test(t) || /\b(event|events)\b/i.test(t) || /^(help me |i want to |can you )?(buy|purchase)\b/i.test(t);

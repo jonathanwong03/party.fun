@@ -132,10 +132,17 @@ function diceSimilarity(a, b) {
   return total > 0 ? (2 * overlap) / total : 0;
 }
 
+// Suggestion floors for "Did you mean …?". Deliberately STRICT: offering nothing is better
+// than offering a nonsense guess — at the old 0.3 semantic floor, "gymming for newbies"
+// suggested "Grad Ball: Black-Tie Gala". Real typos are still caught by substring overlap and
+// by Sørensen–Dice, which discriminates misspelt names far better than embeddings do.
+const SEMANTIC_SUGGEST_MIN = 0.6;
+const FUZZY_SUGGEST_MIN = 0.45;
+
 // Best fuzzy (string-similarity) matches for a ref among events — the fallback when
 // embeddings are off or the event hasn't been indexed yet. Returns titles best-first
 // for matches at/above the threshold.
-function fuzzyEventMatches(events, ref, { threshold = 0.45, limit = 3 } = {}) {
+function fuzzyEventMatches(events, ref, { threshold = FUZZY_SUGGEST_MIN, limit = 3 } = {}) {
   const scored = (events ?? [])
     .map((e) => ({ title: e.title, score: diceSimilarity(ref, e.title) }))
     .filter((r) => r.title && r.score >= threshold)
@@ -179,11 +186,11 @@ async function resolveEvent(ctx, events, ref) {
       if (en && (en.includes(nr) || nr.includes(en))) push(e.title);
     }
   }
-  // 2. Semantic matches (embeddings), low floor so genuine typos still score in.
+  // 2. Semantic matches (embeddings), high floor — only genuinely close events, never a guess.
   const ranked = await semanticMatch(ctx, ref, { count: 8 });
   const byId = new Map(list.map((e) => [e.id, e]));
   for (const r of ranked) {
-    if (byId.has(r.eventId) && Number(r.similarity ?? 0) >= 0.3) push(byId.get(r.eventId)?.title);
+    if (byId.has(r.eventId) && Number(r.similarity ?? 0) >= SEMANTIC_SUGGEST_MIN) push(byId.get(r.eventId)?.title);
   }
   // 3. Deterministic string-similarity fallback (works with no embeddings / unindexed events).
   for (const t of fuzzyEventMatches(list, ref)) push(t);
@@ -199,6 +206,30 @@ async function resolveEvent(ctx, events, ref) {
 // so a typo is caught before the LLM can invent an event.
 export async function resolveAttendableRef(ctx, ref) {
   return resolveEvent(ctx, await attendableEvents(ctx), ref);
+}
+
+// As resolveAttendableRef, but over the WIDER pool of every event the caller can SEE. Lets the
+// buy-intent short-circuit tell "no such event" apart from "a real event you just can't buy".
+export async function resolveVisibleRef(ctx, ref) {
+  return resolveEvent(ctx, await visibleEvents(ctx), ref);
+}
+
+// Why a VISIBLE event is not in attendableEvents; null means it IS buyable. Mirrors that
+// filter using the same predicates so the two can't drift. Role isn't checked here —
+// attendableEvents returns [] for admins and callers handle that case themselves.
+export async function whyNotAttendable(ev, ctx) {
+  if (!ev) return null;
+  // Cancelled/ended outrank already_purchased: for someone holding tickets, "it was
+  // cancelled" is the more useful truth than "you already have tickets".
+  if (ev.status === 'cancelled') return 'cancelled';
+  if (ev.status === 'completed') return 'completed';
+  if (isPastEvent(ev)) return 'ended';
+  if (!isFutureStart(ev)) return 'started';
+  if (ev.hostId === ctx.userId) return 'own_event';
+  // Costs a getProfile round-trip, so it goes after the cheap synchronous checks.
+  if ((await purchasedEventIds(ctx)).has(String(ev.id))) return 'already_purchased';
+  if (ev.status !== 'early_bird' && ev.status !== 'greenlit') return 'not_open';
+  return null;
 }
 
 function draftRefText(d = {}) {

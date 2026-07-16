@@ -1,7 +1,8 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from './listReplies.js';
-import { EXECUTORS } from './tools.js';
+import { EXECUTORS, resolveVisibleRef, whyNotAttendable } from './tools.js';
+import { __setEmbedForTests, __resetEmbedForTests } from '../embeddingService.js';
 
 // buildListReply calls the real EXECUTORS; stub the three it uses and restore after.
 const saved = {};
@@ -12,6 +13,27 @@ function stub(name, fn) {
 afterEach(() => {
   for (const [name, fn] of Object.entries(saved)) EXECUTORS[name] = fn;
   for (const k of Object.keys(saved)) delete saved[k];
+  __resetEmbedForTests();
+  delete process.env.GEMINI_API_KEY; // embeddings stay OFF unless a test opts in
+});
+
+// ctx for the buy-intent path: get_profile carries the caller's tickets, every other rpc
+// returns the event pool (get_events, via listEventsRaw). No REDIS_URL in tests → the SWR
+// cache is a pass-through, so each call re-reads the stub.
+const iso = (daysFromNow) => new Date(Date.now() + daysFromNow * 86400000).toISOString();
+const buyCtx = (events, { role = 'user', userId = 'u1', tickets = [] } = {}) => ({
+  userId,
+  role,
+  supabase: {
+    rpc: async (name) => {
+      if (name === 'get_profile') return { data: { tickets }, error: null };
+      return { data: events, error: null };
+    },
+  },
+});
+const gymEvent = (over = {}) => ({
+  id: 'e1', title: 'Gymming for newbies', status: 'early_bird', hostId: 'other',
+  startDate: iso(14), statuses: [{ price: 12 }], ...over,
 });
 
 // ── matchListQuery ────────────────────────────────────────────────────────────
@@ -77,6 +99,100 @@ test('buildLinkCardReply never asks for a number and opens the form only on conf
   const pasted = buildLinkCardReply('card_number_pasted', false);
   assert.match(pasted.reply, /don't share card numbers/i);
   assert.doesNotMatch(pasted.reply, /\d{13,}/);
+});
+
+test('matchBuyIntent ignores QUESTIONS about buying (they fall through to the graph)', () => {
+  // The reported bug: the greedy capture read the whole trailing clause as the event name,
+  // so this asked to buy an event called "gymming for newbies after 1 august".
+  assert.equal(matchBuyIntent('can i buy tickets for gymming for newbies after 1 august?'), null);
+  assert.equal(matchBuyIntent('can i still buy tickets for Neon Rave?'), null);
+  assert.equal(matchBuyIntent('is it too late to buy tickets for Neon Rave'), null);
+  assert.equal(matchBuyIntent('when can i buy tickets for Neon Rave'), null);
+  // …but a purchase politely phrased as a question is still a purchase.
+  assert.equal(matchBuyIntent('can you help me buy 2 tickets for Neon Rave?'), 'Neon Rave');
+});
+
+test('matchBuyIntent prefers a quoted name over a trailing date clause', () => {
+  assert.equal(matchBuyIntent('buy tickets for "gymming for newbies" after 1 august'), 'gymming for newbies');
+  assert.equal(matchBuyIntent('buy tickets for “Neon Rave” tomorrow'), 'Neon Rave');
+});
+
+test('buildBuyIntentReply strips a trailing date clause only as a FALLBACK', async () => {
+  // Candidate 1 ("… after 1 august") misses, candidate 2 resolves exactly → null, i.e. the
+  // agent carries on with the normal payment-method → quantity flow.
+  const ctx = buyCtx([gymEvent()]);
+  assert.equal(await buildBuyIntentReply('gymming for newbies after 1 august', ctx), null);
+  // Over-strip guard: an event legitimately titled with a date word resolves on candidate 1,
+  // so the strip never runs and can't damage it.
+  const friday = buyCtx([gymEvent({ title: 'Party on Friday' })]);
+  assert.equal(await buildBuyIntentReply('Party on Friday', friday), null);
+});
+
+test('buildBuyIntentReply gives the TRUE reason instead of a false "cannot find"', async () => {
+  // Already holds tickets → the event is excluded from the attendable pool, which used to
+  // produce "I cannot find an event named X" about an event that plainly exists.
+  const bought = buyCtx([gymEvent()], { tickets: [{ eventId: 'e1', tab: 'upcoming' }] });
+  const reply = await buildBuyIntentReply('gymming for newbies', bought);
+  assert.match(reply, /already have tickets/i);
+  assert.doesNotMatch(reply, /cannot find/i);
+
+  const own = buyCtx([gymEvent({ hostId: 'u1' })]);
+  assert.match(await buildBuyIntentReply('gymming for newbies', own), /your own event/i);
+
+  const cancelled = buyCtx([gymEvent({ status: 'cancelled' })]);
+  assert.match(await buildBuyIntentReply('gymming for newbies', cancelled), /cancelled/i);
+
+  const ended = buyCtx([gymEvent({ startDate: iso(-9), endDate: iso(-8) })]);
+  assert.match(await buildBuyIntentReply('gymming for newbies', ended), /already ended/i);
+});
+
+test('buildBuyIntentReply never prompts an admin to confirm a purchase', async () => {
+  // attendableEvents returns [] for admins, so this path can only ever mislead them: an
+  // admin can't buy at all. A TYPO is the case that proves the guard — an exact name is
+  // already rescued by the visible-pool lookup, but a typo would otherwise reach the
+  // "Did you mean …?" purchase confirmation. Both must defer to the graph's role rules.
+  const ctx = buyCtx([gymEvent()], { role: 'admin' });
+  assert.equal(await buildBuyIntentReply('gymming for newbis', ctx), null);
+  assert.equal(await buildBuyIntentReply('gymming for newbies', ctx), null);
+});
+
+test('whyNotAttendable mirrors the attendableEvents filter', async () => {
+  const ctx = buyCtx([], { tickets: [{ eventId: 'e9', tab: 'upcoming' }] });
+  assert.equal(await whyNotAttendable(gymEvent(), ctx), null); // buyable
+  assert.equal(await whyNotAttendable(gymEvent({ status: 'cancelled' }), ctx), 'cancelled');
+  assert.equal(await whyNotAttendable(gymEvent({ status: 'completed' }), ctx), 'completed');
+  assert.equal(await whyNotAttendable(gymEvent({ startDate: iso(-9), endDate: iso(-8) }), ctx), 'ended');
+  assert.equal(await whyNotAttendable(gymEvent({ startDate: iso(-1), endDate: iso(1) }), ctx), 'started');
+  assert.equal(await whyNotAttendable(gymEvent({ hostId: 'u1' }), ctx), 'own_event');
+  assert.equal(await whyNotAttendable(gymEvent({ id: 'e9' }), ctx), 'already_purchased');
+});
+
+test('resolveEvent does not offer a DISTANT semantic match as a suggestion', async () => {
+  process.env.GEMINI_API_KEY = 'test-key';
+  __setEmbedForTests(async () => [0.1, 0.2, 0.3]);
+  const events = [{ id: 'e1', title: 'Grad Ball: Black-Tie Gala', status: 'early_bird', hostId: 'other', startDate: iso(14), statuses: [{ price: 40 }] }];
+  const withSim = (similarity) => ({
+    userId: 'u1',
+    role: 'user',
+    supabase: {
+      rpc: async (name) => {
+        if (name === 'get_profile') return { data: { tickets: [] }, error: null };
+        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity }], error: null };
+        return { data: events, error: null };
+      },
+    },
+  });
+  // Both cases use the SAME query — one that scores ~0.05 on Dice and shares no substring
+  // with the title — so ONLY the semantic step can produce a suggestion and the assertions
+  // isolate its floor. (A query like "grad ball black tie" would score 0.81 on Dice and pass
+  // either way, proving nothing.) The reported nonsense: "gymming for newbies" suggested
+  // "Grad Ball: Black-Tie Gala".
+  const distant = await resolveVisibleRef(withSim(0.42), 'gymming for newbies');
+  assert.equal(distant.event, null);
+  assert.equal(distant.ambiguous, undefined);
+  // A genuinely close embedding match is still offered.
+  const close = await resolveVisibleRef(withSim(0.72), 'gymming for newbies');
+  assert.deepEqual(close.ambiguous, ['Grad Ball: Black-Tie Gala']);
 });
 
 test('buildBuyIntentReply confirms a typo and passes an exact name through', async () => {
