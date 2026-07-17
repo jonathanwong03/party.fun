@@ -1,17 +1,14 @@
-// One-off backfill: embed every existing event + chunk/embed app-knowledge.md.
+// One-off backfill: embed every existing event (+ memories, chat, drafts).
 // Run once (and after bulk data changes):  node scripts/backfillEmbeddings.js
+// NB: app-knowledge.md is NOT embedded — the live file is the single source of truth, read
+// directly by the graph agent's system prompt, the get_app_info tool and answerAppQuestion.
 import 'dotenv/config';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { eventEmbeddingText, eventEmbeddingHash } from '../services/ai/eventEmbeddings.js';
 import { embedMemory } from '../services/ai/memory.js';
 import { embedChatMessage } from '../services/ai/chatHistory.js';
 import { syncDraftEmbedding } from '../services/ai/draftEmbeddings.js';
-
-const __dirname = dirname(fileURLToPath(import.meta.url));
 
 async function backfillEvents(admin) {
   const { data: rows, error } = await admin.rpc('get_events');
@@ -35,26 +32,6 @@ async function backfillEvents(admin) {
     console.log(`embedded event: ${e.title}`);
   }
   console.log(`Events embedded/updated: ${done}`);
-}
-
-// Chunk the knowledge base by "## " sections.
-function chunkDoc(md) {
-  return md.split(/\n(?=##\s)/).map((s) => s.trim()).filter(Boolean);
-}
-
-async function backfillDocs(admin) {
-  const md = readFileSync(join(__dirname, '../services/ai/app-knowledge.md'), 'utf8');
-  const chunks = chunkDoc(md);
-  await admin.from('DOC_CHUNKS').delete().eq('source', 'app-knowledge');
-  let done = 0;
-  for (const chunk of chunks) {
-    const vec = await embedText(chunk, { taskType: 'RETRIEVAL_DOCUMENT' });
-    if (!vec) continue;
-    const { error } = await admin.from('DOC_CHUNKS').insert({ source: 'app-knowledge', chunk, embedding: toVectorLiteral(vec) });
-    if (error) { console.warn(`doc chunk insert failed: ${error.message}`); continue; }
-    done += 1;
-  }
-  console.log(`Doc chunks embedded: ${done}`);
 }
 
 async function backfillMemories(admin) {
@@ -94,7 +71,6 @@ async function main() {
   if (!isEmbeddingEnabled()) { console.error('GEMINI_API_KEY not set — cannot embed.'); process.exit(1); }
   const admin = adminClient();
   await backfillEvents(admin);
-  await backfillDocs(admin);
   await backfillMemories(admin);
   await backfillChatMessages(admin);
   await backfillDrafts(admin);

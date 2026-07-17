@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Phone } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -23,6 +23,18 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
   const [code, setCode] = useState('');
   const [phoneSubmitting, setPhoneSubmitting] = useState(false);
   const { remaining: resendIn, start: startResend } = useResendCooldown(30);
+
+  // OAuth buttons stay in a "Redirecting…" state on purpose — the browser is navigating away to
+  // Google/Facebook, so we never reset the flag on success. But if the user presses browser-back,
+  // the page is restored from the bfcache with that frozen state and the button looks stuck. Reset
+  // the flags whenever the page is shown again from the cache.
+  useEffect(() => {
+    const onShow = (e: PageTransitionEvent) => {
+      if (e.persisted) { setGoogleSubmitting(false); setFacebookSubmitting(false); }
+    };
+    window.addEventListener('pageshow', onShow);
+    return () => window.removeEventListener('pageshow', onShow);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

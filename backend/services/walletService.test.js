@@ -116,6 +116,42 @@ describe('walletService', () => {
     });
   });
 
+  test('rejects a top-up above the $200 per-transaction cap without touching Stripe', async () => {
+    const mockSb = {};
+    const res = await topupWallet(mockSb, 'user-id-123', 201);
+    assert.deepEqual(res, {
+      error: 'bad_amount',
+      message: 'Top-ups are capped at $200 per transaction.'
+    });
+    assert.equal(createPaymentIntentArgs, null); // never reached the charge
+  });
+
+  test('allows a top-up exactly at the cap', async () => {
+    const mockSb = {
+      from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { stripeCustomerId: 'cus_abc', stripePaymentMethodId: 'pm_123' }, error: null }) }) }) }),
+      rpc: async () => { throw new Error('should go through admin client'); },
+    };
+    const res = await topupWallet(mockSb, 'user-id-123', 200, 'attempt-cap');
+    assert.equal(res.status, 'ok');
+    assert.equal(createPaymentIntentArgs.args.amount, 20000); // 200 * 100
+  });
+
+  test('reuses the same idempotency key for the same attemptId (double-click dedups to one charge)', async () => {
+    // A double-clicked top-up must send Stripe the SAME idempotency key both times, so Stripe
+    // returns the original PaymentIntent instead of charging twice. The key is derived from the
+    // client's stable attemptId, so two calls with the same attemptId produce the same key.
+    const mockSb = {
+      from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: { stripeCustomerId: 'cus_abc', stripePaymentMethodId: 'pm_123' }, error: null }) }) }) }),
+      rpc: async () => { throw new Error('should go through admin client'); },
+    };
+    await topupWallet(mockSb, 'user-id-123', 50, 'attempt-dup');
+    const firstKey = createPaymentIntentArgs.options.idempotencyKey;
+    await topupWallet(mockSb, 'user-id-123', 50, 'attempt-dup');
+    const secondKey = createPaymentIntentArgs.options.idempotencyKey;
+    assert.equal(firstKey, 'topup:attempt-dup');
+    assert.equal(secondKey, 'topup:attempt-dup');
+  });
+
   test('returns error when user has no linked card', async () => {
     const mockSb = {
       from: (table) => {

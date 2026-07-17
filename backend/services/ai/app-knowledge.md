@@ -2,6 +2,13 @@
 
 party.fun is a campus events platform where organisers create events and students pledge for tickets. Tickets are only charged/confirmed once an event reaches its hype threshold ("greenlit").
 
+## Accounts, wallet & sign-in (everyday facts)
+- **Signup bonus:** every new account is credited a **one-time $20 signup bonus** to its in-app wallet **immediately on creation** — no top-up or card needed. It appears in the wallet as a `signup_bonus` transaction. (So yes: when you sign up, $20 is added to your wallet right away.)
+- **Signing in:** users can sign in with **email/username + password**, **Google**, **Facebook**, or a **phone-number one-time code (OTP)** (phone sign-in is for existing accounts). New accounts are created from the sign-up page (or by continuing with Google/Facebook and then choosing a role + username).
+- **Wallet top-up:** to add more money beyond the signup bonus, a user **links a debit/credit card** in Wallet, then tops up — the card is charged and the wallet is credited **instantly**. Top-ups are **capped at $200 per transaction** and must be a positive amount. The wallet pays pledges instantly.
+- **Refunds** go back where the money came from: wallet-paid pledges are refunded to the wallet instantly; card-paid pledges are refunded to the original card via Stripe (~3–5 business days). Refunds are subject to a 180-day window.
+- These are app-wide facts the assistant should answer directly (it does not need a tool for them) — do not decline a "how does party.fun work" / "what happens when I sign up" question as out of scope.
+
 ## Payments: in-app wallet vs Stripe
 - **Stripe (card):** Pledges paid by card are authorised/charged through Stripe. Refunds for card payments go back to the original card via Stripe.
 - **In-app wallet:** Each user has a wallet balance. Pledges can be paid from the wallet, and refunds (e.g. when an event is cancelled or misses its threshold) are returned instantly to the wallet. Organiser payouts for completed events are credited to the organiser's wallet.

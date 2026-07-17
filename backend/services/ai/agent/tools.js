@@ -9,6 +9,8 @@ import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../embeddingService.js';
 import { semanticDraftMatches } from '../draftEmbeddings.js';
+import { getAppKnowledge } from '../tasks/answerAppQuestion.js';
+import { retrieveDocChunks } from '../docKnowledge.js';
 
 // Agent tools. Definitions are provider-agnostic JSON Schemas; executors run
 // server-side scoped to the calling user via ctx = { supabase, userId, role }.
@@ -432,6 +434,13 @@ export const getCurrentDateTool = makeTool(
   z.object({}),
 );
 
+// ── App knowledge (how party.fun works) ──────────────────────────────────────────
+export const getAppInfoTool = makeTool(
+  'get_app_info',
+  "Look up HOW party.fun works — the authoritative reference for GENERAL app questions that have no per-user data: the $20 signup bonus new accounts receive, wallet & top-up rules (a linked card is required, top-ups are instant and capped at $200 per transaction), the sign-in options, how refunds work (wallet vs card), the event lifecycle, pricing models and fees. Call this whenever the user asks how the app works or 'what happens when I…', PASSING their question so the most relevant section is retrieved, then answer from what it returns. NEVER refuse such a question or say you lack the information — this tool has it.",
+  z.object({ question: z.string().optional().describe("The user's app-knowledge question — pass it so retrieval returns the most relevant section.") }),
+);
+
 // ── Weather ─────────────────────────────────────────────────────────────────────
 export const getWeatherTool = makeTool(
   'get_weather',
@@ -614,7 +623,7 @@ export const proposeGiveAwayTicketsTool = makeTool(
 export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
   getMyHostedEventsTool, getMyJoinedEventsTool, listLiveEventsTool, getWalletTool, listMyDraftsTool,
-  getCurrentDateTool, getWeatherTool, researchEventIdeasTool,
+  getCurrentDateTool, getAppInfoTool, getWeatherTool, researchEventIdeasTool,
   recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, getSimilarPastEventsTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
   proposeTopupTool, proposePledgeTool, proposeCancelEventTool, proposeDeleteDraftTool,
@@ -834,6 +843,15 @@ export const EXECUTORS = {
   async get_current_date() {
     const d = sgNow();
     return { date: d.isoDate, time: d.time, weekday: d.weekday, timezone: d.timezone };
+  },
+
+  // ── App knowledge (RAG) ──────────────────────────────────────────────────────
+  // Retrieves the most relevant section(s) of app-knowledge.md for the question (chunk → embed →
+  // cosine top-K, all from the live file — see docKnowledge.js), falling back to the whole doc
+  // when embeddings are unavailable. No per-user data, so ctx is ignored.
+  async get_app_info({ question } = {}) {
+    const hit = await retrieveDocChunks(question);
+    return { reference: hit ?? getAppKnowledge() };
   },
 
   // ── Weather ──────────────────────────────────────────────────────────────────

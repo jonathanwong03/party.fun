@@ -8,6 +8,11 @@ export const dependencies = {
   adminClient,
 };
 
+// Per-transaction top-up ceiling. The frontend caps too, but that is bypassable (this service
+// also backs the AI agent's topup action and the HTTP endpoint is directly callable), so this is
+// the authoritative limit.
+const MAX_TOPUP = 200;
+
 // Shared wallet top-up core: charge the user's linked card, then credit the wallet
 // via the wallet_topup RPC. Used by both the HTTP controller (POST /api/wallet/topup)
 // and the AI agent's confirmed `topup` action so the two never diverge. Never throws —
@@ -21,6 +26,7 @@ export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) 
   if (!dependencies.stripeEnabled()) return { error: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' };
   const amt = Number(amount);
   if (!amt || amt <= 0) return { error: 'bad_amount', message: 'Enter a valid top-up amount.' };
+  if (amt > MAX_TOPUP) return { error: 'bad_amount', message: `Top-ups are capped at $${MAX_TOPUP} per transaction.` };
 
   const { data: me } = await sb.from('USER').select('stripeCustomerId, stripePaymentMethodId').eq('id', userId).single();
   if (!me?.stripeCustomerId || !me?.stripePaymentMethodId) {

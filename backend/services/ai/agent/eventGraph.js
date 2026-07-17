@@ -43,7 +43,7 @@ const pickTools = (names) => names.map((n) => TOOLS_BY_NAME[n]).filter(Boolean);
 // then purchases, then "what will the weather be like?" answered with "I cannot provide
 // weather forecasts"), so anything read-only and user-scoped belongs here.
 // `agent.test.js` pins this as an invariant across all branches.
-const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date', 'get_weather', 'get_event_forecast'];
+const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date', 'get_weather', 'get_event_forecast', 'get_app_info'];
 const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
 // Safety net: bind the buy tool in the read/discovery branches too, so a mis-routed
 // purchase ask can never again make the model say "I don't have that functionality".
