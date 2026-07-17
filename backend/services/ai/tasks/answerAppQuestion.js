@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { runTier } from '../modelRouter.js';
-import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../embeddingService.js';
 
 // Load the curated knowledge base once at module init.
 const here = dirname(fileURLToPath(import.meta.url));
@@ -30,26 +29,12 @@ function buildSystem(reference = KNOWLEDGE) {
   ].join('\n');
 }
 
-// Vector RAG: retrieve only the most relevant knowledge chunks for the question
-// (via DOC_CHUNKS + match_doc_chunks). Returns null when embeddings/chunks are
-// unavailable so we fall back to injecting the whole doc.
-async function retrieveKnowledge(sb, question) {
-  if (!sb || !isEmbeddingEnabled()) return null;
-  const vec = await embedText(question, { taskType: 'RETRIEVAL_QUERY' });
-  if (!vec) return null;
-  try {
-    const { data, error } = await sb.rpc('match_doc_chunks', { p_embedding: toVectorLiteral(vec), p_count: 4 });
-    if (error || !data?.length) return null;
-    return data.map((c) => c.chunk).join('\n\n');
-  } catch {
-    return null;
-  }
-}
-
-// App Q&A (cheap tier). `history` is an optional short list of {role, content};
-// `supabase` (when provided) enables chunk retrieval instead of the whole doc.
-export async function answerAppQuestion({ question = '', history = [], supabase = null } = {}) {
-  const reference = (await retrieveKnowledge(supabase, question)) ?? KNOWLEDGE;
+// App Q&A (cheap tier). The whole curated app-knowledge.md doc IS the single source of truth —
+// it is read live at module init and grounded on directly (same doc the graph agent's system
+// prompt and get_app_info tool use), so there is no separate embedded copy to drift out of sync.
+// `history` is an optional short list of {role, content}.
+export async function answerAppQuestion({ question = '', history = [] } = {}) {
+  const reference = KNOWLEDGE;
   const messages = [
     ...history.slice(-6).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content ?? '') })),
     { role: 'user', content: question },

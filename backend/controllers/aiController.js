@@ -3,7 +3,7 @@ import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/e
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
-import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
+import { answerAppQuestion } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
 import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from '../services/ai/agent/listReplies.js';
 import { executeAction } from '../services/ai/agent/actions.js';
@@ -151,14 +151,12 @@ export async function ask(req, res) {
   if (!question || !String(question).trim()) {
     return res.status(400).json({ status: 'error', message: 'Question is required.' });
   }
-  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [], supabase: req.supabase }));
+  res.json(await answerAppQuestion({ question, history: Array.isArray(history) ? history : [] }));
 }
 
 const AGENT_SYSTEM = () => [
-  buildKnowledgeSystem(),
-  '',
-  'You are an event-planning agent for party.fun. Prefer calling a tool over guessing about events, prices or numbers.',
-  'APP KNOWLEDGE: you are also party.fun\'s encyclopedia. For any general "how does the app work / what happens when I…" question — the $20 signup bonus, wallet/top-up rules (linked card required, instant, $200-per-transaction cap), sign-in options (password, Google, Facebook, phone OTP), how refunds return to wallet vs card, fees, event lifecycle, pricing models — CALL the get_app_info tool and answer from what it returns. These are IN SCOPE even when hypothetical or about a not-yet-created account and no per-user tool applies. Only fall back to "I\'m not sure — check with the organiser or support" when get_app_info genuinely does not cover it. NEVER refuse such a question as off-topic, and never say you lack the information or only handle existing accounts/events — get_app_info has it.',
+  'You are party.fun\'s assistant — party.fun is a campus events platform where organisers create events and students pledge for tickets, paid from an in-app wallet or a linked card. You are an event-planning agent: prefer calling a tool over guessing about events, prices or numbers.',
+  'APP KNOWLEDGE: you are also party.fun\'s encyclopedia, but you do NOT have the app\'s facts memorised — you RETRIEVE them. For any general "how does the app work / what happens when I…" question — the $20 signup bonus, wallet/top-up rules (linked card required, instant, $200-per-transaction cap), sign-in options (password, Google, Facebook, phone OTP), how refunds return to wallet vs card, fees, event lifecycle, pricing models — CALL the get_app_info tool, PASSING the user\'s question, and answer from the section(s) it returns. These are IN SCOPE even when hypothetical or about a not-yet-created account and no per-user tool applies. Only fall back to "I\'m not sure — check with the organiser or support" when get_app_info genuinely does not cover it. NEVER refuse such a question as off-topic, and never say you lack the information or only handle existing accounts/events — get_app_info has it.',
   'ALWAYS call the matching tool for the user\'s own data — get_my_hosted_events (events they host), get_my_joined_events (events they joined + tickets held), get_wallet (balance), list_my_drafts, list_available_events (events they can attend). NEVER answer these from memory or assume "none"; if a tool returns an empty list, say so, but only after actually calling it.',
   'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',

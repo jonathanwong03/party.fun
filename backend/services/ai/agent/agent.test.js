@@ -947,6 +947,8 @@ test('get_current_date reports today in Singapore', async () => {
 test('get_app_info returns the knowledge base covering the signup bonus and top-up cap', async () => {
   // The tool must surface the app facts the agent kept refusing to answer (signup bonus, top-up
   // cap) so a "how does the app work" question can be grounded on real text, not the model guessing.
+  // Embeddings are off in this suite (no GEMINI_API_KEY), so retrieveDocChunks returns null and
+  // this exercises the whole-doc FALLBACK path; the RAG retrieval path is covered in docKnowledge.test.js.
   const out = await EXECUTORS.get_app_info({}, ctxWith([]));
   assert.match(out.reference, /signup bonus/i);
   assert.match(out.reference, /\$20/);
