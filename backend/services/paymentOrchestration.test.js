@@ -43,7 +43,9 @@ function stripeMock({ pis = [], onRefund, listThrows = false } = {}) {
 function adminMock(bookingsByPi = {}) {
   return { from: () => ({ select: () => ({ eq: (_c, v) => ({ maybeSingle: async () => ({ data: bookingsByPi[v] ?? null }) }) }) }) };
 }
-const succeededPledge = (id, ageDays = 0) => ({ id, status: 'succeeded', metadata: { kind: 'pledge' }, created: Math.floor((Date.now() - ageDays * DAY) / 1000) });
+// Default age is 1 day so the orphan clears the reconciler's min-age guard (it ignores charges
+// younger than a few minutes, which may still be mid-commit). Pass an explicit age to override.
+const succeededPledge = (id, ageDays = 1) => ({ id, status: 'succeeded', metadata: { kind: 'pledge' }, created: Math.floor((Date.now() - ageDays * DAY) / 1000) });
 
 describe('reconcilePayments (orphan recovery)', () => {
   const original = { ...reconciler.dependencies };
@@ -96,6 +98,28 @@ describe('reconcilePayments (orphan recovery)', () => {
     reconciler.dependencies.getAdmin = () => adminMock({});
     const result = await reconciler.reconcilePayments();
     assert.deepEqual(result, { scanned: 0, refunded: 0 });
+  });
+
+  it('does NOT re-refund an orphan whose charge is already refunded (the log-spam bug)', async () => {
+    // A refund does not change pi.status (stays 'succeeded'), so a refunded-but-bookingless PI
+    // looks like a fresh orphan every tick. Without the expanded-charge check the sweep retries
+    // forever and Stripe answers "already refunded" — pure noise.
+    let refunded = 0;
+    const pi = { ...succeededPledge('pi_refunded'), latest_charge: { id: 'ch_1', amount: 1000, refunded: true, amount_refunded: 1000 } };
+    reconciler.dependencies.getStripe = () => stripeMock({ pis: [pi], onRefund: () => { refunded += 1; } });
+    reconciler.dependencies.getAdmin = () => adminMock({}); // no booking → would otherwise look like an orphan
+    const result = await reconciler.reconcilePayments();
+    assert.equal(refunded, 0);
+    assert.equal(result.refunded, 0);
+  });
+
+  it('skips a just-succeeded PI that may still be committing its booking (min-age guard)', async () => {
+    let refunded = 0;
+    reconciler.dependencies.getStripe = () => stripeMock({ pis: [succeededPledge('pi_fresh', 0)], onRefund: () => { refunded += 1; } });
+    reconciler.dependencies.getAdmin = () => adminMock({}); // no booking YET — pledge in flight
+    const result = await reconciler.reconcilePayments();
+    assert.equal(refunded, 0, 'a <5min-old charge must not be refunded out from under an in-flight pledge');
+    assert.equal(result.scanned, 0);
   });
 });
 

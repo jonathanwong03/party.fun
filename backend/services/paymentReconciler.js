@@ -14,6 +14,10 @@ export const dependencies = {
 };
 
 const LOOKBACK_DAYS = Number(process.env.RECONCILE_LOOKBACK_DAYS) || 7;
+// A pledge's booking commits a moment after the Stripe charge (checkoutService), so a PI that
+// only just succeeded may be mid-commit, not abandoned. Ignore charges younger than this so the
+// sweep never refunds a real in-flight purchase out from under it.
+const MIN_AGE_MS = (Number(process.env.RECONCILE_MIN_AGE_MINUTES) || 5) * 60 * 1000;
 
 export async function reconcilePayments() {
   if (!stripeEnabled()) return { scanned: 0, refunded: 0 };
@@ -24,10 +28,18 @@ export async function reconcilePayments() {
     const admin = dependencies.getAdmin();
     const createdGte = Math.floor((Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000) / 1000);
 
-    // Stripe auto-pagination over recent PaymentIntents.
-    for await (const pi of sdk.paymentIntents.list({ created: { gte: createdGte }, limit: 100 })) {
+    // Stripe auto-pagination over recent PaymentIntents. Expand the charge so we can see whether
+    // it was already refunded — a refund does NOT change pi.status (stays 'succeeded').
+    for await (const pi of sdk.paymentIntents.list({ created: { gte: createdGte }, limit: 100, expand: ['data.latest_charge'] })) {
       if (pi?.metadata?.kind !== 'pledge' || pi.status !== 'succeeded') continue;
+      if (pi.created && pi.created * 1000 > Date.now() - MIN_AGE_MS) continue; // too young to be sure it's an orphan
       scanned += 1;
+
+      // Already refunded (by the inline compensating refund, or a previous sweep)? Then there is
+      // nothing to do — attempting again just makes Stripe error "already refunded" every tick,
+      // which is pure log noise (and masks a genuine refund failure). Checked before the DB read.
+      const charge = typeof pi.latest_charge === 'object' && pi.latest_charge ? pi.latest_charge : null;
+      if (charge && (charge.refunded || Number(charge.amount_refunded) >= Number(charge.amount))) continue;
 
       const { data: booking } = await admin
         .from('BOOKINGS')
