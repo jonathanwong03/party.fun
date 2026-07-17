@@ -36,10 +36,14 @@ const CHECKPOINTER = new MemorySaver();
 const pickTools = (names) => names.map((n) => TOOLS_BY_NAME[n]).filter(Boolean);
 
 // Per-branch scoped toolsets (the only structural difference between branches).
-// Personal read tools about the CURRENT user's own data — available in EVERY branch
-// so an answer never depends on classify routing perfectly (otherwise a misrouted
-// "what have I hosted?" lands in a branch without the tool and the model guesses).
-const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date'];
+// Read tools that must be available in EVERY branch so an answer never depends on classify
+// routing perfectly. Scoping a READ tool buys nothing but prompt economy, and costs a FALSE
+// CAPABILITY DENIAL: the model lands in a branch without the tool and — truthfully — says it
+// can't do the thing. That has now bitten three times (a mis-routed "what have I hosted?",
+// then purchases, then "what will the weather be like?" answered with "I cannot provide
+// weather forecasts"), so anything read-only and user-scoped belongs here.
+// `agent.test.js` pins this as an invariant across all branches.
+const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date', 'get_weather', 'get_event_forecast'];
 const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
 // Safety net: bind the buy tool in the read/discovery branches too, so a mis-routed
 // purchase ask can never again make the model say "I don't have that functionality".
@@ -47,13 +51,13 @@ const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
 const withBuy = (...names) => withPersonal(...names, 'propose_pledge');
 
 export const BRANCH_TOOLS = {
-  read_only: withBuy('search_events', 'list_available_events', 'list_live_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
+  read_only: withBuy('search_events', 'list_available_events', 'list_live_events', 'remember'),
   // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
   discovery: withBuy('list_available_events', 'list_live_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
   best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'get_similar_past_events', 'research_event_ideas', 'remember'),
-  event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
+  event_mgmt: withPersonal('search_events', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
 
@@ -268,12 +272,22 @@ function priorAssistantAsked(state) {
 // a typo'd event name) is then a continuation of an on-topic flow — never off-topic —
 // so the scope guard must not refuse it even though it lacks an event keyword itself.
 const EVENT_CONTEXT_RX = /\b(no events?|did you mean|couldn't find|could not find|which (event|one)|event|events|ticket|tickets|pledge|wallet|organiser|organizer)\b/i;
+// A COMPARATIVE / referential follow-up ("how about X?", "what about the frisbee one?",
+// "and the next one?") pivots the SAME on-topic discussion onto another event. These lead with
+// an interrogative, so the wh-word filter below would wrongly reject them — and then the
+// context-free scope guard, seeing only e.g. "how about gymming for newbies?", reads it as a
+// gym question and refuses a legitimate event follow-up. Allowed only when the PREVIOUS
+// assistant turn was on-topic (enforced by inEventFlow's caller), so a cold "how about pizza?"
+// is not a free pass. Deliberately narrow: an off-topic phrasing like "what should I wear?"
+// does not match, so it still reaches the guard.
+const COMPARATIVE_FOLLOWUP_RX = /^(?:how|what)\s?(?:about|bout)\b|^and\b|^(?:the\s+)?(?:first|second|third|fourth|last|next|other)\s+one\b|^that\s+one\b/i;
 // A short reply that continues the flow (a name correction, "the second one", etc.) — NOT
 // a full standalone question. A wh-question ("what is 3*3") is not a mere continuation.
 function isShortContinuation(text) {
   const t = String(text || '').trim();
   if (!t) return false;
   if (t.split(/\s+/).filter(Boolean).length > 6) return false;
+  if (COMPARATIVE_FOLLOWUP_RX.test(t)) return true; // "how about X?" — a continuation despite leading with a wh-word
   if (/^(what|why|how|who|whom|whose|when|where|which|is|are|was|were|can|could|would|should|do|does|did|explain|tell|calculate|compute|solve|define)\b/i.test(t)) return false;
   return true;
 }

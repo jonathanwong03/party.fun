@@ -59,6 +59,17 @@ function isFutureStart(ev, now = Date.now()) {
   return Number.isFinite(t) && t > now;
 }
 
+// Spots remaining, and whether the event is FULL. One definition, shared by the buyable pool,
+// the list rows and get_event_details — these used to disagree, so an event could be listed as
+// "you can join this" while carrying soldOut:true and get_event_details saying isOpen:false.
+// NB maxCapacity 0/absent means UNCAPPED, not full: `maxCapacity > 0` is load-bearing.
+function spotsLeftFor(ev) {
+  return Math.max(0, Number(ev.maxCapacity ?? 0) - Number(ev.active_ticket_count ?? 0));
+}
+function isSoldOut(ev) {
+  return Number(ev.maxCapacity ?? 0) > 0 && spotsLeftFor(ev) === 0;
+}
+
 // Event ids the UI shows as "Tickets already purchased" — a booking in the
 // 'upcoming' OR 'cancelled' tab (matches App.tsx purchasedEventIds: active AND
 // buyer-cancelled / given-away purchases both block re-buying). NOTE: get_profile's
@@ -86,7 +97,11 @@ async function attendableEvents(ctx) {
     e.hostId !== ctx.userId
     && (e.status === 'early_bird' || e.status === 'greenlit')
     && !purchased.has(String(e.id))
-    && isFutureStart(e, now));
+    && isFutureStart(e, now)
+    // A FULL event is not buyable: capacity used to be enforced only by the create_pledge RPC,
+    // so a sold-out event was still listed as joinable and a purchase only failed at execute
+    // time ("Not enough tickets are available") after the agent had built a whole proposal.
+    && !isSoldOut(e));
 }
 
 // Resolve an event reference that may be an id OR a name/slug (users say "late-night
@@ -226,8 +241,11 @@ export async function whyNotAttendable(ev, ctx) {
   if (isPastEvent(ev)) return 'ended';
   if (!isFutureStart(ev)) return 'started';
   if (ev.hostId === ctx.userId) return 'own_event';
-  // Costs a getProfile round-trip, so it goes after the cheap synchronous checks.
+  // Costs a getProfile round-trip, so it goes after the cheap synchronous checks. It comes
+  // BEFORE sold_out because "you already have tickets" is the more useful truth for someone
+  // who holds them — a full event they're already in isn't news.
   if ((await purchasedEventIds(ctx)).has(String(ev.id))) return 'already_purchased';
+  if (isSoldOut(ev)) return 'sold_out';
   if (ev.status !== 'early_bird' && ev.status !== 'greenlit') return 'not_open';
   return null;
 }
@@ -263,7 +281,7 @@ function ambiguousDraft(names = []) {
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
 // date/time, venue, deadline and description without extra tool calls.
 function richRow(ev, ctx) {
-  const spotsLeft = Math.max(0, Number(ev.maxCapacity ?? 0) - Number(ev.active_ticket_count ?? 0));
+  const spotsLeft = spotsLeftFor(ev);
   return {
     id: ev.id,
     title: ev.title,
@@ -273,7 +291,7 @@ function richRow(ev, ctx) {
     hypePct: hypePct(ev),
     // Cheap eligibility facts so a list answer ("is anything sold out?") needs no extra call.
     spotsLeft,
-    soldOut: Number(ev.maxCapacity ?? 0) > 0 && spotsLeft === 0,
+    soldOut: isSoldOut(ev),
     startDate: ev.startDate ?? null,
     endDate: ev.endDate ?? null,
     deadline: ev.deadline ?? ev.deadlineAt ?? null,
@@ -417,7 +435,7 @@ export const getCurrentDateTool = makeTool(
 // ── Weather ─────────────────────────────────────────────────────────────────────
 export const getWeatherTool = makeTool(
   'get_weather',
-  "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. Returns the precipitation probability and willRain (true when it is over 70%). Forecasts only reach ~10 days ahead. If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
+  "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. ALWAYS call this for any weather question rather than reasoning about whether a date is in range — it decides that itself and returns a status: 'ok' (precipitationProbability + willRain, true when over 70%), 'beyond_horizon' (genuinely too far out), 'past', or 'unavailable' (the forecast could not be fetched — this does NOT mean the date is too far away). If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
   z.object({
     eventId: z.string().optional().describe('An event id OR name to check (its date/time is used).'),
     start: z.string().optional().describe('ISO 8601 start datetime (if no eventId).'),
@@ -635,7 +653,7 @@ export const EXECUTORS = {
     const maxCapacity = Number(ev.maxCapacity ?? 0);
     const deadline = ev.deadline ?? ev.deadlineAt ?? null;
     const deadlinePassed = deadline ? new Date(deadline).getTime() < now : false;
-    const spotsLeft = Math.max(0, maxCapacity - sold);
+    const spotsLeft = spotsLeftFor(ev);
     const purchased = await purchasedEventIds(ctx);
     const details = {
       id: ev.id,
@@ -656,7 +674,7 @@ export const EXECUTORS = {
       // ── Eligibility facts: answer yes/no questions from THESE, never by inferring ──
       maxCapacity,
       spotsLeft,
-      soldOut: maxCapacity > 0 && spotsLeft === 0,
+      soldOut: isSoldOut(ev),
       isPast: isPastEvent(ev, now),
       deadlinePassed,
       // The single source of truth for "can I still buy tickets for this?": open status,
@@ -755,24 +773,22 @@ export const EXECUTORS = {
     return { count: rows.length, events: rows };
   },
 
+  // richRow carries the shared event facts (description, start/end, venue, address, deadline);
+  // this used to hand-roll a leaner row that omitted them, so the agent couldn't answer
+  // "where did I host X?" / "how long is it?" / "which did I host earliest?" about own events.
   async get_my_hosted_events(_args, ctx) {
     const rows = (await visibleEvents(ctx)).filter((e) => e.hostId === ctx.userId);
     const revenue = await hostedRevenueById(ctx);
     return {
       count: rows.length,
       events: rows.map((e) => ({
-        id: e.id,
-        title: e.title,
-        status: e.status, // early_bird | greenlit | completed | cancelled
-        startDate: e.startDate,
-        deadline: e.deadline ?? e.deadlineAt ?? null,
+        ...richRow(e, ctx),
+        // Host-only economics on top of the shared row.
         earlyPrice: tierPrice(e, 'early_bird'),
         greenlitPrice: tierPrice(e, 'greenlit'),
-        currentPrice: currentPrice(e), // price a buyer pays now given the status/pricing model
         revenueSoFar: revenue[e.id] ?? 0, // net revenue captured so far
         ticketsSold: e.active_ticket_count ?? 0,
         hypeThreshold: e.hypeThreshold ?? 0,
-        hypePct: hypePct(e),
         maxCapacity: e.maxCapacity ?? 0,
       })),
     };
@@ -789,15 +805,12 @@ export const EXECUTORS = {
     const eventsById = new Map((await visibleEvents(ctx)).map((e) => [e.id, e]));
     const toRow = (t) => {
       const e = eventsById.get(t.eventId);
-      return {
-        eventId: t.eventId,
-        title: e?.title ?? '(event)',
-        status: e?.status ?? null,
-        startDate: e?.startDate ?? null,
-        venue: e?.location ?? null,
-        currentPrice: e ? currentPrice(e) : null,
-        ticketsHeld: Number(t.activeTicketCount ?? 0), // how many tickets the user still holds
-      };
+      const held = Number(t.activeTicketCount ?? 0); // how many tickets the user still holds
+      // The event may no longer be visible (deleted/hidden) — keep the lean fallback.
+      if (!e) return { eventId: t.eventId, title: '(event)', status: null, startDate: null, venue: null, currentPrice: null, ticketsHeld: held };
+      // richRow's `id` is renamed to `eventId` so this row keeps exactly one id, as before.
+      const { id, ...rest } = richRow(e, ctx);
+      return { ...rest, eventId: id, ticketsHeld: held };
     };
     // tab: 'upcoming' = currently joined, 'past' = attended, 'cancelled' = gave away all / event cancelled.
     const byTab = (tab) => tickets.filter((t) => t.tab === tab).map(toRow);
@@ -813,14 +826,7 @@ export const EXECUTORS = {
     const now = Date.now();
     const rows = (await visibleEvents(ctx))
       .filter((e) => (e.status === 'early_bird' || e.status === 'greenlit') && !isPastEvent(e, now))
-      .map((e) => ({
-        title: e.title,
-        organiser: e.organiser_name ?? null,
-        status: e.status, // early_bird | greenlit
-        currentPrice: currentPrice(e),
-        startDate: e.startDate ?? null,
-        venue: e.location ?? null,
-      }));
+      .map((e) => ({ ...richRow(e, ctx), organiser: e.organiser_name ?? null }));
     return { count: rows.length, events: rows };
   },
 
@@ -1156,9 +1162,19 @@ export const EXECUTORS = {
       if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
       if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
       if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
+      // Before the catch-all: a full event used to fall through to "you already hold tickets",
+      // which is simply untrue for someone who has never bought any.
+      if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
       return { error: 'You already hold tickets for this event — give them away before buying again.' };
     }
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
+    // Capacity was previously enforced ONLY by the create_pledge RPC, so the agent would build
+    // a complete proposal ("8 tickets ... $88.00") and only fail on confirm with "Not enough
+    // tickets are available". Refuse here instead; the RPC stays the atomic authority.
+    const spotsLeft = spotsLeftFor(ev);
+    if (Number(ev.maxCapacity ?? 0) > 0 && qty > spotsLeft) {
+      return { error: `Only ${spotsLeft} ticket${spotsLeft === 1 ? '' : 's'} ${spotsLeft === 1 ? 'is' : 'are'} left for "${ev.title}", so ${qty} cannot be bought. Offer them ${spotsLeft} instead.` };
+    }
     const price = currentPrice(ev);
     const total = price * qty;
     const method = args.paymentMethod === 'card' ? 'card' : 'wallet';

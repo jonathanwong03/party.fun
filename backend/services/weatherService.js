@@ -21,11 +21,17 @@ const cache = new Map(); // `${lat.toFixed(2)},${lon.toFixed(2)}` -> { at, days 
 
 // Real fetch against the Weather API. Returns the `forecastDays` array, or null
 // when no API key is configured (so the feature degrades to "unavailable").
+let warnedNoKey = false;
 async function defaultFetchForecast(lat, lon) {
   const key = process.env.GOOGLE_WEATHER_API_KEY;
-  if (!key) return null;
+  if (!key) {
+    if (!warnedNoKey) { warnedNoKey = true; console.warn('[weather] GOOGLE_WEATHER_API_KEY is not set — weather checks are disabled.'); }
+    return null;
+  }
+  // `days` is the total requested; `pageSize` caps records PER PAGE and defaults to 5 — so
+  // without it this returned only ~5 days and every later date looked like it had no forecast.
   const url = `https://weather.googleapis.com/v1/forecast/days:lookup?key=${encodeURIComponent(key)}`
-    + `&location.latitude=${lat}&location.longitude=${lon}&days=${HORIZON_DAYS}`;
+    + `&location.latitude=${lat}&location.longitude=${lon}&days=${HORIZON_DAYS}&pageSize=${HORIZON_DAYS}`;
   const res = await fetch(url);
   if (!res.ok) throw new Error(`Weather API ${res.status}`);
   const json = await res.json();
@@ -43,6 +49,14 @@ function sgYmd(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+
+// The YYYY-MM-DD `n` days after `ymd`. (Singapore has no DST, so plain UTC date arithmetic
+// on an already-SGT-normalised label is safe.)
+function addDays(ymd, n) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
 }
 
 // Inclusive list of YYYY-MM-DD calendar days from startYmd to endYmd, capped to
@@ -118,6 +132,12 @@ export async function assessEvent({ lat, lon, startISO, endISO } = {}) {
   if (startYmd < todayYmd) {
     return { status: 'past', precipitationProbability: null, willRain: false, summary: 'That date is in the past, so there is no forecast for it.' };
   }
+  // Decide "too far away" by COMPARING DATES, before looking at the forecast at all. This
+  // used to be inferred from "no forecast day matched", which conflated two different things:
+  // a short/empty API response then reported TOMORROW as "more than 10 days away".
+  if (startYmd > addDays(todayYmd, HORIZON_DAYS)) {
+    return { status: 'beyond_horizon', precipitationProbability: null, willRain: false, days: [], rainyDays: [], summary: `That date is more than ${HORIZON_DAYS} days away, which is too far out for a reliable forecast.` };
+  }
 
   let days;
   try {
@@ -144,8 +164,12 @@ export async function assessEvent({ lat, lon, startISO, endISO } = {}) {
     if (p != null) probs.push(p);
   }
 
+  // The date IS inside the horizon (checked above) but the provider returned nothing for it —
+  // a short page, an outage, a response-shape change. Say so honestly; never claim it's too
+  // far away, which is what sent "will it rain tomorrow?" back as "more than 10 days away".
   if (perDay.length === 0) {
-    return { status: 'beyond_horizon', precipitationProbability: null, willRain: false, days: [], rainyDays: [], summary: `That date is more than ${HORIZON_DAYS} days away, which is too far out for a reliable forecast.` };
+    console.warn(`[weather] no forecast day for ${startYmd}..${endYmd} within the ${HORIZON_DAYS}-day horizon (got ${days.length} day(s) from the provider)`);
+    return { status: 'unavailable', precipitationProbability: null, willRain: false, days: [], rainyDays: [], summary: 'The forecast for that date could not be retrieved right now.' };
   }
 
   const probability = probs.length ? Math.max(...probs) : null;

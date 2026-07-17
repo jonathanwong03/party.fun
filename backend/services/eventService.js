@@ -1,17 +1,23 @@
-// Supabase-backed data service. Every function receives a user-scoped Supabase
+// Supabase-backed data service. Almost every function receives a user-scoped Supabase
 // client (`sb`) so the existing RLS policies and SECURITY DEFINER RPC functions
 // enforce access. The backend is a thin, authenticated pass-through to those RPCs;
 // the business logic stays in Postgres where it already works atomically.
+//
+// The exception is a CARD pledge: it asserts a Stripe charge happened, which Postgres cannot
+// verify, so that one RPC is service_role-only and is called via adminClient() with a
+// JWT-validated user id. See createPledge and 20260717_payment_rpc_authz.sql.
 
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
 import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache } from './cache.js';
+import { adminClient } from './supabaseAdmin.js';
 
 export const dependencies = {
   syncEventEmbedding,
   syncDraftEmbedding,
   deleteDraftEmbedding,
+  adminClient,
 };
 
 
@@ -366,16 +372,31 @@ async function mutationResult(sb, userId, eventId) {
 
 // ── User writes ────────────────────────────────────────────────────────────
 
+// Two RPCs, split by trust. A WALLET pledge runs as the signed-in user (auth.uid()) and has
+// no payment parameters to forge, so it stays on the user's client. A CARD pledge asserts
+// "Stripe was charged", which Postgres cannot verify — that RPC is service_role-only and takes
+// the JWT-validated userId, so it is reachable only after pledgeWithPayment has actually
+// charged and checked the PaymentIntent. Both were once one `authenticated` RPC that trusted
+// the caller's word, which let anyone mint free tickets.
 export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null, chargedAmount = null, idempotencyKey = null) {
-  const { data, error } = await sb.rpc('create_pledge', {
-    p_event_id: eventId,
-    p_qty: Number(qty),
-    p_payment_method: paymentMethod,
-    p_payment_intent_id: paymentIntentId,
-    p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
-    p_idempotency_key: idempotencyKey,
-  });
-  if (error) throw new Error(error.message);
+  const card = paymentMethod === 'card';
+  const { data, error } = card
+    ? await dependencies.adminClient().rpc('create_pledge_card', {
+      p_user_id: userId,
+      p_event_id: eventId,
+      p_qty: Number(qty),
+      p_payment_intent_id: paymentIntentId,
+      p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
+      p_idempotency_key: idempotencyKey,
+    })
+    : await sb.rpc('create_pledge', {
+      p_event_id: eventId,
+      p_qty: Number(qty),
+      p_idempotency_key: idempotencyKey,
+    });
+  // Return, never throw: pledgeWithPayment's compensating refund only runs on `{ error }`, so
+  // throwing here left a successful card charge with no booking and no refund.
+  if (error) return { error: 'error', message: error.message };
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
   // Surface the booking reference + charged amount for the confirmation page, plus the

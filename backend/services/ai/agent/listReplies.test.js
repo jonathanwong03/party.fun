@@ -21,7 +21,7 @@ afterEach(() => {
 // returns the event pool (get_events, via listEventsRaw). No REDIS_URL in tests → the SWR
 // cache is a pass-through, so each call re-reads the stub.
 const iso = (daysFromNow) => new Date(Date.now() + daysFromNow * 86400000).toISOString();
-const buyCtx = (events, { role = 'user', userId = 'u1', tickets = [] } = {}) => ({
+const buyCtx = (events, { role = 'user', userId = 'u1', tickets = [], user = { walletBalance: 500, cardLast4: '4242', cardBrand: 'visa', stripePaymentMethodId: 'pm_1' } } = {}) => ({
   userId,
   role,
   supabase: {
@@ -29,6 +29,8 @@ const buyCtx = (events, { role = 'user', userId = 'u1', tickets = [] } = {}) => 
       if (name === 'get_profile') return { data: { tickets }, error: null };
       return { data: events, error: null };
     },
+    // propose_pledge reads the caller's wallet/card straight from the table.
+    from: () => ({ select: () => ({ eq: () => ({ single: async () => ({ data: user, error: null }) }) }) }),
   },
 });
 const gymEvent = (over = {}) => ({
@@ -146,6 +148,46 @@ test('buildBuyIntentReply gives the TRUE reason instead of a false "cannot find"
   assert.match(await buildBuyIntentReply('gymming for newbies', ended), /already ended/i);
 });
 
+// ── Full-capacity events are not buyable ──────────────────────────────────────
+test('a FULL event is excluded from what you can join, and says so when named', async () => {
+  const full = gymEvent({ maxCapacity: 6, active_ticket_count: 6 });
+  const ctx = buyCtx([full]);
+  // (b) "what can I join?" must not list an event with no spots left.
+  const { events } = await EXECUTORS.list_available_events({}, ctx);
+  assert.deepEqual(events.map((e) => e.title), []);
+  // (a) naming it gets the real reason — not "cannot find", not "you already have tickets".
+  const reply = await buildBuyIntentReply('gymming for newbies', ctx);
+  assert.match(reply, /full capacity/i);
+  assert.doesNotMatch(reply, /cannot find|already have tickets/i);
+  // …and the buy tool refuses instead of building a proposal that dies at execute time.
+  const proposed = await EXECUTORS.propose_pledge({ eventId: 'gymming for newbies', qty: 8 }, ctx);
+  assert.equal(proposed.proposal, undefined);
+  assert.match(proposed.error, /full capacity/i);
+  assert.equal(await whyNotAttendable(full, ctx), 'sold_out');
+});
+
+test('propose_pledge refuses MORE tickets than remain, at proposal time', async () => {
+  // The reported flow: 3 spots left, "8 tickets" produced a $88.00 proposal that only failed
+  // on confirm with "Not enough tickets are available."
+  const ctx = buyCtx([gymEvent({ maxCapacity: 6, active_ticket_count: 3 })]);
+  const proposed = await EXECUTORS.propose_pledge({ eventId: 'gymming for newbies', qty: 8 }, ctx);
+  assert.equal(proposed.proposal, undefined);
+  assert.match(proposed.error, /Only 3 tickets are left/i);
+  // A quantity that fits is still proposed as normal.
+  const ok = await EXECUTORS.propose_pledge({ eventId: 'gymming for newbies', qty: 3, paymentMethod: 'wallet' }, ctx);
+  assert.ok(ok.proposal || ok.error, 'a fitting quantity is not blocked by capacity');
+  if (ok.error) assert.doesNotMatch(ok.error, /left for|full capacity/i);
+});
+
+test('an UNCAPPED event (maxCapacity 0) is never treated as sold out', async () => {
+  // The trap: spotsLeft is 0 for an uncapped event, so gating on spotsLeft===0 instead of
+  // soldOut semantics would silently hide every such event.
+  const ctx = buyCtx([gymEvent({ maxCapacity: 0, active_ticket_count: 0 })]);
+  const { events } = await EXECUTORS.list_available_events({}, ctx);
+  assert.deepEqual(events.map((e) => e.title), ['Gymming for newbies']);
+  assert.equal(await whyNotAttendable(gymEvent({ maxCapacity: 0 }), ctx), null);
+});
+
 test('buildBuyIntentReply never prompts an admin to confirm a purchase', async () => {
   // attendableEvents returns [] for admins, so this path can only ever mislead them: an
   // admin can't buy at all. A TYPO is the case that proves the guard — an exact name is
@@ -204,6 +246,37 @@ test('buildBuyIntentReply confirms a typo and passes an exact name through', asy
   assert.match(typo, /Did you mean "Game night and escape rooms"\?/);
   // Exact name → null so the normal agent flow (method → quantity) continues.
   assert.equal(await buildBuyIntentReply('Game night and escape rooms', ctx), null);
+});
+
+// ── superlative / single-fact asks must reach the LLM ──────────────────────────
+test('matchListQuery returns null for SUPERLATIVE asks (all four kinds)', () => {
+  // The reported bug: this dumped every hosted event, unordered and with no dates.
+  assert.equal(matchListQuery('which is the earliest event that i hosted, and when?'), null);
+  assert.equal(matchListQuery('what is the latest event i hosted'), null);
+  assert.equal(matchListQuery('which event that i hosted is the most recent'), null);
+  // The same defect reached the other three kinds too.
+  assert.equal(matchListQuery('what is the earliest event i can join'), null);
+  assert.equal(matchListQuery('which live event is the earliest'), null);
+  assert.equal(matchListQuery('which events have i joined earliest'), null);
+});
+
+test('matchListQuery returns null when ONE fact is asked for, not a list', () => {
+  assert.equal(matchListQuery('where did i host this event'), null);
+  assert.equal(matchListQuery('when are the events i hosted'), null);
+  assert.equal(matchListQuery('how long are the events i hosted'), null);
+});
+
+test('the new guards do NOT swallow the plain list asks', () => {
+  // An over-broad superlative/detail regex would silently kill the short-circuits, so pin
+  // every phrasing the deterministic renderers must still own. "current"/"which"/"what" are
+  // deliberately NOT guarded — they are how the good list asks are phrased.
+  assert.equal(matchListQuery('what are the current live events hosted by all organisers?'), 'live');
+  assert.equal(matchListQuery('what events are currently live'), 'live');
+  assert.equal(matchListQuery('which events can i join'), 'joinable');
+  assert.equal(matchListQuery('what are the events that i can join?'), 'joinable');
+  assert.equal(matchListQuery('which events have I joined?'), 'joined');
+  assert.equal(matchListQuery('what events have I hosted?'), 'hosted');
+  assert.equal(matchListQuery('my hosted events'), 'hosted');
 });
 
 test('past-tense "joined" never collides with the modal branch', () => {
@@ -321,6 +394,62 @@ test('hosted groups by status with plain headers and per-group numbering', async
 test('hosted empty state', async () => {
   stub('get_my_hosted_events', async () => ({ count: 0, events: [] }));
   assert.equal(await buildListReply('hosted', {}), "You haven't created any events yet.");
+});
+
+test('hosted prints the date and venue when the row carries them', async () => {
+  // hostedLine used to drop startDate even though the executor returned it — the reported
+  // reply had no dates at all. Conditional, so the no-date test above still holds.
+  stub('get_my_hosted_events', async () => ({
+    count: 1,
+    events: [{ title: 'Campus Connect Night', status: 'greenlit', currentPrice: 10, ticketsSold: 7, revenueSoFar: 70, startDate: '2026-08-02T19:00:00+08:00', venue: 'SMU Green' }],
+  }));
+  const reply = await buildListReply('hosted', {});
+  assert.match(reply, /1\. "Campus Connect Night" on 2026-08-02 at SMU Green — \$10\.00, 7 tickets sold, \$70\.00 revenue\./);
+});
+
+// ── the tools must carry duration/location/description for EVERY event ─────────
+test('hosted / joined / live executors all return dates, venue and description', async () => {
+  const raw = [{
+    id: 'e1', hostId: 'u1', title: 'Gymming for newbies', description: 'A beginner-friendly gym session.',
+    derived_status: 'early_bird', startDate: iso(14), endDate: iso(14.1), deadlineAt: iso(10),
+    location: 'SMU Gym', address: '81 Victoria St', maxCapacity: 20, active_ticket_count: 6,
+    statuses: [{ statusName: 'early_bird', price: 11, ticketCapacity: 10 }],
+  }];
+  const ctx = {
+    userId: 'u1',
+    role: 'organiser',
+    supabase: {
+      rpc: async (name) => {
+        if (name === 'get_profile') return { data: { tickets: [{ eventId: 'e1', tab: 'upcoming', activeTicketCount: 2 }] }, error: null };
+        if (name === 'get_hosted_revenue') return { data: [], error: null };
+        return { data: raw, error: null };
+      },
+    },
+  };
+  const expectRich = (row, label) => {
+    for (const f of ['startDate', 'endDate', 'venue', 'address', 'description', 'deadline']) {
+      assert.ok(row[f] != null, `${label} should carry ${f}`);
+    }
+    assert.equal(row.venue, 'SMU Gym', `${label}.venue`);
+    assert.equal(row.description, 'A beginner-friendly gym session.', `${label}.description`);
+    assert.ok(row.endDate > row.startDate, `${label} duration is derivable`);
+  };
+
+  const hosted = await EXECUTORS.get_my_hosted_events({}, ctx);
+  expectRich(hosted.events[0], 'get_my_hosted_events');
+  // Host-only economics must survive the richRow switch.
+  for (const f of ['earlyPrice', 'revenueSoFar', 'ticketsSold', 'hypeThreshold', 'maxCapacity']) {
+    assert.ok(f in hosted.events[0], `get_my_hosted_events should keep ${f}`);
+  }
+
+  const joined = await EXECUTORS.get_my_joined_events({}, ctx);
+  expectRich(joined.upcoming[0], 'get_my_joined_events');
+  assert.equal(joined.upcoming[0].eventId, 'e1'); // id stays named eventId, and only once
+  assert.equal(joined.upcoming[0].id, undefined);
+  assert.equal(joined.upcoming[0].ticketsHeld, 2);
+
+  const live = await EXECUTORS.list_live_events({}, ctx);
+  expectRich(live.events[0], 'list_live_events');
 });
 
 test('buildListReply falls through to null on executor error', async () => {

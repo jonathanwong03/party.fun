@@ -153,6 +153,34 @@ test('get_event_details returns the eligibility facts that ground yes/no answers
   assert.equal(d.deadlinePassed, false);
 });
 
+test('get_event_details resolves NON-joinable events so the bot can give the reason', async () => {
+  // attendableEvents excludes cancelled/past/purchased, but get_event_details reads the WIDER
+  // visible pool — so a question about one still resolves and carries the reason facts.
+  const base = { hostId: 'other', startDate: inDaysIso(3), deadline: inDaysIso(1), maxCapacity: 50, active_ticket_count: 1, statuses: [{ statusName: 'early_bird', price: 5, ticketCapacity: 50 }] };
+  const events = [
+    { ...base, id: 'e1', title: 'Cancelled Gala', status: 'cancelled' },
+    { ...base, id: 'e2', title: 'Old Mixer', status: 'completed', startDate: inDaysIso(-5), endDate: inDaysIso(-5) },
+    { ...base, id: 'e3', title: 'My Rave', status: 'early_bird' },
+  ];
+  // ctx where the user already holds tickets for e3. get_event_details reads only rpc
+  // (get_events + get_profile) for a non-owned event, so no .from() stub is needed.
+  const profileTickets = { tickets: [{ eventId: 'e3', tab: 'upcoming', activeTicketCount: 2 }] };
+  const ctx = { userId: 'u1', role: 'user', supabase: {
+    rpc: async (name) => ({ data: name === 'get_profile' ? profileTickets : events, error: null }),
+  } };
+
+  const cancelled = await EXECUTORS.get_event_details({ eventId: 'Cancelled Gala' }, ctx);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.isOpen, false);
+
+  const past = await EXECUTORS.get_event_details({ eventId: 'Old Mixer' }, ctx);
+  assert.equal(past.isPast, true);
+  assert.equal(past.isOpen, false);
+
+  const owned = await EXECUTORS.get_event_details({ eventId: 'My Rave' }, ctx);
+  assert.equal(owned.alreadyPurchased, true);
+});
+
 test('get_event_details: an open, unrestricted event reports isOpen', async () => {
   const events = [{
     id: 'e1', title: 'Book Fair', status: 'early_bird', hostId: 'other', startDate: inDaysIso(5),
@@ -243,6 +271,25 @@ test('branch toolsets are scoped (read/discovery expose only the buy proposal, n
   const writesIn = (branch) => BRANCH_TOOLS[branch].filter((t) => t.startsWith('propose_'));
   assert.deepEqual(writesIn('read_only'), ['propose_pledge']);
   assert.deepEqual(writesIn('discovery'), ['propose_pledge']);
+});
+
+test('every branch binds the universal READ tools (no false capability denials)', () => {
+  // The recurring bug in this file: a scoped branch lacks a read tool, classify routes there,
+  // and the model TRUTHFULLY says it can't do the thing — "I cannot provide weather forecasts",
+  // "I don't have that functionality". classify re-runs per turn with no stickiness, so the
+  // same conversation flips between capable and incapable branches. Scoping a read-only tool
+  // buys only prompt economy; this invariant is what stops the fourth recurrence.
+  const universal = ['get_current_date', 'get_weather', 'get_event_forecast', 'get_event_details',
+    'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts'];
+  for (const branch of Object.keys(BRANCH_TOOLS)) {
+    for (const tool of universal) {
+      assert.ok(BRANCH_TOOLS[branch].includes(tool), `${branch} must bind ${tool}`);
+    }
+  }
+  // …and every name must be a real tool, or it is silently dropped by pickTools.
+  for (const [branch, names] of Object.entries(BRANCH_TOOLS)) {
+    for (const n of names) assert.ok(TOOLS_BY_NAME[n], `${branch} binds unknown tool ${n}`);
+  }
 });
 
 test('ask mode interrupts for confirmation; confirm executes, reject does not', async () => {
@@ -839,6 +886,42 @@ test('get_weather stays quiet when the forecast is fine', async () => {
   assert.equal(out.willRain, false);
 });
 
+// The reported bug: the bot refused IN-RANGE dates as "too far in the future", and even
+// called TOMORROW too far away. `beyond_horizon` was inferred from "no forecast day matched"
+// rather than from comparing dates, so a short/empty provider response looked identical to a
+// date past the horizon. These pin the two apart.
+test('a date INSIDE the horizon is never called "too far away" when the forecast is short', async () => {
+  // Only 5 days returned (the provider's default page size) but the ask is 9 days out — the
+  // date is well within the 10-day horizon, so this must NOT claim it is too far away.
+  __setForecastForTests(async () => [0, 1, 2, 3, 4].map((n) => forecastDay(sgYmd(inDaysIso(n)), 10)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(9) }, ctxWith([]));
+  assert.notEqual(out.status, 'beyond_horizon');
+  assert.equal(out.status, 'unavailable');
+  assert.doesNotMatch(out.summary, /days away|too far/i);
+});
+
+test('an empty forecast for TOMORROW reports unavailable, not "more than 10 days away"', async () => {
+  __setForecastForTests(async () => []);
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(1) }, ctxWith([]));
+  assert.equal(out.status, 'unavailable');
+  assert.doesNotMatch(out.summary, /days away|too far/i);
+});
+
+test('a date genuinely past the horizon still reports beyond_horizon', async () => {
+  // A full 10-day forecast; the ask is 11 days out. Decided by date, not by absence of data.
+  __setForecastForTests(async () => [...Array(10).keys()].map((n) => forecastDay(sgYmd(inDaysIso(n)), 10)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(11) }, ctxWith([]));
+  assert.equal(out.status, 'beyond_horizon');
+  assert.match(out.summary, /too far out/i);
+});
+
+test('a date at the far edge of the horizon is answered, not refused', async () => {
+  __setForecastForTests(async () => [...Array(11).keys()].map((n) => forecastDay(sgYmd(inDaysIso(n)), 80)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(10) }, ctxWith([]));
+  assert.equal(out.status, 'ok');
+  assert.equal(out.willRain, true);
+});
+
 test('research_event_ideas returns structured suggestions from the (mocked) web search', async () => {
   __setResearchCallForTests(async () => JSON.stringify({
     trends: ['run clubs', 'matcha'],
@@ -1021,6 +1104,35 @@ test('scope guard judges ONLY the latest user message (not prior on-topic turns)
     ctx: ctxWith([]),
   });
   assert.equal(seen, 'what should I wear tonight?');
+});
+
+test('a terse "how about X?" after an on-topic turn is NOT refused as off-topic', async () => {
+  // The reported bug: "how about gymming for newbies?" got the off-topic refusal because the
+  // scope guard judged the bare string (reads as a gym question). A comparative follow-up after
+  // an on-topic assistant turn must continue the flow. Guard stubbed to REFUSE everything, so a
+  // non-refusal proves the continuation bypass fired WITHOUT consulting the guard.
+  __setGuardForTests(async () => false);
+  useModel(); useClassify('read_only'); useAgents(fakeAgent([say('branch-ran')]));
+  for (const followup of ['how about gymming for newbies?', 'what about the frisbee one?', 'and the next one?']) {
+    const out = await runGraph({
+      system: 's',
+      messages: [
+        { role: 'assistant', content: 'Grad Ball: Black-Tie Gala is sold out and the deadline to buy tickets has passed, so you cannot join it.' },
+        { role: 'user', content: followup },
+      ],
+      ctx: ctxWith([]),
+    });
+    assert.notEqual(out.reply, OFF_TOPIC_REPLY, `"${followup}" must not be refused`);
+  }
+});
+
+test('a comparative follow-up in a COLD conversation still reaches the guard', async () => {
+  // The bypass requires the PREVIOUS assistant turn to be on-topic. With no such turn,
+  // "how about pizza?" is judged normally — here the guard refuses it.
+  __setGuardForTests(async () => false);
+  useModel(); useAgents(fakeAgent([say('should-not-run')]));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'how about pizza?' }], ctx: ctxWith([]) });
+  assert.equal(out.reply, OFF_TOPIC_REPLY);
 });
 
 test('guardAllows lets short/continuation answers through, still blocks off-topic questions', () => {

@@ -12,6 +12,10 @@ frontend/.env
 frontend/.env.*
 backend/.env
 backend/.env.*
+# …but the committed templates must survive the rules above (a later rule wins, so these
+# negations have to come last — without them .env.example is ignored and never shipped).
+!frontend/.env.example
+!backend/.env.example
 
 # Logs
 logs/

@@ -1,9 +1,10 @@
-// Deterministic short-circuit replies for three high-frequency, fully-specified
-// list questions. gemini-flash occasionally mis-routes these ("events I can join"
-// vs "events I've joined") or mis-numbers grouped lists, so instead of relying on
-// the model we detect them with strict regexes and render the answer in code from
-// the same cached executors the agent would use. Anything qualified (a price cap,
-// a specific event name) returns null and falls through to the LLM graph.
+// Deterministic short-circuit replies for four high-frequency, fully-specified
+// list questions (events I can join / I've joined / I've hosted / live across organisers).
+// gemini-flash occasionally mis-routes these ("events I can join" vs "events I've joined")
+// or mis-numbers grouped lists, so instead of relying on the model we detect them with
+// strict regexes and render the answer in code from the same cached executors the agent
+// would use. Anything qualified — a price cap, a specific event name, a superlative or a
+// request for one fact — returns null and falls through to the LLM graph.
 
 import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable } from './tools.js';
 import { isBuyQuestion } from './buyIntent.js';
@@ -12,6 +13,13 @@ import { isBuyQuestion } from './buyIntent.js';
 // list request — let the LLM handle it (it can apply the filter / resolve the name).
 const HAS_QUALIFIER_RX = /(\bunder\b|\bbelow\b|\bover\b|\babove\b|\bcheaper\b|\bless than\b|\bmore than\b|\bat most\b|\bat least\b|\$\s?\d|\d+\s?(dollars|bucks))/i;
 const HAS_QUOTE_RX = /["“”'‘’]/;
+// A superlative ("which is the earliest event I hosted") or an ask for a specific fact
+// ("…and when?", "where did I host it?") is NOT a plain list request. The renderers below can
+// only dump every row in creation order — they can't sort, pick one, or say where/how long —
+// so short-circuiting these answers a different question than the one asked. Fall through to
+// the LLM, which gets dates/venues/descriptions from the same executors and can pick ONE.
+const HAS_SUPERLATIVE_RX = /\b(earliest|latest|soonest|newest|oldest|most\s+recent|first|last|next|nearest|furthest|longest|shortest|biggest|largest|smallest)\b/i;
+const WANTS_DETAIL_RX = /\b(when|where|what\s+time|how\s+long|duration|how\s+far)\b/i;
 
 // "events I've joined" / "joined events" / "which events have I joined" — PAST tense.
 // Guarded against the modal "can join" case (handled by JOINABLE_RX).
@@ -42,6 +50,7 @@ export function matchListQuery(text) {
   const t = String(text ?? '').trim();
   if (!t) return null;
   if (HAS_QUALIFIER_RX.test(t) || HAS_QUOTE_RX.test(t)) return null;
+  if (HAS_SUPERLATIVE_RX.test(t) || WANTS_DETAIL_RX.test(t)) return null;
   if (JOINED_RX.test(t) && !/\bcan\b|\bcould\b|\bable\b/i.test(t)) return 'joined';
   if (HOSTED_RX.test(t)) return 'hosted';
   if (JOINABLE_RX.test(t)) return 'joinable';
@@ -106,6 +115,7 @@ function nameCandidates(name) {
 // answer, so fall through to the LLM (which has get_event_details).
 function notBuyableReply(ev, reason) {
   const t = ev.title;
+  if (reason === 'sold_out') return `"${t}" is at full capacity — every ticket has been taken, so you can't buy any. If someone gives theirs away the spots return to the pool, so it's worth checking back.`;
   if (reason === 'already_purchased') return `You already have tickets for "${t}", so you can't buy more for that event. If you no longer need them you can give some away.`;
   if (reason === 'own_event') return `"${t}" is your own event — you can't buy tickets for an event you're hosting.`;
   if (reason === 'cancelled') return `"${t}" has been cancelled, so tickets are no longer on sale.`;
@@ -245,12 +255,18 @@ export async function buildListReply(kind, ctx) {
     if (kind === 'hosted') {
       const { events = [] } = await EXECUTORS.get_my_hosted_events({}, ctx);
       if (!events.length) return "You haven't created any events yet.";
+      // Date/venue are conditional, mirroring joinableLine: this was the only renderer that
+      // dropped the date it was already handed, so a hosted list could never say WHEN.
       const hostedLine = (e) => {
-        const bits = [`"${e.title}"`];
-        if (e.currentPrice != null) bits.push(money(e.currentPrice));
-        bits.push(`${tickets(Number(e.ticketsSold ?? 0))} sold`);
-        bits.push(`${money(e.revenueSoFar)} revenue`);
-        return `${bits[0]} — ${bits.slice(1).join(', ')}.`;
+        const head = [`"${e.title}"`];
+        const d = isoDate(e.startDate);
+        if (d) head.push(`on ${d}`);
+        if (e.venue) head.push(`at ${e.venue}`);
+        const tail = [];
+        if (e.currentPrice != null) tail.push(money(e.currentPrice));
+        tail.push(`${tickets(Number(e.ticketsSold ?? 0))} sold`);
+        tail.push(`${money(e.revenueSoFar)} revenue`);
+        return `${head.join(' ')} — ${tail.join(', ')}.`;
       };
       const groups = [
         ['Live events', events.filter((e) => e.status === 'early_bird' || e.status === 'greenlit')],
