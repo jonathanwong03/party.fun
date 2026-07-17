@@ -2,7 +2,7 @@ import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { __resetProvidersForTests } from '../modelRouter.js';
-import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
+import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, looksClearlyOffTopic, looksLikePurchase, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { __setForecastForTests, __resetForecastForTests } from '../../weatherService.js';
@@ -81,6 +81,153 @@ test('classify routes to the matching branch agent', async () => {
   assert.match(out.reply, /manage-branch/);
 });
 
+test('a purchase ask is force-routed to the transaction branch (never "no functionality")', async () => {
+  useModel();
+  // Classifier deliberately returns the WRONG label — the deterministic override must win.
+  useClassify('read_only');
+  __setAgentsForTests(() => ({
+    read_only: fakeAgent([say('read-only-branch')]),
+    discovery: fakeAgent([say('discovery-branch')]),
+    best_fit: fakeAgent([say('bestfit-branch')]),
+    event_mgmt: fakeAgent([say('manage-branch')]),
+    transaction: fakeAgent([say('transact-branch')]),
+  }));
+  const buy = await runGraph({ system: 's', messages: [{ role: 'user', content: 'help me purchase 4 tickets' }], ctx: ctxWith([]) });
+  assert.match(buy.reply, /transact-branch/);
+
+  // "yes" to the assistant's own purchase offer also enters the buy flow.
+  const yes = await runGraph({
+    system: 's',
+    messages: [
+      { role: 'assistant', content: 'Would you like to purchase tickets for this event?' },
+      { role: 'user', content: 'yes' },
+    ],
+    ctx: ctxWith([]),
+  });
+  assert.match(yes.reply, /transact-branch/);
+});
+
+test('looksLikePurchase fires on REQUESTS but never on questions about buying', () => {
+  // Real purchase requests → buy flow.
+  for (const q of ['help me purchase 4 tickets', 'buy tickets for Neon Rave', 'i want to purchase 4 tickets',
+    'can you help me buy 2 tickets?', 'please buy me 2 tickets']) {
+    assert.equal(looksLikePurchase(q), true, `should be a purchase: ${q}`);
+  }
+  // Questions ABOUT buying must be answered, not turned into a purchase.
+  for (const q of ['can i purchase tickets after 24 july?', 'can i still buy tickets for Neon Rave?',
+    'is it too late to buy tickets?', 'am i able to purchase tickets tomorrow?']) {
+    assert.equal(looksLikePurchase(q), false, `should be a question: ${q}`);
+  }
+});
+
+test('a question about buying is NOT force-routed into the transaction branch', async () => {
+  useModel(); useClassify('read_only');
+  __setAgentsForTests(() => ({
+    read_only: fakeAgent([say('read-only-branch')]),
+    discovery: fakeAgent([say('discovery-branch')]),
+    best_fit: fakeAgent([say('bestfit-branch')]),
+    event_mgmt: fakeAgent([say('manage-branch')]),
+    transaction: fakeAgent([say('transact-branch')]),
+  }));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'can i purchase tickets after 24 july?' }], ctx: ctxWith([]) });
+  assert.match(out.reply, /read-only-branch/, 'a question must be answered, not routed to the buy flow');
+});
+
+test('get_event_details returns the eligibility facts that ground yes/no answers', async () => {
+  const events = [{
+    id: 'e1', title: 'Neon Rave', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3),
+    deadline: inDaysIso(1), maxCapacity: 10, active_ticket_count: 10, hypeThreshold: 5,
+    restricted_university: 'SMU', viewer_can_attend: false, canEdit: false, canCancel: false,
+    isCoOrganiser: false, statuses: [{ statusName: 'early_bird', price: 20, ticketCapacity: 10 }],
+  }];
+  const d = await EXECUTORS.get_event_details({ eventId: 'Neon Rave' }, ctxFull({ events }));
+  assert.equal(d.maxCapacity, 10);
+  assert.equal(d.spotsLeft, 0);
+  assert.equal(d.soldOut, true);              // "is it sold out?" → Yes
+  assert.equal(d.isOpen, false);              // sold out ⇒ can't still buy
+  assert.equal(d.restrictedUniversity, 'SMU');
+  assert.equal(d.canAttendUniversity, false); // "can I attend?" → No (other university)
+  assert.equal(d.alreadyPurchased, false);
+  assert.equal(d.canEdit, false);
+  assert.equal(d.isPast, false);
+  assert.equal(d.deadlinePassed, false);
+});
+
+test('get_event_details resolves NON-joinable events so the bot can give the reason', async () => {
+  // attendableEvents excludes cancelled/past/purchased, but get_event_details reads the WIDER
+  // visible pool — so a question about one still resolves and carries the reason facts.
+  const base = { hostId: 'other', startDate: inDaysIso(3), deadline: inDaysIso(1), maxCapacity: 50, active_ticket_count: 1, statuses: [{ statusName: 'early_bird', price: 5, ticketCapacity: 50 }] };
+  const events = [
+    { ...base, id: 'e1', title: 'Cancelled Gala', status: 'cancelled' },
+    { ...base, id: 'e2', title: 'Old Mixer', status: 'completed', startDate: inDaysIso(-5), endDate: inDaysIso(-5) },
+    { ...base, id: 'e3', title: 'My Rave', status: 'early_bird' },
+  ];
+  // ctx where the user already holds tickets for e3. get_event_details reads only rpc
+  // (get_events + get_profile) for a non-owned event, so no .from() stub is needed.
+  const profileTickets = { tickets: [{ eventId: 'e3', tab: 'upcoming', activeTicketCount: 2 }] };
+  const ctx = { userId: 'u1', role: 'user', supabase: {
+    rpc: async (name) => ({ data: name === 'get_profile' ? profileTickets : events, error: null }),
+  } };
+
+  const cancelled = await EXECUTORS.get_event_details({ eventId: 'Cancelled Gala' }, ctx);
+  assert.equal(cancelled.status, 'cancelled');
+  assert.equal(cancelled.isOpen, false);
+
+  const past = await EXECUTORS.get_event_details({ eventId: 'Old Mixer' }, ctx);
+  assert.equal(past.isPast, true);
+  assert.equal(past.isOpen, false);
+
+  const owned = await EXECUTORS.get_event_details({ eventId: 'My Rave' }, ctx);
+  assert.equal(owned.alreadyPurchased, true);
+});
+
+test('get_event_details: an open, unrestricted event reports isOpen', async () => {
+  const events = [{
+    id: 'e1', title: 'Book Fair', status: 'early_bird', hostId: 'other', startDate: inDaysIso(5),
+    deadline: inDaysIso(2), maxCapacity: 50, active_ticket_count: 3, hypeThreshold: 10,
+    restricted_university: '', viewer_can_attend: true, statuses: [{ statusName: 'early_bird', price: 5, ticketCapacity: 50 }],
+  }];
+  const d = await EXECUTORS.get_event_details({ eventId: 'Book Fair' }, ctxFull({ events }));
+  assert.equal(d.isOpen, true);
+  assert.equal(d.soldOut, false);
+  assert.equal(d.spotsLeft, 47);
+  assert.equal(d.restrictedUniversity, null);   // blank ⇒ open to everyone
+  assert.equal(d.canAttendUniversity, true);
+});
+
+test('read_only and discovery branches still bind the buy tool as a safety net', () => {
+  assert.ok(BRANCH_TOOLS.read_only.includes('propose_pledge'));
+  assert.ok(BRANCH_TOOLS.discovery.includes('propose_pledge'));
+  assert.ok(BRANCH_TOOLS.transaction.includes('propose_pledge'));
+});
+
+test('looksClearlyOffTopic flags math/coding/trivia but not event asks', () => {
+  assert.equal(looksClearlyOffTopic('what is 3*3'), true);
+  assert.equal(looksClearlyOffTopic('what is 4 + 4'), true);
+  assert.equal(looksClearlyOffTopic('3*3'), true);
+  assert.equal(looksClearlyOffTopic('calculate the square root of 9'), true);
+  assert.equal(looksClearlyOffTopic('write me some python code'), true);
+  assert.equal(looksClearlyOffTopic('what is the capital of France'), true);
+  // Event-related asks (incl. bare numbers as a reply) are NOT flagged.
+  assert.equal(looksClearlyOffTopic('3'), false);
+  assert.equal(looksClearlyOffTopic('3 tickets'), false);
+  assert.equal(looksClearlyOffTopic('what events can I join'), false);
+  assert.equal(looksClearlyOffTopic('gymming for newbie'), false);
+});
+
+test('a clearly off-topic question is refused even after an event-related turn', async () => {
+  useModel(); useAgents(fakeAgent([say('branch-should-not-run')]));
+  const out = await runGraph({
+    system: 's',
+    messages: [
+      { role: 'assistant', content: 'Here are the live events hosted across all organisers.' },
+      { role: 'user', content: 'what is 3*3' },
+    ],
+    ctx: ctxWith([]),
+  });
+  assert.equal(out.reply, OFF_TOPIC_REPLY);
+});
+
 test('normal users asking to manage events are refused before branch tools run', async () => {
   useModel(); useClassify('event_mgmt');
   let branchCalled = false;
@@ -115,11 +262,34 @@ test('organisers asking to create an event get an immediate draft proposal', asy
   assert.ok(out.proposals[0].payload.startDate);
 });
 
-test('branch toolsets are scoped (only management/transaction expose write proposals)', () => {
+test('branch toolsets are scoped (read/discovery expose only the buy proposal, no management writes)', () => {
   assert.ok(BRANCH_TOOLS.transaction.includes('propose_topup'));
   assert.ok(BRANCH_TOOLS.event_mgmt.includes('propose_cancel_event'));
-  assert.ok(!BRANCH_TOOLS.read_only.some((t) => t.startsWith('propose_')));
-  assert.ok(!BRANCH_TOOLS.discovery.some((t) => t.startsWith('propose_')));
+  // propose_pledge is deliberately bound in the read branches as a safety net so a
+  // mis-routed purchase can't produce "I don't have that functionality". It is still a
+  // PROPOSAL the user must confirm. No other write may leak into a read branch.
+  const writesIn = (branch) => BRANCH_TOOLS[branch].filter((t) => t.startsWith('propose_'));
+  assert.deepEqual(writesIn('read_only'), ['propose_pledge']);
+  assert.deepEqual(writesIn('discovery'), ['propose_pledge']);
+});
+
+test('every branch binds the universal READ tools (no false capability denials)', () => {
+  // The recurring bug in this file: a scoped branch lacks a read tool, classify routes there,
+  // and the model TRUTHFULLY says it can't do the thing — "I cannot provide weather forecasts",
+  // "I don't have that functionality". classify re-runs per turn with no stickiness, so the
+  // same conversation flips between capable and incapable branches. Scoping a read-only tool
+  // buys only prompt economy; this invariant is what stops the fourth recurrence.
+  const universal = ['get_current_date', 'get_weather', 'get_event_forecast', 'get_event_details',
+    'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts'];
+  for (const branch of Object.keys(BRANCH_TOOLS)) {
+    for (const tool of universal) {
+      assert.ok(BRANCH_TOOLS[branch].includes(tool), `${branch} must bind ${tool}`);
+    }
+  }
+  // …and every name must be a real tool, or it is silently dropped by pickTools.
+  for (const [branch, names] of Object.entries(BRANCH_TOOLS)) {
+    for (const n of names) assert.ok(TOOLS_BY_NAME[n], `${branch} binds unknown tool ${n}`);
+  }
 });
 
 test('ask mode interrupts for confirmation; confirm executes, reject does not', async () => {
@@ -389,6 +559,54 @@ test('event tools resolve an event by NAME or slug, not just id', async () => {
   assert.ok(bad.error);
 });
 
+test('a typo in an event name surfaces a "Did you mean" suggestion (fuzzy fallback, no embeddings)', async () => {
+  const events = [{ id: 'e1', title: 'Gymming for Newbies', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  // propose_pledge with a typo'd name → asks to confirm, no proposal.
+  const buy = await EXECUTORS.propose_pledge({ eventId: 'gymming for nes', qty: 1 }, ctx);
+  assert.equal(buy.proposal, undefined);
+  assert.match(buy.error, /did you mean/i);
+  assert.match(buy.error, /Gymming for Newbies/);
+  // search_events keyword miss → didYouMean instead of an empty "no events".
+  const search = await EXECUTORS.search_events({ query: 'gymming for nes' }, ctx);
+  assert.equal(search.count, 0);
+  assert.match(search.didYouMean, /did you mean/i);
+  assert.ok(search.suggestions.includes('Gymming for Newbies'));
+});
+
+test('a PARTIAL event name is confirmed, not silently auto-resolved', async () => {
+  const events = [{ id: 'e1', title: 'Game night and escape rooms', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 20 }] }];
+  const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  // "game nig" is a substring of the title — must ask to confirm, not proceed.
+  const buy = await EXECUTORS.propose_pledge({ eventId: 'game nig', qty: 3 }, ctx);
+  assert.equal(buy.proposal, undefined);
+  assert.match(buy.error, /did you mean/i);
+  assert.match(buy.error, /Game night and escape rooms/);
+  // The exact full name still resolves straight through.
+  const exact = await EXECUTORS.propose_pledge({ eventId: 'Game night and escape rooms', qty: 1, paymentMethod: 'wallet' }, ctx);
+  assert.equal(exact.proposal.eventId, 'e1');
+});
+
+test('propose_pledge honours the chosen payment method (wallet vs card) with a stable attemptId', async () => {
+  const events = [{ id: 'e1', title: 'Gala', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
+  // Wallet: default method, balance pre-check, attemptId present.
+  const walletCtx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });
+  const w = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 2, paymentMethod: 'wallet' }, walletCtx);
+  assert.equal(w.proposal.payload.paymentMethod, 'wallet');
+  assert.match(w.proposal.summary, /wallet/i);
+  assert.ok(w.proposal.payload.attemptId);
+  // Card: requires a linked card (stripePaymentMethodId); summary names the card.
+  const cardCtx = ctxFull({ events, user: { walletBalance: 0, cardBrand: 'visa', cardLast4: '4242', stripePaymentMethodId: 'pm_1' } });
+  const c = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 1, paymentMethod: 'card' }, cardCtx);
+  assert.equal(c.proposal.payload.paymentMethod, 'card');
+  assert.match(c.proposal.summary, /ending 4242/i);
+  // Card chosen but none linked → guidance, no proposal.
+  const noCardCtx = ctxFull({ events, user: { walletBalance: 0, cardLast4: null, stripePaymentMethodId: null } });
+  const nc = await EXECUTORS.propose_pledge({ eventId: 'Gala', qty: 1, paymentMethod: 'card' }, noCardCtx);
+  assert.equal(nc.proposal, undefined);
+  assert.match(nc.error, /card/i);
+});
+
 test('admin accounts cannot receive pledge proposals', async () => {
   const events = [{ id: 'e1', title: 'Public Gig', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 10 }] }];
   const ctx = {
@@ -421,8 +639,12 @@ test('event action tools resolve natural references semantically and ask when am
     },
   };
 
-  const ok = await EXECUTORS.propose_pledge({ eventId: 'the esports one', qty: 1 }, ctx);
-  assert.equal(ok.proposal.eventId, 'e1');
+  // A non-exact reference is NEVER auto-resolved — the closest embedding match is
+  // surfaced as a "Did you mean …?" the user must confirm before anything happens.
+  const suggest = await EXECUTORS.propose_pledge({ eventId: 'the esports one', qty: 1 }, ctx);
+  assert.equal(suggest.proposal, undefined);
+  assert.match(suggest.error, /did you mean/i);
+  assert.match(suggest.error, /Retro Arcade & Esports Night/i);
 
   const ambiguous = {
     ...ctx,
@@ -436,7 +658,7 @@ test('event action tools resolve natural references semantically and ask when am
     },
   };
   const ask = await EXECUTORS.get_event_details({ eventId: 'the night event' }, ambiguous);
-  assert.match(ask.error, /more than one matching event/i);
+  assert.match(ask.error, /did you mean/i);
 });
 
 test('propose_cancel_event proposes a refund/cancel for own event only, reason optional', async () => {
@@ -618,10 +840,11 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 26 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 26);
+test('AGENT_TOOLS exposes all 27 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 27);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
+  assert.ok(names.includes('list_live_events'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));
@@ -661,6 +884,42 @@ test('get_weather stays quiet when the forecast is fine', async () => {
   const out = await EXECUTORS.get_weather({ start }, ctxWith([]));
   assert.equal(out.status, 'ok');
   assert.equal(out.willRain, false);
+});
+
+// The reported bug: the bot refused IN-RANGE dates as "too far in the future", and even
+// called TOMORROW too far away. `beyond_horizon` was inferred from "no forecast day matched"
+// rather than from comparing dates, so a short/empty provider response looked identical to a
+// date past the horizon. These pin the two apart.
+test('a date INSIDE the horizon is never called "too far away" when the forecast is short', async () => {
+  // Only 5 days returned (the provider's default page size) but the ask is 9 days out — the
+  // date is well within the 10-day horizon, so this must NOT claim it is too far away.
+  __setForecastForTests(async () => [0, 1, 2, 3, 4].map((n) => forecastDay(sgYmd(inDaysIso(n)), 10)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(9) }, ctxWith([]));
+  assert.notEqual(out.status, 'beyond_horizon');
+  assert.equal(out.status, 'unavailable');
+  assert.doesNotMatch(out.summary, /days away|too far/i);
+});
+
+test('an empty forecast for TOMORROW reports unavailable, not "more than 10 days away"', async () => {
+  __setForecastForTests(async () => []);
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(1) }, ctxWith([]));
+  assert.equal(out.status, 'unavailable');
+  assert.doesNotMatch(out.summary, /days away|too far/i);
+});
+
+test('a date genuinely past the horizon still reports beyond_horizon', async () => {
+  // A full 10-day forecast; the ask is 11 days out. Decided by date, not by absence of data.
+  __setForecastForTests(async () => [...Array(10).keys()].map((n) => forecastDay(sgYmd(inDaysIso(n)), 10)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(11) }, ctxWith([]));
+  assert.equal(out.status, 'beyond_horizon');
+  assert.match(out.summary, /too far out/i);
+});
+
+test('a date at the far edge of the horizon is answered, not refused', async () => {
+  __setForecastForTests(async () => [...Array(11).keys()].map((n) => forecastDay(sgYmd(inDaysIso(n)), 80)));
+  const out = await EXECUTORS.get_weather({ start: inDaysIso(10) }, ctxWith([]));
+  assert.equal(out.status, 'ok');
+  assert.equal(out.willRain, true);
 });
 
 test('research_event_ideas returns structured suggestions from the (mocked) web search', async () => {
@@ -840,11 +1099,40 @@ test('scope guard judges ONLY the latest user message (not prior on-topic turns)
     messages: [
       { role: 'user', content: 'what are the cheapest events?' },
       { role: 'assistant', content: 'Here are a few.' },
-      { role: 'user', content: 'what is 2+2?' },
+      { role: 'user', content: 'what should I wear tonight?' },
     ],
     ctx: ctxWith([]),
   });
-  assert.equal(seen, 'what is 2+2?');
+  assert.equal(seen, 'what should I wear tonight?');
+});
+
+test('a terse "how about X?" after an on-topic turn is NOT refused as off-topic', async () => {
+  // The reported bug: "how about gymming for newbies?" got the off-topic refusal because the
+  // scope guard judged the bare string (reads as a gym question). A comparative follow-up after
+  // an on-topic assistant turn must continue the flow. Guard stubbed to REFUSE everything, so a
+  // non-refusal proves the continuation bypass fired WITHOUT consulting the guard.
+  __setGuardForTests(async () => false);
+  useModel(); useClassify('read_only'); useAgents(fakeAgent([say('branch-ran')]));
+  for (const followup of ['how about gymming for newbies?', 'what about the frisbee one?', 'and the next one?']) {
+    const out = await runGraph({
+      system: 's',
+      messages: [
+        { role: 'assistant', content: 'Grad Ball: Black-Tie Gala is sold out and the deadline to buy tickets has passed, so you cannot join it.' },
+        { role: 'user', content: followup },
+      ],
+      ctx: ctxWith([]),
+    });
+    assert.notEqual(out.reply, OFF_TOPIC_REPLY, `"${followup}" must not be refused`);
+  }
+});
+
+test('a comparative follow-up in a COLD conversation still reaches the guard', async () => {
+  // The bypass requires the PREVIOUS assistant turn to be on-topic. With no such turn,
+  // "how about pizza?" is judged normally — here the guard refuses it.
+  __setGuardForTests(async () => false);
+  useModel(); useAgents(fakeAgent([say('should-not-run')]));
+  const out = await runGraph({ system: 's', messages: [{ role: 'user', content: 'how about pizza?' }], ctx: ctxWith([]) });
+  assert.equal(out.reply, OFF_TOPIC_REPLY);
 });
 
 test('guardAllows lets short/continuation answers through, still blocks off-topic questions', () => {

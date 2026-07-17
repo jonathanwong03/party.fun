@@ -1,14 +1,14 @@
-// Client-side idle-timeout: sign the user out after 180 minutes of inactivity.
+// Client-side idle-timeout: sign the user out after 30 minutes of inactivity.
 // The Supabase session itself still persists in localStorage (and its token keeps
-// refreshing), so reopening the app within 3h of the last activity stays logged in;
-// past 3h idle, the next load (or the periodic check) signs out.
+// refreshing), so reopening the app within 30 min of the last activity stays logged in;
+// past 30 min idle, the next load (or the periodic check) signs out.
 //
 // `lastActivity` is updated only by genuine user interaction and by explicit logins
 // (resetActivity) — NOT by page reloads — so the idle clock survives a browser restart.
 
 import { supabase } from './supabase';
 
-export const IDLE_LIMIT_MS = 180 * 60 * 1000; // 3 hours
+export const IDLE_LIMIT_MS = 30 * 60 * 1000; // 30 minutes
 const STORAGE_KEY = 'pf.lastActivity';
 const CHECK_INTERVAL_MS = 30 * 1000; // re-check every 30s
 const WRITE_THROTTLE_MS = 10 * 1000; // at most one localStorage write / 10s
@@ -39,6 +39,13 @@ async function enforce(): Promise<void> {
     if (session) await supabase.auth.signOut(); // triggers App's onAuthStateChange cleanup
     localStorage.removeItem(STORAGE_KEY);
   }
+}
+
+// Run the idle check ONCE and await its completion (incl. any sign-out). Call this on
+// app load BEFORE restoring the session, so a >30-min-idle user is signed out first and
+// the app renders the clean logged-out events page instead of flashing a stale-auth 401.
+export async function enforceIdleNow(): Promise<void> {
+  await enforce();
 }
 
 let installed = false;

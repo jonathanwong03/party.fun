@@ -43,7 +43,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
   }
 
   const total = quote?.total ?? 0;
-  const payable = quote?.grandTotal ?? total;   // ticket total + 9% GST
+  const payable = total;   // ticket prices are GST-inclusive
   const balance = wallet?.balance ?? 0;
   const hasCard = !!wallet?.card;
   const walletShort = balance < payable;
@@ -140,11 +140,10 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
                 )}
                 {quote ? quote.lines.map((l) => (<Row key={l.label} label={`${l.label} × ${l.count}`} value={l.subtotalText} />)) : <Row label={`Ticket × ${qty}`} value="—" />}
                 {quote && <Row label="Subtotal" value={quote.totalText} />}
-                {quote && <Row label="GST (9%)" value={quote.gstText} />}
               </div>
               <div className="flex items-baseline justify-between border-t pt-3" style={{ borderColor: 'var(--border)' }}>
                 <span style={{ color: 'var(--muted-foreground)' }} className="text-sm">Total payable</span>
-                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.grandTotalText : '—'}</span>
+                <span style={{ fontSize: 22, fontWeight: 800 }}>{quote ? quote.totalText : '—'}</span>
               </div>
 
               {universityBlocked && (

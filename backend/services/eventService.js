@@ -1,17 +1,23 @@
-// Supabase-backed data service. Every function receives a user-scoped Supabase
+// Supabase-backed data service. Almost every function receives a user-scoped Supabase
 // client (`sb`) so the existing RLS policies and SECURITY DEFINER RPC functions
 // enforce access. The backend is a thin, authenticated pass-through to those RPCs;
 // the business logic stays in Postgres where it already works atomically.
+//
+// The exception is a CARD pledge: it asserts a Stripe charge happened, which Postgres cannot
+// verify, so that one RPC is service_role-only and is called via adminClient() with a
+// JWT-validated user id. See createPledge and 20260717_payment_rpc_authz.sql.
 
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
-import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache } from './cache.js';
+import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache } from './cache.js';
+import { adminClient } from './supabaseAdmin.js';
 
 export const dependencies = {
   syncEventEmbedding,
   syncDraftEmbedding,
   deleteDraftEmbedding,
+  adminClient,
 };
 
 
@@ -21,24 +27,26 @@ const LABELS = { early_bird: 'Early Birds', greenlit: 'Greenlit' };
 // counts change on each pledge), so we use a short TTL plus explicit invalidation
 // on writes. RLS makes the mapped rows viewer-specific (mine/canEdit/…), so anon
 // callers share one key while signed-in callers are keyed by user id.
-const EVENTS_TTL_S = 45;
+const EVENTS_TTL_S = 60;
+// After the fresh window, a cached copy is still served INSTANTLY for this long while it
+// refreshes in the background (stale-while-revalidate). get_events is ~3s uncached, so
+// without this every visit after a quiet minute paid the full cost. Freshness is
+// unaffected in practice: writes call invalidateEventCaches(), and the background refresh
+// starts on the very first stale hit. Only ~11 min of ZERO traffic goes fully cold.
+const EVENTS_STALE_S = 600;
 const eventsCacheKey = (userId) => (userId == null ? 'events:list:anon' : `events:list:u:${userId}`);
 const rawEventsCacheKey = (userId) => (userId == null ? 'events:raw:anon' : `events:raw:u:${userId}`);
 
-// Raw get_events rows, cached in Redis with the same 45s TTL + write-invalidation as
-// the mapped listEvents cache. The AI agent's tools need the RAW RPC shape
-// (derived_status, active_ticket_count, statuses[].ticketCapacity, hostId, …), which
-// differs from the mapped EventItem, so this is a separate cache entry. Cache-first,
-// Supabase on miss — and fails open to Supabase when Redis is off (via cacheGetJson).
+// Raw get_events rows, cached in Redis (stale-while-revalidate) with write-invalidation.
+// The AI agent's tools need the RAW RPC shape (derived_status, active_ticket_count,
+// statuses[].ticketCapacity, hostId, …), which differs from the mapped EventItem, so this
+// is a separate cache entry. Fails open to Supabase when Redis is off (via withSwrCache).
 export async function listEventsRaw(sb, userId) {
-  const cacheKey = rawEventsCacheKey(userId);
-  const cached = await cacheGetJson(cacheKey);
-  if (cached != null) return cached;
-  const { data, error } = await sb.rpc('get_events');
-  if (error) throw new Error(error.message);
-  const rows = data ?? [];
-  await cacheSetJson(cacheKey, rows, EVENTS_TTL_S);
-  return rows;
+  return withSwrCache(rawEventsCacheKey(userId), EVENTS_TTL_S, EVENTS_STALE_S, async () => {
+    const { data, error } = await sb.rpc('get_events');
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
 }
 
 // Drop every cached event list (mapped + raw) and the shared read caches that reflect
@@ -201,13 +209,8 @@ function roundMoney(n) {
   return Math.round(Number(n) * 100) / 100;
 }
 
-// 9% GST is added on top of the ticket total (buyer-paid; excluded from organiser revenue).
-const GST_RATE = 0.09;
-function withGst(quote) {
-  const gst = roundMoney(Number(quote.total || 0) * GST_RATE);
-  const grandTotal = roundMoney(Number(quote.total || 0) + gst);
-  return { ...quote, gst, grandTotal, gstText: money(gst), grandTotalText: money(grandTotal) };
-}
+// Ticket prices are GST-INCLUSIVE: the buyer pays the ticket total, with no separate GST
+// line anywhere (quote, checkout, booking). See migrations/20260716_remove_gst.sql.
 
 function pricingContextFromRow(row) {
   if (!row) return null;
@@ -251,7 +254,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       };
     });
     const subtotal = roundMoney(curve.total);
-    return withGst({
+    return {
       eventId,
       qty: normalizedQty,
       pricingModel: 'hype_driven',
@@ -261,7 +264,7 @@ export function buildHypeDrivenQuote(eventId, qty, context) {
       total: subtotal,
       subtotalText: money(subtotal),
       totalText: money(subtotal),
-    });
+    };
   } catch (err) {
     if (err.message === 'quote exceeds maxCapacity') {
       return { error: 'not_enough_tickets' };
@@ -285,7 +288,7 @@ export async function quotePledge(sb, eventId, qty) {
     const subtotal = Number(l.price) * Number(l.count);
     return { ...l, subtotal, subtotalText: money(subtotal) };
   });
-  return withGst({ ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) });
+  return { ...data, lines, subtotalText: money(data.subtotal), totalText: money(data.total) };
 }
 
 // RLS-scoped to the caller (auth.uid()); cache per-user so one user's cache never
@@ -369,16 +372,31 @@ async function mutationResult(sb, userId, eventId) {
 
 // ── User writes ────────────────────────────────────────────────────────────
 
+// Two RPCs, split by trust. A WALLET pledge runs as the signed-in user (auth.uid()) and has
+// no payment parameters to forge, so it stays on the user's client. A CARD pledge asserts
+// "Stripe was charged", which Postgres cannot verify — that RPC is service_role-only and takes
+// the JWT-validated userId, so it is reachable only after pledgeWithPayment has actually
+// charged and checked the PaymentIntent. Both were once one `authenticated` RPC that trusted
+// the caller's word, which let anyone mint free tickets.
 export async function createPledge(sb, userId, eventId, qty, paymentMethod = 'wallet', paymentIntentId = null, chargedAmount = null, idempotencyKey = null) {
-  const { data, error } = await sb.rpc('create_pledge', {
-    p_event_id: eventId,
-    p_qty: Number(qty),
-    p_payment_method: paymentMethod,
-    p_payment_intent_id: paymentIntentId,
-    p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
-    p_idempotency_key: idempotencyKey,
-  });
-  if (error) throw new Error(error.message);
+  const card = paymentMethod === 'card';
+  const { data, error } = card
+    ? await dependencies.adminClient().rpc('create_pledge_card', {
+      p_user_id: userId,
+      p_event_id: eventId,
+      p_qty: Number(qty),
+      p_payment_intent_id: paymentIntentId,
+      p_charged_amount: chargedAmount != null ? Number(chargedAmount) : null,
+      p_idempotency_key: idempotencyKey,
+    })
+    : await sb.rpc('create_pledge', {
+      p_event_id: eventId,
+      p_qty: Number(qty),
+      p_idempotency_key: idempotencyKey,
+    });
+  // Return, never throw: pledgeWithPayment's compensating refund only runs on `{ error }`, so
+  // throwing here left a successful card charge with no booking and no refund.
+  if (error) return { error: 'error', message: error.message };
   if (data?.error) return { error: data.error };
   const result = await mutationResult(sb, userId, eventId);
   // Surface the booking reference + charged amount for the confirmation page, plus the

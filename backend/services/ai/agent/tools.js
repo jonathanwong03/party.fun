@@ -1,9 +1,9 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { computeEconomics, loadCalculator } from '../../eventEconomics.js';
-import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
+import { listDrafts, mapEventRow, getProfile, giveAwayTickets, getEventAttendees, getEventAttendeesPrivate, listEventsRaw, hostedRevenue, getUserUniversity } from '../../eventService.js';
 import { cacheGetJson, cacheSetJson } from '../../cache.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
@@ -59,6 +59,17 @@ function isFutureStart(ev, now = Date.now()) {
   return Number.isFinite(t) && t > now;
 }
 
+// Spots remaining, and whether the event is FULL. One definition, shared by the buyable pool,
+// the list rows and get_event_details — these used to disagree, so an event could be listed as
+// "you can join this" while carrying soldOut:true and get_event_details saying isOpen:false.
+// NB maxCapacity 0/absent means UNCAPPED, not full: `maxCapacity > 0` is load-bearing.
+function spotsLeftFor(ev) {
+  return Math.max(0, Number(ev.maxCapacity ?? 0) - Number(ev.active_ticket_count ?? 0));
+}
+function isSoldOut(ev) {
+  return Number(ev.maxCapacity ?? 0) > 0 && spotsLeftFor(ev) === 0;
+}
+
 // Event ids the UI shows as "Tickets already purchased" — a booking in the
 // 'upcoming' OR 'cancelled' tab (matches App.tsx purchasedEventIds: active AND
 // buyer-cancelled / given-away purchases both block re-buying). NOTE: get_profile's
@@ -86,42 +97,157 @@ async function attendableEvents(ctx) {
     e.hostId !== ctx.userId
     && (e.status === 'early_bird' || e.status === 'greenlit')
     && !purchased.has(String(e.id))
-    && isFutureStart(e, now));
+    && isFutureStart(e, now)
+    // A FULL event is not buyable: capacity used to be enforced only by the create_pledge RPC,
+    // so a sold-out event was still listed as joinable and a purchase only failed at execute
+    // time ("Not enough tickets are available") after the agent had built a whole proposal.
+    && !isSoldOut(e));
 }
 
 // Resolve an event reference that may be an id OR a name/slug (users say "late-night
 // supper crawl", the model sometimes passes "late-night-supper-crawl") to the event.
 const normName = (s) => String(s ?? '').toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+// EXACT resolution only — an event id or a full normalized-title match. A partial /
+// substring reference is deliberately NOT resolved here; resolveEvent turns those into
+// a "Did you mean …?" confirmation instead of silently picking one.
 function findEvent(events, ref) {
   const r = String(ref ?? '').trim();
   if (!r) return null;
-  let ev = (events ?? []).find((e) => e.id === r); // exact id (uuid)
+  const ev = (events ?? []).find((e) => e.id === r); // exact id (uuid)
   if (ev) return ev;
   const nr = normName(r);
   if (!nr) return null;
-  ev = events.find((e) => normName(e.title) === nr); // exact name, hyphen/space/case-insensitive
-  if (ev) return ev;
-  const sub = events.filter((e) => normName(e.title).includes(nr) || nr.includes(normName(e.title)));
-  return sub[0] ?? null; // best substring match
+  return events.find((e) => normName(e.title) === nr) ?? null; // exact name, hyphen/space/case-insensitive
+}
+
+// Sørensen–Dice similarity over character bigrams of two normalized strings (0..1).
+// Catches typos ("gymming for nes" ≈ "gymming for newbies") with no embeddings needed.
+function bigrams(s) {
+  const out = new Map();
+  for (let i = 0; i < s.length - 1; i += 1) {
+    const g = s.slice(i, i + 2);
+    out.set(g, (out.get(g) ?? 0) + 1);
+  }
+  return out;
+}
+function diceSimilarity(a, b) {
+  const na = normName(a);
+  const nb = normName(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  if (na.length < 2 || nb.length < 2) return na === nb ? 1 : 0;
+  const ga = bigrams(na);
+  const gb = bigrams(nb);
+  let overlap = 0;
+  for (const [g, count] of ga) {
+    const other = gb.get(g);
+    if (other) overlap += Math.min(count, other);
+  }
+  const total = (na.length - 1) + (nb.length - 1);
+  return total > 0 ? (2 * overlap) / total : 0;
+}
+
+// Suggestion floors for "Did you mean …?". Deliberately STRICT: offering nothing is better
+// than offering a nonsense guess — at the old 0.3 semantic floor, "gymming for newbies"
+// suggested "Grad Ball: Black-Tie Gala". Real typos are still caught by substring overlap and
+// by Sørensen–Dice, which discriminates misspelt names far better than embeddings do.
+const SEMANTIC_SUGGEST_MIN = 0.6;
+const FUZZY_SUGGEST_MIN = 0.45;
+
+// Best fuzzy (string-similarity) matches for a ref among events — the fallback when
+// embeddings are off or the event hasn't been indexed yet. Returns titles best-first
+// for matches at/above the threshold.
+function fuzzyEventMatches(events, ref, { threshold = FUZZY_SUGGEST_MIN, limit = 3 } = {}) {
+  const scored = (events ?? [])
+    .map((e) => ({ title: e.title, score: diceSimilarity(ref, e.title) }))
+    .filter((r) => r.title && r.score >= threshold)
+    .sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((r) => r.title);
+}
+
+// A list-tool result for a query that matched nothing but is a near-miss to an event
+// title — surfaces "Did you mean …?" so the agent confirms instead of saying "none".
+function didYouMeanResult(pool, query) {
+  const names = fuzzyEventMatches(pool, query);
+  if (!names.length) return { count: 0, events: [] };
+  const didYouMean = names.length === 1
+    ? `No exact match for "${query}". Did you mean "${names[0]}"?`
+    : `No exact match for "${query}". Did you mean one of these: ${names.join(', ')}?`;
+  return { count: 0, events: [], didYouMean, suggestions: names };
 }
 
 function ambiguousEvent(names = []) {
-  return { error: `I found more than one matching event: ${names.join(', ')}. Which one do you mean?` };
+  if (names.length === 1) {
+    return { error: `I couldn't find an exact match for that. Did you mean "${names[0]}"? Say yes (or give the exact name) and I'll continue.` };
+  }
+  return { error: `I couldn't find an exact match. Did you mean one of these: ${names.join(', ')}? Which one?` };
 }
 
+// Resolve an event reference to an event. ONLY an EXACT id/full-name match resolves
+// straight through. Any non-exact reference — a partial ("game nig"), a substring, or a
+// typo — is NEVER auto-picked; we surface the closest match(es) (substring, then semantic,
+// then fuzzy) as a "Did you mean …?" suggestion so the agent confirms before acting.
 async function resolveEvent(ctx, events, ref) {
   const exact = findEvent(events, ref);
   if (exact) return { event: exact };
+  const list = events ?? [];
+  const suggestions = [];
+  const push = (title) => { if (title && !suggestions.includes(title)) suggestions.push(title); };
+  // 1. Substring / partial-name overlap (e.g. "game nig" ⊂ "game night and escape rooms").
+  const nr = normName(ref);
+  if (nr) {
+    for (const e of list) {
+      const en = normName(e.title);
+      if (en && (en.includes(nr) || nr.includes(en))) push(e.title);
+    }
+  }
+  // 2. Semantic matches (embeddings), high floor — only genuinely close events, never a guess.
   const ranked = await semanticMatch(ctx, ref, { count: 8 });
-  if (!ranked.length) return { event: null };
-  const byId = new Map((events ?? []).map((e) => [e.id, e]));
-  const scoped = ranked.filter((r) => byId.has(r.eventId));
-  if (!scoped.length) return { event: null };
-  const [first, second] = scoped;
-  const confident = Number(first.similarity ?? 0) >= 0.55;
-  const clear = !second || (Number(first.similarity ?? 0) - Number(second.similarity ?? 0)) >= 0.06;
-  if (confident && clear) return { event: byId.get(first.eventId), similarity: first.similarity };
-  return { ambiguous: scoped.slice(0, 3).map((r) => byId.get(r.eventId)?.title).filter(Boolean) };
+  const byId = new Map(list.map((e) => [e.id, e]));
+  for (const r of ranked) {
+    if (byId.has(r.eventId) && Number(r.similarity ?? 0) >= SEMANTIC_SUGGEST_MIN) push(byId.get(r.eventId)?.title);
+  }
+  // 3. Deterministic string-similarity fallback (works with no embeddings / unindexed events).
+  for (const t of fuzzyEventMatches(list, ref)) push(t);
+  if (suggestions.length) return { ambiguous: suggestions.slice(0, 3) };
+  return { event: null };
+}
+
+// Resolve a free-text event reference against the events the caller can actually BUY.
+// Reads Redis-first (attendableEvents → visibleEvents → listEventsRaw), falling back to
+// Supabase, then layers exact → substring → semantic (embeddings) → fuzzy matching.
+// Returns { event } on an exact hit, { ambiguous: [titles] } for close matches, or
+// { event: null } when nothing resembles it. Used by the deterministic buy-intent check
+// so a typo is caught before the LLM can invent an event.
+export async function resolveAttendableRef(ctx, ref) {
+  return resolveEvent(ctx, await attendableEvents(ctx), ref);
+}
+
+// As resolveAttendableRef, but over the WIDER pool of every event the caller can SEE. Lets the
+// buy-intent short-circuit tell "no such event" apart from "a real event you just can't buy".
+export async function resolveVisibleRef(ctx, ref) {
+  return resolveEvent(ctx, await visibleEvents(ctx), ref);
+}
+
+// Why a VISIBLE event is not in attendableEvents; null means it IS buyable. Mirrors that
+// filter using the same predicates so the two can't drift. Role isn't checked here —
+// attendableEvents returns [] for admins and callers handle that case themselves.
+export async function whyNotAttendable(ev, ctx) {
+  if (!ev) return null;
+  // Cancelled/ended outrank already_purchased: for someone holding tickets, "it was
+  // cancelled" is the more useful truth than "you already have tickets".
+  if (ev.status === 'cancelled') return 'cancelled';
+  if (ev.status === 'completed') return 'completed';
+  if (isPastEvent(ev)) return 'ended';
+  if (!isFutureStart(ev)) return 'started';
+  if (ev.hostId === ctx.userId) return 'own_event';
+  // Costs a getProfile round-trip, so it goes after the cheap synchronous checks. It comes
+  // BEFORE sold_out because "you already have tickets" is the more useful truth for someone
+  // who holds them — a full event they're already in isn't news.
+  if ((await purchasedEventIds(ctx)).has(String(ev.id))) return 'already_purchased';
+  if (isSoldOut(ev)) return 'sold_out';
+  if (ev.status !== 'early_bird' && ev.status !== 'greenlit') return 'not_open';
+  return null;
 }
 
 function draftRefText(d = {}) {
@@ -155,6 +281,7 @@ function ambiguousDraft(names = []) {
 // A detail-rich event row so the agent (a RAG assistant) can answer questions about
 // date/time, venue, deadline and description without extra tool calls.
 function richRow(ev, ctx) {
+  const spotsLeft = spotsLeftFor(ev);
   return {
     id: ev.id,
     title: ev.title,
@@ -162,6 +289,9 @@ function richRow(ev, ctx) {
     status: ev.status,
     currentPrice: currentPrice(ev),
     hypePct: hypePct(ev),
+    // Cheap eligibility facts so a list answer ("is anything sold out?") needs no extra call.
+    spotsLeft,
+    soldOut: isSoldOut(ev),
     startDate: ev.startDate ?? null,
     endDate: ev.endDate ?? null,
     deadline: ev.deadline ?? ev.deadlineAt ?? null,
@@ -238,7 +368,7 @@ export const searchEventsTool = makeTool(
 
 export const getEventDetailsTool = makeTool(
   'get_event_details',
-  "Get full details for one event the user can see, by its id: its current STATUS (early_bird/greenlit/completed/cancelled), the CURRENT PRICE a buyer pays now, tiers, tickets sold vs hype threshold, and — for the user's OWN event — the net revenue so far.",
+  "Get full details for one event the user can see, by its id or name: its current STATUS (early_bird/greenlit/completed/cancelled), the CURRENT PRICE a buyer pays now, tiers, tickets sold vs hype threshold, and — for the user's OWN event — the net revenue so far. ALSO returns the authoritative ELIGIBILITY facts — use these to answer yes/no questions instead of guessing: isOpen (can tickets still be bought at all — open status, not started, deadline not passed, spots left), deadline + deadlinePassed, isPast, spotsLeft / soldOut / maxCapacity, alreadyPurchased (the user already holds tickets, so cannot buy again), restrictedUniversity + canAttendUniversity (false = the event is limited to another university), mine, canEdit, canCancel, canViewAttendees, isCoOrganiser.",
   z.object({ eventId: z.string().describe('The event id OR its name (either works).') }),
 );
 
@@ -275,6 +405,12 @@ export const getMyJoinedEventsTool = makeTool(
   z.object({}),
 );
 
+export const listLiveEventsTool = makeTool(
+  'list_live_events',
+  "Every LIVE event across ALL organisers on the platform — the events currently in the early_bird or greenlit stage (open and not yet ended), regardless of who hosts them or whether the caller can buy. Use for 'what live events are hosted by organisers' / 'what events are currently live'. Works for every role, including admins (who host nothing of their own).",
+  z.object({}),
+);
+
 export const getWalletTool = makeTool(
   'get_wallet',
   "The user's wallet: current balance, linked card (brand + last 4), and recent wallet transactions (top-ups, ticket spends, refunds). Use this before proposing a top-up or a wallet-paid purchase.",
@@ -299,7 +435,7 @@ export const getCurrentDateTool = makeTool(
 // ── Weather ─────────────────────────────────────────────────────────────────────
 export const getWeatherTool = makeTool(
   'get_weather',
-  "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. Returns the precipitation probability and willRain (true when it is over 70%). Forecasts only reach ~10 days ahead. If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
+  "Check the rain forecast for an event's date so you can warn about outdoor plans. Pass an eventId (uses that event's date) OR a start (and optional end) ISO 8601 datetime. ALWAYS call this for any weather question rather than reasoning about whether a date is in range — it decides that itself and returns a status: 'ok' (precipitationProbability + willRain, true when over 70%), 'beyond_horizon' (genuinely too far out), 'past', or 'unavailable' (the forecast could not be fetched — this does NOT mean the date is too far away). If willRain is true, warn the organiser it is not ideal for an outdoor event and suggest an indoor venue or another date.",
   z.object({
     eventId: z.string().optional().describe('An event id OR name to check (its date/time is used).'),
     start: z.string().optional().describe('ISO 8601 start datetime (if no eventId).'),
@@ -364,9 +500,9 @@ export const rememberTool = makeTool(
 // ── Write tools (each returns a PROPOSAL the user must confirm) ─────────────────
 export const proposeUpdateEventTool = makeTool(
   'propose_update_event',
-  "PROPOSE editing one of the organiser's OWN events. Provide ONLY the fields to change. Does NOT apply the change — returns a proposal to confirm. Editable: title, description, venue, address, startDate, endDate, deadline (ISO 8601 datetimes), maxCapacity, hypeThreshold, earlyPrice, greenlitPrice.",
+  "PROPOSE editing an event. Organisers edit their OWN events; ADMINS may edit ANY event for moderation. Pass the event by NAME (never ask the user for an id) plus ONLY the fields to change. Does NOT apply the change — returns a proposal to confirm. Editable: title, description, venue, address, startDate, endDate, deadline (ISO 8601 datetimes), maxCapacity, hypeThreshold, earlyPrice, greenlitPrice.",
   z.object({
-    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
+    eventId: z.string().describe('The event id OR its NAME (name is fine — the tool resolves it).'),
     title: z.string().optional(),
     description: z.string().optional(),
     venue: z.string().optional(),
@@ -420,19 +556,20 @@ export const proposeTopupTool = makeTool(
 
 export const proposePledgeTool = makeTool(
   'propose_pledge',
-  "PROPOSE buying ticket(s) to an event using the user's WALLET balance (a deduction). Does NOT charge — returns a proposal the user must confirm. Cannot be their own event.",
+  "PROPOSE buying ticket(s) to an event. FIRST ask the payment method (in-app wallet OR debit/credit card) and the quantity, then call this with paymentMethod set. 'wallet' deducts the wallet balance; 'card' charges the user's linked card. Does NOT charge — returns a proposal the user must confirm. Cannot be their own event.",
   z.object({
     eventId: z.string().describe('The event to buy into — its id OR name (either works).'),
     qty: z.number().optional().describe('Number of tickets (>= 1). Defaults to 1.'),
+    paymentMethod: z.enum(['wallet', 'card']).optional().describe("How to pay: 'wallet' (in-app balance) or 'card' (linked debit/credit card). Ask the user first; defaults to wallet."),
   }),
 );
 
 export const proposeCancelEventTool = makeTool(
   'propose_cancel_event',
-  'PROPOSE cancelling one of the organiser\'s OWN live events. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. A reason is OPTIONAL — if the organiser gives one, pass it as-is (any reason is fine, even informal); if they do not, proceed without it. Does NOT cancel — returns a proposal the user must confirm.',
+  "PROPOSE cancelling a live event. This is also how you DELETE a published event: it closes the event and REFUNDS every backer. ORGANISERS may cancel their OWN events (reason OPTIONAL). ADMINS may cancel ANY event for moderation, but a reason is MANDATORY — accept any non-empty reason (even one word); if the admin gave none, ask for one first and do NOT call this tool until you have it. Does NOT cancel — returns a proposal the user must confirm.",
   z.object({
-    eventId: z.string().describe('The event id OR its name (must be hosted by the caller).'),
-    reason: z.string().optional().describe('Optional reason shown to backers. Pass whatever the organiser gives; leave empty if none.'),
+    eventId: z.string().describe('The event id OR its name.'),
+    reason: z.string().optional().describe('Reason shown to backers. Optional for the host organiser; REQUIRED (any non-empty text) when an admin deletes another organiser\'s event.'),
   }),
 );
 
@@ -476,7 +613,7 @@ export const proposeGiveAwayTicketsTool = makeTool(
 // All tools + a by-name index for the graph to bind per-branch subsets.
 export const AGENT_TOOLS = [
   searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
-  getMyHostedEventsTool, getMyJoinedEventsTool, getWalletTool, listMyDraftsTool,
+  getMyHostedEventsTool, getMyJoinedEventsTool, listLiveEventsTool, getWalletTool, listMyDraftsTool,
   getCurrentDateTool, getWeatherTool, researchEventIdeasTool,
   recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, getSimilarPastEventsTool, rememberTool,
   proposeUpdateEventTool, proposeCreateEventTool, proposeInviteCoorganiserTool,
@@ -491,14 +628,17 @@ export const EXECUTORS = {
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const hypeOnly = !!args.hypeOnly;
     const now = Date.now();
-    const rows = (await visibleEvents(ctx))
+    const visible = (await visibleEvents(ctx))
       .filter((e) => e.status !== 'cancelled' && e.status !== 'completed')
       .filter((e) => !isPastEvent(e, now))
-      .filter((e) => (hypeOnly ? e.status === 'greenlit' : true))
+      .filter((e) => (hypeOnly ? e.status === 'greenlit' : true));
+    const rows = visible
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .slice(0, 15)
       .map((e) => richRow(e, ctx));
+    // Typo help: a keyword query that matched nothing → suggest the closest event by name.
+    if (!rows.length && q) return didYouMeanResult(visible, args.query);
     return { count: rows.length, events: rows };
   },
 
@@ -508,6 +648,13 @@ export const EXECUTORS = {
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const mine = ev.hostId === ctx.userId;
+    const now = Date.now();
+    const sold = Number(ev.active_ticket_count ?? 0);
+    const maxCapacity = Number(ev.maxCapacity ?? 0);
+    const deadline = ev.deadline ?? ev.deadlineAt ?? null;
+    const deadlinePassed = deadline ? new Date(deadline).getTime() < now : false;
+    const spotsLeft = spotsLeftFor(ev);
+    const purchased = await purchasedEventIds(ctx);
     const details = {
       id: ev.id,
       title: ev.title,
@@ -515,15 +662,32 @@ export const EXECUTORS = {
       status: ev.status, // early_bird | greenlit | completed | cancelled
       startDate: ev.startDate,
       endDate: ev.endDate ?? null,
-      deadline: ev.deadline ?? ev.deadlineAt ?? null,
+      deadline,
       venue: ev.location ?? null,
       address: ev.address,
       currentPrice: currentPrice(ev), // the price a buyer pays right now, given the status/pricing model
-      ticketsSold: ev.active_ticket_count ?? 0,
+      ticketsSold: sold,
       hypeThreshold: ev.hypeThreshold ?? 0,
       hypePct: hypePct(ev),
       tiers: (ev.statuses ?? []).map((s) => ({ name: s.statusName, price: s.price, capacity: s.ticketCapacity })),
       mine,
+      // ── Eligibility facts: answer yes/no questions from THESE, never by inferring ──
+      maxCapacity,
+      spotsLeft,
+      soldOut: isSoldOut(ev),
+      isPast: isPastEvent(ev, now),
+      deadlinePassed,
+      // The single source of truth for "can I still buy tickets for this?": open status,
+      // not started, deadline not passed, and spots remain.
+      isOpen: (ev.status === 'early_bird' || ev.status === 'greenlit')
+        && isFutureStart(ev, now) && !deadlinePassed && (maxCapacity === 0 || spotsLeft > 0),
+      alreadyPurchased: purchased.has(String(ev.id)), // already holds tickets → cannot buy again
+      restrictedUniversity: ev.restricted_university || null, // null = open to everyone
+      canAttendUniversity: ev.viewer_can_attend !== false,    // false = restricted to another university
+      canEdit: !!ev.canEdit,
+      canCancel: !!ev.canCancel,
+      canViewAttendees: !!ev.canViewAttendees,
+      isCoOrganiser: !!ev.isCoOrganiser,
     };
     // Revenue so far is host-only; only include it for the caller's own event.
     if (mine) {
@@ -566,11 +730,32 @@ export const EXECUTORS = {
     } catch (e) {
       return { error: e?.message ?? 'Unable to load attendees.' };
     }
+    // Managers (host / co-organiser / admin) additionally get contact details. The
+    // private RPC is host/co-org/admin-only via can_manage_event; non-managers get
+    // { error: 'forbidden' } and we return names only.
+    let contactsByUsername = null;
+    try {
+      const priv = await getEventAttendeesPrivate(ctx.supabase, ev.id);
+      if (!priv?.error && Array.isArray(priv?.attendees)) {
+        contactsByUsername = new Map(priv.attendees.map((p) => [p.username, p]));
+      }
+    } catch { /* non-managers: names only */ }
+    const rows = attendees.map((a) => {
+      const row = { name: a.name ?? a.username ?? null, username: a.username ?? null };
+      const c = contactsByUsername?.get(a.username);
+      if (c) {
+        row.email = c.email ?? null;
+        row.telegram = c.socialLink || null; // optional — may be null/blank
+        row.phone = c.contact || null;       // optional — may be null/blank
+      }
+      return row;
+    });
     return {
       eventId: ev.id,
       title: ev.title,
       attendeeCount: attendees.length, // distinct people holding active tickets (one buyer of many tickets = one attendee)
-      attendees: attendees.map((a) => ({ name: a.name ?? a.username ?? null, username: a.username ?? null })),
+      canSeeContacts: !!contactsByUsername, // true for host/co-organiser/admin
+      attendees: rows,
     };
   },
 
@@ -578,31 +763,32 @@ export const EXECUTORS = {
   async list_available_events(args, ctx) {
     const q = String(args.query ?? '').toLowerCase().trim();
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
-    const rows = (await attendableEvents(ctx))
+    const attendable = await attendableEvents(ctx);
+    const rows = attendable
       .filter((e) => (q ? `${e.title ?? ''} ${e.description ?? ''}`.toLowerCase().includes(q) : true))
       .filter((e) => (maxPrice != null ? currentPrice(e) <= maxPrice : true))
       .map((e) => richRow(e, ctx));
+    // Typo help: a named search with no hit → suggest the closest attendable event.
+    if (!rows.length && q && maxPrice == null) return didYouMeanResult(attendable, args.query);
     return { count: rows.length, events: rows };
   },
 
+  // richRow carries the shared event facts (description, start/end, venue, address, deadline);
+  // this used to hand-roll a leaner row that omitted them, so the agent couldn't answer
+  // "where did I host X?" / "how long is it?" / "which did I host earliest?" about own events.
   async get_my_hosted_events(_args, ctx) {
     const rows = (await visibleEvents(ctx)).filter((e) => e.hostId === ctx.userId);
     const revenue = await hostedRevenueById(ctx);
     return {
       count: rows.length,
       events: rows.map((e) => ({
-        id: e.id,
-        title: e.title,
-        status: e.status, // early_bird | greenlit | completed | cancelled
-        startDate: e.startDate,
-        deadline: e.deadline ?? e.deadlineAt ?? null,
+        ...richRow(e, ctx),
+        // Host-only economics on top of the shared row.
         earlyPrice: tierPrice(e, 'early_bird'),
         greenlitPrice: tierPrice(e, 'greenlit'),
-        currentPrice: currentPrice(e), // price a buyer pays now given the status/pricing model
         revenueSoFar: revenue[e.id] ?? 0, // net revenue captured so far
         ticketsSold: e.active_ticket_count ?? 0,
         hypeThreshold: e.hypeThreshold ?? 0,
-        hypePct: hypePct(e),
         maxCapacity: e.maxCapacity ?? 0,
       })),
     };
@@ -619,15 +805,12 @@ export const EXECUTORS = {
     const eventsById = new Map((await visibleEvents(ctx)).map((e) => [e.id, e]));
     const toRow = (t) => {
       const e = eventsById.get(t.eventId);
-      return {
-        eventId: t.eventId,
-        title: e?.title ?? '(event)',
-        status: e?.status ?? null,
-        startDate: e?.startDate ?? null,
-        venue: e?.location ?? null,
-        currentPrice: e ? currentPrice(e) : null,
-        ticketsHeld: Number(t.activeTicketCount ?? 0), // how many tickets the user still holds
-      };
+      const held = Number(t.activeTicketCount ?? 0); // how many tickets the user still holds
+      // The event may no longer be visible (deleted/hidden) — keep the lean fallback.
+      if (!e) return { eventId: t.eventId, title: '(event)', status: null, startDate: null, venue: null, currentPrice: null, ticketsHeld: held };
+      // richRow's `id` is renamed to `eventId` so this row keeps exactly one id, as before.
+      const { id, ...rest } = richRow(e, ctx);
+      return { ...rest, eventId: id, ticketsHeld: held };
     };
     // tab: 'upcoming' = currently joined, 'past' = attended, 'cancelled' = gave away all / event cancelled.
     const byTab = (tab) => tickets.filter((t) => t.tab === tab).map(toRow);
@@ -635,6 +818,16 @@ export const EXECUTORS = {
     const past = byTab('past');
     const cancelled = byTab('cancelled');
     return { counts: { upcoming: upcoming.length, past: past.length, cancelled: cancelled.length }, upcoming, past, cancelled };
+  },
+
+  // Every LIVE event on the platform (early_bird/greenlit, not ended), across ALL
+  // organisers — independent of ownership/purchase, so it works for admins too.
+  async list_live_events(_args, ctx) {
+    const now = Date.now();
+    const rows = (await visibleEvents(ctx))
+      .filter((e) => (e.status === 'early_bird' || e.status === 'greenlit') && !isPastEvent(e, now))
+      .map((e) => ({ ...richRow(e, ctx), organiser: e.organiser_name ?? null }));
+    return { count: rows.length, events: rows };
   },
 
   // ── Date ─────────────────────────────────────────────────────────────────────
@@ -769,8 +962,10 @@ export const EXECUTORS = {
     if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
-    // Owners AND accepted co-organisers can edit (mirrors the update_event RPC's can_manage_event check).
-    if (ev.hostId !== ctx.userId && !ev.isCoOrganiser) return { error: 'You can only edit events you host or co-organise.' };
+    // Owners, accepted co-organisers AND admins can edit (mirrors the update_event RPC's
+    // can_manage_event check — host OR co-organiser OR admin).
+    const canEdit = ev.hostId === ctx.userId || ev.isCoOrganiser || String(ctx.role || '').toLowerCase() === 'admin';
+    if (!canEdit) return { error: 'You can only edit events you host or co-organise.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be edited.' };
 
     const FIELDS = ['title', 'description', 'venue', 'address', 'startDate', 'endDate', 'deadline', 'maxCapacity', 'hypeThreshold', 'earlyPrice', 'greenlitPrice'];
@@ -967,29 +1162,64 @@ export const EXECUTORS = {
       if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
       if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
       if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
+      // Before the catch-all: a full event used to fall through to "you already hold tickets",
+      // which is simply untrue for someone who has never bought any.
+      if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
       return { error: 'You already hold tickets for this event — give them away before buying again.' };
     }
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
+    // Capacity was previously enforced ONLY by the create_pledge RPC, so the agent would build
+    // a complete proposal ("8 tickets ... $88.00") and only fail on confirm with "Not enough
+    // tickets are available". Refuse here instead; the RPC stays the atomic authority.
+    const spotsLeft = spotsLeftFor(ev);
+    if (Number(ev.maxCapacity ?? 0) > 0 && qty > spotsLeft) {
+      return { error: `Only ${spotsLeft} ticket${spotsLeft === 1 ? '' : 's'} ${spotsLeft === 1 ? 'is' : 'are'} left for "${ev.title}", so ${qty} cannot be bought. Offer them ${spotsLeft} instead.` };
+    }
     const price = currentPrice(ev);
     const total = price * qty;
-    // Wallet pre-check: the agent pays from the wallet; if short, guide a card top-up first.
-    const { data: me } = await ctx.supabase.from('USER').select('walletBalance, cardLast4').eq('id', ctx.userId).single();
+    const method = args.paymentMethod === 'card' ? 'card' : 'wallet';
+    // One idempotency key per proposal, reused on execute so a confirm-retry never double-charges.
+    const attemptId = randomUUID();
+    const base = {
+      id: `pledge:${ev.id}:${Date.now()}`,
+      action: 'pledge',
+      eventId: ev.id,
+      title: ev.title,
+    };
+    const { data: me } = await ctx.supabase
+      .from('USER')
+      .select('walletBalance, cardLast4, cardBrand, stripePaymentMethodId')
+      .eq('id', ctx.userId)
+      .single();
+
+    if (method === 'card') {
+      // Card charges the linked card off-session at execute time; require one now.
+      if (!me?.stripePaymentMethodId || !me?.cardLast4) {
+        return { error: 'No card is linked. Ask them to link a card in Wallet before paying by card, or offer to pay with their wallet instead.' };
+      }
+      return {
+        proposal: {
+          ...base,
+          summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your ${me.cardBrand || 'card'} ending ${me.cardLast4} — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}).`,
+          payload: { qty, paymentMethod: 'card', attemptId },
+        },
+      };
+    }
+
+    // Wallet: pre-check the balance; if short, guide a card top-up (or paying by card) first.
     const balance = Number(me?.walletBalance ?? 0);
     if (total > balance) {
       const shortfall = (total - balance).toFixed(2);
       const cardNote = me?.cardLast4
-        ? `Offer to top up $${shortfall} (or more) into the wallet by charging their card ending ${me.cardLast4} (propose_topup), then pledge.`
+        ? `Offer to top up $${shortfall} (or more) into the wallet by charging their card ending ${me.cardLast4} (propose_topup), or to pay for this purchase by card instead, then pledge.`
         : `No card is linked — ask them to link a card in Wallet before buying.`;
       return { error: `Wallet balance is $${balance.toFixed(2)}, which is $${shortfall} short of the $${total.toFixed(2)} for ${qty} ticket${qty > 1 ? 's' : ''}. ${cardNote}` };
     }
     return {
       proposal: {
-        id: `pledge:${ev.id}:${Date.now()}`,
-        action: 'pledge',
-        eventId: ev.id,
-        title: ev.title,
+        ...base,
         summary: `Buy ${qty} ticket${qty > 1 ? 's' : ''} to "${ev.title}" with your wallet — $${total.toFixed(2)} (${qty} × $${price.toFixed(2)}). Wallet $${balance.toFixed(2)} → $${(balance - total).toFixed(2)} after.`,
-        payload: { qty },
+        payload: { qty, paymentMethod: 'wallet', attemptId },
       },
     };
   },
@@ -999,9 +1229,15 @@ export const EXECUTORS = {
     if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
-    if (ev.hostId !== ctx.userId) return { error: 'You can only cancel events you host.' };
+    const isAdmin = String(ctx.role || '').toLowerCase() === 'admin';
+    const isHost = ev.hostId === ctx.userId;
+    if (!isHost && !isAdmin) return { error: 'You can only cancel events you host.' };
     if (ev.status === 'cancelled' || ev.status === 'completed') return { error: 'This event can no longer be cancelled.' };
     const reason = String(args.reason ?? '').trim();
+    // Admins moderating another organiser's event MUST supply a reason.
+    if (isAdmin && !isHost && reason.length < 1) {
+      return { error: 'A reason is required to delete this event. Ask the admin for a short reason (any text is fine), then propose again.' };
+    }
     return {
       proposal: {
         id: `cancel_event:${ev.id}:${Date.now()}`,

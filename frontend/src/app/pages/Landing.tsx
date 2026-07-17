@@ -41,11 +41,12 @@ export function Landing({
     return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
 
-  // On the deployed free-tier backend, the first request after idle can take ~30s
-  // (Render cold start). After a few seconds of loading, reassure the visitor.
+  // On the DEPLOYED free-tier backend, the first request after idle can take ~30s (Render
+  // cold start). After a few seconds of loading, reassure the visitor. Production only —
+  // in dev the backend is local and already running, so the message would be wrong.
   const [slowHint, setSlowHint] = useState(false);
   useEffect(() => {
-    if (!loading) { setSlowHint(false); return; }
+    if (!loading || !import.meta.env.PROD) { setSlowHint(false); return; }
     const t = setTimeout(() => setSlowHint(true), 4000);
     return () => clearTimeout(t);
   }, [loading]);

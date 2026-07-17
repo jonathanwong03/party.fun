@@ -5,6 +5,7 @@ import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion, buildKnowledgeSystem } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from '../services/ai/agent/listReplies.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
@@ -79,10 +80,13 @@ export async function revenueTips(req, res) {
 export async function recommendEvents(req, res) {
   if (!guard(req, res)) return;
   const { interests } = req.body ?? {};
-  let rows;
-  try { rows = await listEventsRaw(req.supabase, req.user.id); }
-  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
+  // Guests are supported (optionalAuth → req.user is null, req.supabase is the anon
+  // client): they get the same recommendations, just without the "not your own event"
+  // exclusion below. Dereferencing req.user.id here used to throw → HTTP 400 for guests.
   const userId = req.user?.id ?? null;
+  let rows;
+  try { rows = await listEventsRaw(req.supabase, userId); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
 
   let candidates = (rows ?? [])
     .filter((e) => (!userId || e.hostId !== userId) && e.derived_status !== 'cancelled' && e.derived_status !== 'completed')
@@ -158,35 +162,42 @@ const AGENT_SYSTEM = () => [
   'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
+  'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
+  'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
+  'BINARY (YES/NO) QUESTIONS: when the user asks a yes/no question ("am I an organiser?", "can I still buy tickets for X?", "is X sold out?", "can I attend X?", "have I already bought tickets for X?", "can I edit X?", "is it too late?", "will I be refunded if X is cancelled?"), LEAD with "Yes" or "No", then ONE short line saying why, grounded in tool data. Never answer a yes/no question with a bare noun and never dodge it. A QUESTION about buying ("can I buy tickets after 24 July?") is a question — ANSWER it; do NOT start the purchase flow unless they actually ask to buy.',
+  'Ground yes/no answers in get_event_details, which returns the authoritative facts — isOpen (can tickets still be bought at all), deadline + deadlinePassed, isPast, soldOut / spotsLeft, alreadyPurchased (they already hold tickets so cannot buy again), restrictedUniversity + canAttendUniversity (false = limited to another university), mine, canEdit, canCancel, canViewAttendees, isCoOrganiser. Use these fields rather than inferring from the description. For DATE questions ("can I buy tickets after <date>?") compare that date with the event\'s deadline using get_current_date. If the question is about an event but NO event is named or clear from the conversation, ask which event they mean FIRST, then answer.',
+  'CAN I JOIN / ATTEND X? Look the event up with get_event_details (NOT search_events — it hides cancelled, completed and past events, so you could not explain why). If isOpen is true, say yes. If it is false, say NO and give the SPECIFIC reason from the fields, in this order: alreadyPurchased → "You already have tickets for X, so you\'re all set — you can\'t buy more, but you can give some away if you no longer need them" (they are ALREADY going, do NOT say they can\'t join); status "cancelled" → "X was cancelled, so it\'s no longer running"; isPast true or status "completed" → "X has already ended"; soldOut true → "X is at full capacity — every ticket is taken"; deadlinePassed true → "the deadline to buy tickets for X has passed"; canAttendUniversity false → "X is limited to <restrictedUniversity> students". Name the real reason — never a vague "you cannot join this event" with no why.',
+  'SUPERLATIVE / SINGLE-FACT QUESTIONS: an ordering ask ("which event did I host earliest?", "what is my latest event?", "what\'s my next one?", "which is the cheapest?") or a single-fact ask ("where did I host X?", "when does X start?", "how long is X?") wants ONE answer — the event plus the fact asked for — NOT a list of everything. Call the matching tool, compare the rows YOURSELF (startDate for earliest/latest/next, with get_current_date for "next"/"upcoming"; startDate→endDate for how long; venue/address for where), then name the ONE event and the fact in a sentence. The numbered-list FORMATTING rule below does NOT apply here — only number things when you are genuinely listing several items. Never answer "which is the earliest…?" by dumping every event.',
+  'DID YOU MEAN: whenever a tool reply comes back as \'Did you mean "X"?\' (the name the user gave was a close but not exact match — e.g. a typo like "frisbe" vs "frisbee"), relay that question and WAIT — do not act on any event (details, edit, cancel, buy, attendees) until the user confirms. Once they confirm (yes), retry using the exact suggested name. If they say no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is right.',
   'For "events I can join" or "events I can attend", use list_available_events and list ALL returned events unless the user asks for a shorter list.',
   '"Ongoing events" means buyable All Events items for attendees/users. For organisers, clarify whether they mean buyable All Events or their own active hosted events. Completed events are never ongoing.',
-  'Only organisers can create, draft, publish, edit, cancel, or manage hosted events. If a normal user asks to create an event, tell them they need an organiser account.',
+  'ROLES: Only ORGANISERS can CREATE / draft / publish events (their own). Organisers can also edit and cancel their own events. ADMINS can EDIT and CANCEL/DELETE ANY event for moderation, but CANNOT create/draft events. Regular USERS/attendees cannot create or manage any event. If a user asks to create an event, tell them they need an organiser account; if an ADMIN asks to create one, tell them creating is organiser-only (admins moderate, they do not host).',
   'Retrieved memory and chat history are context only. Current events, tickets, wallet, draft state, pricing and permissions must come from tools in the current turn.',
   '',
   'READ tools:',
   '- list_available_events: the ALL EVENTS / discovery list, and the ONLY correct tool for "which events can I attend / buy / participate in" and "cheapest/most expensive ticket I can buy". It returns exactly the events the user can BUY right now: hosted by SOMEONE ELSE, still open (early_bird or greenlit), starting strictly in the FUTURE, and NOT already purchased by them. It accepts an optional query/maxPrice. NEVER use search_events to answer "what can I attend" — it does not exclude own or already-purchased events.',
-  "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype.",
+  "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype + revenue so far, AND each event's start/end date-time, venue, address, deadline and description — so it answers \"where/when/how long was my event?\" without another call.",
   '- search_events: general lookup of a SPECIFIC event by name (includes the user\'s own events and ones they already bought; excludes ended events). Use ONLY to find one event (e.g. before editing) — never to list what the user can attend/buy.',
   '- get_event_details: full details for one event.',
   "- get_event_forecast: projected sales/revenue/costs and PROFIT for the user's OWN events (host only). Forecasts are estimates; operational costs are NOT charged through party.fun.",
-  '- get_event_attendees: who is attending an event (people holding active tickets) and the count — for "who is coming / how many backers".',
-  '- get_my_joined_events: the events the user has joined, split into upcoming / past / cancelled, with how many tickets they still hold for each.',
+  '- get_event_attendees: who is attending an event (distinct people holding active tickets) and the count — for "who is coming / who is attending / how many backers". Present the people as a NUMBERED list (1., 2., 3., each on its own line). If the result has canSeeContacts=true (the caller is the event\'s organiser, a co-organiser, or an admin), also show each person\'s email and — only if present — their telegram and phone (these are optional; omit any that are blank). If canSeeContacts is false, list names only.',
+  '- get_my_joined_events: the events the user has joined, split into upcoming / past / cancelled, with how many tickets they hold for each. When you present them, number each group SEPARATELY starting at 1 — list the UPCOMING events as 1., 2., 3.; then a PLAIN unnumbered header line like "You have also joined N past events:" followed by those events renumbered 1., 2.; and likewise for cancelled. The header/intro lines are NOT numbered list items.',
   '',
   '- get_wallet: the user\'s wallet balance, linked card, and recent transactions. Check this before proposing a top-up or a wallet-paid purchase.',
   '- list_my_drafts: the user\'s unpublished event DRAFTS (events they created but have not published). Call this for "what are my drafts?" and to find a draftId before editing (propose_edit_draft) or deleting (propose_delete_draft) one. Drafts are SEPARATE from hosted/published events — never conclude a draft does not exist from get_my_hosted_events.',
   '- get_current_date: today\'s date & time in Singapore. Call it whenever you reason about dates (how soon an event is, whether a date is in the future, computing a new event\'s dates) and before checking future weather.',
-  '- get_weather: the rain forecast for an event\'s date (by eventId or a start date). If it reports willRain (over 70% chance), warn that it is not ideal for an OUTDOOR event and suggest an indoor venue or another date. Forecasts only reach ~10 days ahead.',
+  '- get_weather: the rain forecast for an event\'s date (by eventId or a start date). If it reports willRain (over 70% chance), warn that it is not ideal for an OUTDOOR event and suggest an indoor venue or another date. YOU CAN CHECK THE WEATHER — never reply that you cannot provide forecasts, and NEVER decide a date is too far away by reasoning about it yourself. ALWAYS call get_weather and report what it returns: status "ok" (give the chance of rain), "beyond_horizon" (only then say it is too far out for a reliable forecast), "past", or "unavailable" (say the forecast could not be retrieved right now — do NOT say it is too far away).',
   '- research_event_ideas: searches the web for what university students are into now and suggests an event name, description, why it fits, and a good location (ideally near the organiser\'s university). Use it when an organiser asks what students want, for naming/description help, or where to host.',
-  '- search_events / list_available_events return FULL details (date/time, venue, address, deadline, description, price) — use them to answer detail questions and to find an event\'s id before editing it. list_available_events is the events the user can ATTEND (never their own, never already-ended).',
+  '- EVERY event tool — search_events, list_available_events, get_my_hosted_events, get_my_joined_events, list_live_events, recommend_events, semantic_search_events, find_similar_events — returns FULL details for EVERY event it lists: startDate AND endDate (so duration is startDate→endDate), venue, address, deadline, description and price. Use them to answer detail questions ("where is it?", "when does it start?", "how long does it run?", "what is it about?") and to find an event\'s id before editing it — you never need to guess or ask the user for these. list_available_events is the events the user can ATTEND (never their own, never already-ended).',
   '',
   'WRITE tools (each creates a PROPOSAL the user confirms — they do NOT apply immediately; there is no auto-apply mode, so ALWAYS wait for confirmation):',
-  "- propose_update_event: EDIT one of the user's OWN existing events IN PLACE. To change a field (e.g. an early-bird price), first find the event with get_my_hosted_events or search_events, then call this with its eventId and ONLY the fields to change. NEVER create a new event to make an edit.",
+  "- propose_update_event: EDIT an existing event IN PLACE — organisers edit their OWN events, ADMINS may edit ANY event. Find the event BY NAME (search_events works for admins on any event; get_my_hosted_events for an organiser's own) and NEVER ask the user for an event id. If they haven't said what to change, ask which field(s) they want (title, description, venue, address, dates, deadline, capacity, hype threshold, prices) — accept one OR MORE — then call this with the event NAME and only those fields. NEVER create a new event to make an edit.",
   '- propose_create_event: create a NEW event as a DRAFT. Create flow: when asked to plan/create an event, IMMEDIATELY research (research_event_ideas) and check get_current_date, then propose ONE COMPLETE draft filling every field — title, description, start/end date-time (STRICTLY after today), venue, a chosen pricingModel with a one-line rationale, and all prices+quantities (tiered: earlyPrice+greenlitPrice+early qty+capacity; hype: basePrice+maxPrice+threshold+capacity) — then wait; if they dislike it, offer alternatives. It saves a draft the user reviews and publishes.',
   "- propose_invite_coorganiser: invite a co-organiser to the user's own event (owner only).",
   '- propose_topup: add money to the wallet by charging the linked card. Requires a linked card.',
-  '- propose_pledge: buy ticket(s) with the WALLET balance. First ask how many + payment preference, then state the total and wallet balance (get_wallet). If the wallet is short, offer a card top-up (propose_topup) for the shortfall then pledge; if no card is linked, tell them to link one. Only for attendable events (someone else\'s, open, future-start, not already bought).',
+  '- propose_pledge: buy ticket(s), paid by the WALLET balance OR the linked CARD. ORDER: (1) IDENTIFY and CONFIRM the event FIRST — look it up by name; if it is not an exact match, ask "Did you mean X?" and wait for yes/no before anything else; (2) ask the payment method — "in-app wallet or debit/credit card?"; (3) ask how many tickets; (4) propose with paymentMethod set. Do NOT ask quantity or payment method until the exact event is confirmed. For wallet: state the total and wallet balance (get_wallet); if short, offer a card top-up (propose_topup) for the shortfall, or paying by card instead, then pledge. For card: it charges the linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Only for attendable events (someone else\'s, open, future-start, not already bought).',
   '- propose_give_away_tickets: give away some of the user\'s OWN tickets for an event they joined. They MUST say how many (more than 0, at most what they hold). Final and non-refundable — the released spots return to the public pool.',
-  '- propose_cancel_event: cancel one of the user\'s OWN live events — this REFUNDS every backer, and is also how you DELETE a published event. A reason is OPTIONAL: if the organiser gives one, use it as-is (accept ANY reason, even informal like "it is not nice"); if they give none, proceed without one. Never demand a "formal" or "valid" reason.',
+  '- propose_cancel_event: cancel/DELETE a live event — this REFUNDS every backer. ORGANISERS cancel their OWN events; a reason is OPTIONAL (accept ANY reason, even informal, and never demand a "formal" one). ADMINS can cancel/delete ANY event for moderation, but a reason is MANDATORY — if the admin did not give one, ask for a short reason first (any non-empty text is fine) and only then propose.',
   '- propose_edit_draft: edit fields of an unpublished DRAFT (find it with list_my_drafts). Use this — NOT propose_update_event — to change an event that is still a draft. Pass draftId + only the fields to change.',
   '- propose_delete_draft: permanently delete one of the user\'s unpublished drafts.',
   '',
@@ -196,7 +207,7 @@ const AGENT_SYSTEM = () => [
   '',
   'MEMORY: call `remember` to save a durable preference you learn about the user (interests, budget, preferred venue/theme/timing, or an organiser\'s pricing/venue preferences). Personalise your help using what you already remember about them (shown below, if any). Do not re-remember something already known.',
   '',
-  'CREATING & EDITING: only organiser/admin accounts can create, edit, cancel and delete hosted events. For organiser/admin accounts, use the propose_* tools and never claim a write is done before confirmation. propose_create_event saves the event as a DRAFT (it is NOT published) that the organiser reviews and publishes from their Drafts; once confirmed it IS saved — tell them it is in their Drafts. To change a still-unpublished draft afterwards, call list_my_drafts to find it then propose_edit_draft (do NOT use propose_update_event, and never claim the draft was not saved without first calling list_my_drafts). propose_update_event edits an existing PUBLISHED event IN PLACE (never recreate it). Every write pauses for the organiser to confirm before anything happens.',
+  'CREATING & EDITING: ORGANISERS can create, edit and cancel their own events; ADMINS can edit and cancel/delete ANY event but CANNOT create/draft; USERS can do neither. Use the propose_* tools and never claim a write is done before confirmation. propose_create_event saves the event as a DRAFT (it is NOT published) that the organiser reviews and publishes from their Drafts; once confirmed it IS saved — tell them it is in their Drafts. To change a still-unpublished draft afterwards, call list_my_drafts to find it then propose_edit_draft (do NOT use propose_update_event, and never claim the draft was not saved without first calling list_my_drafts). propose_update_event edits an existing PUBLISHED event IN PLACE (never recreate it). Every write pauses for the organiser to confirm before anything happens.',
   '',
   'When you call a propose_* tool, tell the user what you are proposing and that it needs their confirmation; never claim it is already done.',
   "Distinguish \"all events\" (discovery — events to buy) from \"hosted events\" (the organiser's own). Keep replies short, friendly and practical.",
@@ -205,7 +216,7 @@ const AGENT_SYSTEM = () => [
   '',
   'SCOPE: You are ONLY an events assistant for party.fun. You help with discovering/buying events, wallet/top-ups, hosting (create/edit/cancel), giving away tickets, event ideas, and the weather for an event. If asked anything unrelated to events or party.fun (e.g. what to wear, general trivia, coding, personal advice, maths), politely say you can only help with events on party.fun and offer an events-related next step — do NOT answer the off-topic question. Still respond warmly to greetings, thanks and small pleasantries.',
   '',
-  'FORMATTING: whenever you list multiple items (events, drafts, options, tips), you MUST number them — put each item on its OWN line, starting with "1.", then "2.", then "3.", and so on. For example:\n1. First item.\n\n2. Second item.\n\n3. Third item.\nNever present a list as unnumbered paragraphs. Otherwise reply in PLAIN TEXT — no markdown bold/headings/tables, no dash or asterisk bullets, and no emojis. Keep paragraphs short, separated by a blank line.',
+  'FORMATTING: whenever you list multiple items (events, drafts, options, tips, attendees), you MUST number them — put each item on its OWN line, starting with "1.", then "2.", then "3.", and so on. For example:\n1. First item.\n\n2. Second item.\n\n3. Third item.\nNever present a list as unnumbered paragraphs. CRITICAL: a number belongs ONLY to an ACTUAL list item (a real event / draft / attendee). Do NOT put a number on intro sentences, section headers, transitions, or closing/filler lines. E.g. "Let me know if you\'d like more details on any of these!" is a closing line — write it plain, never as "8. Let me know…"; and if you list 7 events the numbers must end at 7. EXCEPTION — grouped lists (e.g. joined events split into upcoming / past / cancelled): number each GROUP separately from 1, and write the group intro/header (e.g. "You have also joined 2 past events:") as a PLAIN line WITHOUT a number. Otherwise reply in PLAIN TEXT — no markdown bold/headings/tables, no dash or asterisk bullets, and no emojis. Keep paragraphs short, separated by a blank line.',
 ].join('\n');
 
 // A one-line statement of who the current user is, prepended to the system prompt so
@@ -213,7 +224,7 @@ const AGENT_SYSTEM = () => [
 function roleLine(role) {
   const r = String(role || 'user').toLowerCase();
   const detail = r === 'admin'
-    ? 'an ADMIN who can manage (including cancel) any event on the platform'
+    ? 'an ADMIN who can EDIT and CANCEL/DELETE ANY event on the platform for moderation (a deletion needs a reason — any short text). Admins CANNOT create, host or draft events — only organisers can. If this admin asks to create an event, tell them creating is organiser-only'
     : r === 'organiser'
       ? 'an ORGANISER who can host, edit and cancel their own events, and can also join/buy tickets for other people\'s events'
       : 'a regular USER (attendee) who joins and buys tickets for events. Attendees CANNOT create, host, edit, cancel or delete events — only organiser accounts can. If this user asks to create/host/manage an event, do NOT attempt it: tell them event hosting is for organiser accounts and they would need to sign up as (or switch to) an organiser';
@@ -260,6 +271,29 @@ async function loadCurrentRole(req) {
   return ['user', 'organiser', 'admin'].includes(role) ? role : 'user';
 }
 
+// What each role can do, for a one-line role answer.
+const ROLE_BLURB = {
+  organiser: 'you can host, edit and cancel your own events, and also join other people\'s events',
+  admin: 'you can edit and cancel/delete any event for moderation, but you cannot create or join events',
+  user: 'you can browse and buy tickets for events, but only organiser accounts can host them',
+};
+const ROLE_WORDS = { organiser: ['organiser', 'organizer'], admin: ['admin', 'administrator'], user: ['user', 'attendee'] };
+
+// Answer a role question in natural language. A yes/no phrasing ("am I an organiser?",
+// "do I have admin access?") names a role, so answer Yes/No against the real one rather
+// than replying with a bare role word, which answers neither.
+export function roleAnswer(role, question) {
+  const q = String(question ?? '').toLowerCase();
+  const asked = Object.keys(ROLE_WORDS).find((r) => ROLE_WORDS[r].some((w) => new RegExp(`\\b${w}s?\\b`).test(q)))
+    // "can I host/create events?" is really "am I an organiser?"
+    ?? (/\b(host|hosting|create|creating)\b/.test(q) ? 'organiser' : null);
+  if (!asked) return `You're ${role === 'admin' ? 'an admin' : role === 'organiser' ? 'an organiser' : 'a regular user (attendee)'} — ${ROLE_BLURB[role]}.`;
+  const article = (r) => (r === 'user' ? 'a regular user (attendee)' : r === 'admin' ? 'an admin' : 'an organiser');
+  return asked === role
+    ? `Yes — your account is ${article(role)}, so ${ROLE_BLURB[role]}.`
+    : `No — your account is ${article(role)}, not ${article(asked)}. As ${article(role)}, ${ROLE_BLURB[role]}.`;
+}
+
 // Persist chat turns (user + assistant) into a conversation, creating + auto-titling
 // one when needed. Returns the conversationId. Never throws.
 async function persistTurn(supabase, { conversationId, titleSeed, userText, reply, modelLabel }) {
@@ -296,6 +330,19 @@ async function persistTurn(supabase, { conversationId, titleSeed, userText, repl
 
 const modelLabelOf = (result) => (result.model ? `${result.provider} · ${result.model}` : null);
 
+// Send a deterministic (no-LLM) reply, persisting the turn like a normal answer.
+async function respondDirect(req, res, { list, lastUserMsg, conversationId, reply }) {
+  const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
+  const convoId = await persistTurn(req.supabase, {
+    conversationId: conversationId || null,
+    titleSeed: firstUser?.content,
+    userText: lastUserMsg?.content,
+    reply,
+    modelLabel: null,
+  });
+  return res.json({ available: true, status: 'done', reply, proposals: [], results: [], threadId: null, conversationId: convoId });
+}
+
 // Deterministic backstop for the "never show internal IDs" prompt rule: strip any
 // leaked event/draft/database IDs (UUIDs) from a user-facing reply, whether bare,
 // labelled ("ID: <uuid>"), or parenthetical ("(ID: <uuid>)"). Trailing/duplicate
@@ -330,15 +377,51 @@ export async function chat(req, res) {
   const lastUserMsg = [...list].reverse().find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
   if (isRoleQuestion(lastUserMsg?.content)) {
     const role = await loadCurrentRole(req);
+    const reply = roleAnswer(role, lastUserMsg?.content);
     const firstUser = list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim());
     const convoId = await persistTurn(req.supabase, {
       conversationId: conversationId || null,
       titleSeed: firstUser?.content,
       userText: lastUserMsg?.content,
-      reply: role,
+      reply,
       modelLabel: null,
     });
-    return res.json({ available: true, status: 'done', reply: role, proposals: [], results: [], threadId: null, conversationId: convoId });
+    return res.json({ available: true, status: 'done', reply, proposals: [], results: [], threadId: null, conversationId: convoId });
+  }
+  // Deterministic short-circuit for three fully-specified list asks (events I can
+  // join / events I've joined / live events across organisers) — rendered in code so
+  // tool choice and numbering are always correct. Qualified asks return null → LLM.
+  // Card safety + linking: handled deterministically so the model never asks for, echoes
+  // or stores a card number. A "yes" right after our own offer opens the secure form.
+  const prevAssistant = [...list].reverse().find((m) => m && m.role === 'assistant' && String(m.content ?? '').trim());
+  const cardKind = matchLinkCardIntent(lastUserMsg?.content);
+  const confirmingCardForm = /^(yes|yeah|yep|sure|ok|okay|please|go ahead|do it|open it)\b/i.test(String(lastUserMsg?.content ?? '').trim())
+    && /secure card form/i.test(String(prevAssistant?.content ?? ''));
+  if (cardKind || confirmingCardForm) {
+    const { reply, action } = buildLinkCardReply(cardKind ?? 'link_card', confirmingCardForm);
+    const convoId = await persistTurn(req.supabase, {
+      conversationId: conversationId || null,
+      titleSeed: list.find((m) => m && m.role === 'user' && String(m.content ?? '').trim())?.content,
+      // Never persist a pasted card number — store a redacted placeholder instead.
+      userText: cardKind === 'card_number_pasted' ? '[card details redacted]' : lastUserMsg?.content,
+      reply,
+      modelLabel: null,
+    });
+    return res.json({ available: true, status: 'done', reply, action: action ?? null, proposals: [], results: [], threadId: null, conversationId: convoId });
+  }
+
+  const listKind = matchListQuery(lastUserMsg?.content);
+  if (listKind) {
+    const reply = await buildListReply(listKind, ctx);
+    if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
+  }
+  // Deterministic typo check on a NAMED purchase: resolve the event (Redis-first) before the
+  // LLM gets a chance to invent one. Only intercepts when the name is NOT an exact match —
+  // an exact name falls through so the agent runs its normal method → quantity flow.
+  const buyName = matchBuyIntent(lastUserMsg?.content);
+  if (buyName) {
+    const reply = await buildBuyIntentReply(buyName, ctx);
+    if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
   }
   if (!guard(req, res)) return;
   const [memories, chatHistory] = await Promise.all([

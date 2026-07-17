@@ -39,7 +39,15 @@ export async function makeUser({ role = 'user' } = {}) {
   const { data, error } = await a.auth.admin.createUser({ email, password, email_confirm: true });
   if (error) throw new Error(`createUser: ${error.message}`);
   const id = data.user.id;
-  const { error: upErr } = await a.from('USER').update({ role, onboarded: true }).eq('id', id);
+  // Organisers must satisfy user_organiser_membership_check: university + memberType +
+  // a format-valid orgId (professor = 9 digits). Regular users need none of these.
+  const patch = { role, onboarded: true };
+  if (role === 'organiser') {
+    patch.university = 'NTU';
+    patch.memberType = 'professor';
+    patch.orgId = String(Math.floor(100000000 + Math.random() * 900000000)); // 9 digits
+  }
+  const { error: upErr } = await a.from('USER').update(patch).eq('id', id);
   if (upErr) throw new Error(`set role: ${upErr.message}`);
 
   const { data: session, error: signErr } = await anon().auth.signInWithPassword({ email, password });

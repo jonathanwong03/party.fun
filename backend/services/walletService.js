@@ -1,15 +1,22 @@
 import { randomUUID } from 'crypto';
 import { stripe, stripeEnabled } from './stripeClient.js';
+import { adminClient } from './supabaseAdmin.js';
 
 export const dependencies = {
   stripe,
   stripeEnabled,
+  adminClient,
 };
 
 // Shared wallet top-up core: charge the user's linked card, then credit the wallet
 // via the wallet_topup RPC. Used by both the HTTP controller (POST /api/wallet/topup)
-// and the AI agent's confirmed `topup` action so the two never diverge. Runs through
-// the caller's own (RLS-scoped) Supabase client. Never throws — returns a tagged result.
+// and the AI agent's confirmed `topup` action so the two never diverge. Never throws —
+// returns a tagged result.
+//
+// Reads (the user's linked card) go through the caller's own RLS-scoped client. The CREDIT
+// goes through service_role: Postgres can't verify a Stripe charge, so wallet_topup is not
+// callable by end users — it used to be, and validated only that the amount was positive,
+// which meant any logged-in user could mint themselves unlimited balance.
 export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) {
   if (!dependencies.stripeEnabled()) return { error: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' };
   const amt = Number(amount);
@@ -35,9 +42,21 @@ export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) 
     return { error: 'charge_failed', message: e?.message || 'Your card was declined.' };
   }
   if (pi.status !== 'succeeded') return { error: 'charge_incomplete', message: 'Payment could not be completed.' };
+  // Credit exactly what Stripe captured, never what the caller asked for.
+  if (Number(pi.amount) !== Math.round(amt * 100)) {
+    return { error: 'charge_mismatch', message: 'The charged amount did not match the top-up.' };
+  }
 
-  const { data, error } = await sb.rpc('wallet_topup', { p_amount: amt, p_payment_intent_id: pi.id });
+  // service_role only: Postgres cannot verify a Stripe charge, so a user-callable top-up would
+  // mint money (it used to — the RPC validated only that the amount was positive). This is the
+  // one place allowed to say "this card charge really happened", and only after checking it.
+  const { data, error } = await dependencies.adminClient().rpc('wallet_topup', {
+    p_user_id: userId,
+    p_amount: amt,
+    p_payment_intent_id: pi.id,
+  });
   if (error) return { error: 'error', message: error.message };
+  if (data?.error) return { error: data.error, message: 'Could not credit your wallet.' };
   return { status: 'ok', balance: data?.balance };
 }
 

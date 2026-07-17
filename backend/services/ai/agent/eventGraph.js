@@ -6,6 +6,7 @@ import { resolveCandidates, runTier } from '../modelRouter.js';
 import { EXECUTORS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
 import { sanitizeAiReply } from '../responseSanitizer.js';
+import { INTERROGATIVE_LEAD_RX, TRAILING_QUESTION_RX, REQUEST_RX } from './buyIntent.js';
 
 // ── LangGraph event-planning agent (full workflow) ───────────────────────────
 // The whole diagram is one graph:
@@ -35,20 +36,28 @@ const CHECKPOINTER = new MemorySaver();
 const pickTools = (names) => names.map((n) => TOOLS_BY_NAME[n]).filter(Boolean);
 
 // Per-branch scoped toolsets (the only structural difference between branches).
-// Personal read tools about the CURRENT user's own data — available in EVERY branch
-// so an answer never depends on classify routing perfectly (otherwise a misrouted
-// "what have I hosted?" lands in a branch without the tool and the model guesses).
-const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date'];
+// Read tools that must be available in EVERY branch so an answer never depends on classify
+// routing perfectly. Scoping a READ tool buys nothing but prompt economy, and costs a FALSE
+// CAPABILITY DENIAL: the model lands in a branch without the tool and — truthfully — says it
+// can't do the thing. That has now bitten three times (a mis-routed "what have I hosted?",
+// then purchases, then "what will the weather be like?" answered with "I cannot provide
+// weather forecasts"), so anything read-only and user-scoped belongs here.
+// `agent.test.js` pins this as an invariant across all branches.
+const PERSONAL_READS = ['get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'get_event_attendees', 'get_event_details', 'list_my_drafts', 'get_current_date', 'get_weather', 'get_event_forecast'];
 const withPersonal = (...names) => [...new Set([...names, ...PERSONAL_READS])];
+// Safety net: bind the buy tool in the read/discovery branches too, so a mis-routed
+// purchase ask can never again make the model say "I don't have that functionality".
+// (classify already force-routes clear purchases to `transaction`.)
+const withBuy = (...names) => withPersonal(...names, 'propose_pledge');
 
 export const BRANCH_TOOLS = {
-  read_only: withPersonal('search_events', 'list_available_events', 'get_event_forecast', 'list_my_drafts', 'get_weather', 'remember'),
+  read_only: withBuy('search_events', 'list_available_events', 'list_live_events', 'remember'),
   // NOTE: no search_events here — "which events can I attend/buy" must use list_available_events,
   // which excludes the caller's own events, already-purchased ones, and past events. search_events
   // is unfiltered (shows own/purchased) and stays in read_only/event_mgmt for looking up a specific event.
-  discovery: withPersonal('list_available_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
+  discovery: withBuy('list_available_events', 'list_live_events', 'semantic_search_events', 'find_similar_events', 'recommend_events', 'research_event_ideas', 'remember'),
   best_fit: withPersonal('list_available_events', 'recommend_events', 'semantic_search_events', 'find_similar_events', 'get_similar_past_events', 'research_event_ideas', 'remember'),
-  event_mgmt: withPersonal('search_events', 'get_event_forecast', 'get_weather', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
+  event_mgmt: withPersonal('search_events', 'research_event_ideas', 'get_similar_past_events', 'propose_update_event', 'propose_create_event', 'propose_edit_draft', 'propose_invite_coorganiser', 'propose_cancel_event', 'propose_delete_draft', 'remember'),
   transaction: withPersonal('list_available_events', 'propose_topup', 'propose_pledge', 'propose_cancel_event', 'propose_give_away_tickets', 'remember'),
 };
 
@@ -56,13 +65,14 @@ const DIRECTIVES = {
   read_only: 'INTENT: read-only question. Answer using your read tools (events, wallet, forecast). Do not propose changes unless the user explicitly asks.',
   discovery: 'INTENT: event discovery. Use list_available_events / search_events and present a short, scannable list with prices.',
   best_fit: "INTENT: best-fit / recommendation. When the user gives INTERESTS (e.g. 'I'm into gaming'), call recommend_events (semantic — ranks by meaning, so 'gaming' matches an arcade/esports night even without the word). For a vague thematic search use semantic_search_events; for 'events like X' use find_similar_events. Present the top few with a short why; when purely price-driven, fall back to list_available_events sorted by price. Trust the semantic ranking over literal keyword matches.",
-  event_mgmt: "INTENT: manage the user's own events. ROLE GATE: only ORGANISER (or admin) accounts can create, edit, cancel or delete events. If the current user's role (stated above) is a regular user/attendee, do NOT call any propose_* create/edit/cancel/delete tool — briefly tell them event hosting is for organiser accounts and they'd need to sign up as / switch to an organiser. For an ORGANISER/admin you CAN create, edit, cancel and delete events — use the propose_* tools; never say you are unable to.\n"
+  event_mgmt: "INTENT: manage events. ROLE GATE: a regular USER/attendee CANNOT create, edit, cancel or delete events — do NOT call any propose_* tool; briefly tell them event hosting is for organiser accounts. ORGANISERS can create, edit, cancel and delete their OWN events. ADMINS can EDIT and CANCEL/DELETE ANY event (moderation) but CANNOT create/draft events — if an admin asks to create an event, tell them creating is organiser-only and do NOT call propose_create_event/propose_edit_draft. ADMIN DELETE: when an admin deletes/cancels an event, a reason is MANDATORY — ask for one if they didn't give it (accept ANY non-empty reason, even one word), then call propose_cancel_event with it.\n"
     + "CREATE (research to full draft): when an organiser asks to create/plan an event, DON'T interrogate them first. IMMEDIATELY call research_event_ideas (pass any theme they mentioned; if none, research current student interests and pick a sensible theme) and get_current_date, then propose ONE complete draft that fills EVERY field: title, description, start & end date-time (STRICTLY after today), venue/location (near their university), a chosen pricing model WITH a one-line rationale, and all prices + quantities — tiered: earlyPrice, greenlitPrice, early-bird quantity (hypeThreshold) and capacity; hype: basePrice, maxPrice, hypeThreshold and capacity. Then WAIT for the organiser. If they don't like it, be open-minded and offer ALTERNATIVE suggestions. Only call propose_create_event once details are set; it saves to their DRAFTS — say so.\n"
     + "RAG PLANNING: for event creation, planning, pricing, capacity or revenue advice, call get_similar_past_events when a useful theme/reference exists. Use examples only as historical benchmarks, never as current availability, and never expose example IDs.\n"
-    + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), first FIND it with get_my_hosted_events or search_events, then call propose_update_event with ONLY the fields to change and its eventId. To change an unpublished DRAFT (including one you just created), call list_my_drafts to find it then propose_edit_draft with its draftId. NEVER create a new event to make an edit, and never say a draft was not saved without calling list_my_drafts first. Co-organisers can edit but cannot cancel/delete. If the name is ambiguous, ask which one.\n"
+    + "EDIT (in place): to change fields of an EXISTING PUBLISHED event (e.g. 'set Event A early-bird to $8'), FIND it BY NAME with search_events (organisers can also use get_my_hosted_events for their own; ADMINS use search_events to find ANY event) — NEVER ask the user for an event id. Once you have the event, ASK which field(s) they want to change (title, description, venue, address, start/end date-time, deadline, capacity, hype threshold, early-bird price, greenlit price) if they haven't said, accept ONE OR MORE, then call propose_update_event with the event's NAME and ONLY those fields. To change an unpublished DRAFT (including one you just created), call list_my_drafts then propose_edit_draft with its draftId. NEVER create a new event to make an edit. Co-organisers and admins can edit; co-organisers cannot cancel/delete.\n"
+    + "DID YOU MEAN: if a tool reply says 'Did you mean \"X\"?' (a close but not exact event match), do NOT act — ask the user to confirm, and only proceed once they say yes (then use the exact name X). If the user says no (or anything meaning no), tell them there is no such event and offer to list events — do NOT act on any event. Never assume the suggestion is correct.\n"
     + "DELETE: to delete/cancel a PUBLISHED event use propose_cancel_event — the reason is OPTIONAL; accept whatever the organiser gives (even informal like 'it is not nice'), and if they give none, proceed without one (never demand a 'formal'/'valid' reason). It refunds all backers. To delete a DRAFT use propose_delete_draft (list_my_drafts to find it).\n"
     + "REVENUE: for 'how do I increase revenue/profit?' call get_event_forecast, then suggest concrete EDITS they can make (adjust prices, hype threshold, capacity, dates, description) — operational costs are estimates, not charged by the app.",
-  transaction: "INTENT: wallet/ticket action. For BUYING tickets: the user names the event (not an id) — FIRST find it by name with list_available_events or search_events to get its id (never treat the name as an id). Then ask how many they want and their payment preference, call get_wallet, and tell them the TOTAL price and their wallet BALANCE. If the wallet covers it, propose_pledge (wallet). If it's short, offer propose_topup to add the shortfall by charging their linked card, then pledge; if no card is linked, tell them to link one in Wallet. Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
+  transaction: "INTENT: wallet/ticket action. You CAN buy tickets — you have propose_pledge. NEVER say you cannot help with purchases or that you lack the functionality. NEVER ask for a card number, expiry or CVC: if no card is linked, tell them you'll open the secure card form (or offer the wallet) — card details are only ever entered in the app's secure Stripe form, never in chat. For BUYING tickets, follow these STEPS IN ORDER. STEP 1 — IDENTIFY THE EVENT FIRST: the user names the event (not an id); look it up by name with get_event_details or search_events. If the tool does NOT return an exact event — it replies 'Did you mean \"X\"?' or a didYouMean suggestion — relay that and WAIT for the user to confirm yes/no. Do NOT ask for quantity or payment method until the exact event is confirmed (or the user picks one). If they say no, tell them there is no such event. STEP 2 — once the event is confirmed, ALWAYS ask the PAYMENT METHOD (in-app wallet or debit/credit card). STEP 3 — then ask HOW MANY tickets. STEP 4 — call propose_pledge with the confirmed event name + paymentMethod set. For WALLET: call get_wallet and tell them the TOTAL price and their BALANCE; if the wallet covers it, propose_pledge(paymentMethod:'wallet'); if it's short, offer propose_topup to add the shortfall by charging their linked card (or paying by card instead), then pledge. For CARD: propose_pledge(paymentMethod:'card') charges their linked card; if no card is linked, tell them to link one in Wallet (or pay by wallet). Also: propose_give_away_tickets (give away some of the user's OWN tickets for an event they joined — they must say how many; final, releases the spots to the pool), or propose_cancel_event (refund backers by cancelling — needs a reason). Every action is a proposal the user must confirm — never say it happened until they confirm.",
 };
 
 const INTENT_TO_NODE = { read_only: 'answer', discovery: 'discover', best_fit: 'bestfit', event_mgmt: 'manage', transaction: 'transact' };
@@ -108,6 +118,8 @@ async function defaultClassify(text) {
 export const OFF_TOPIC_REPLY = "I'm the party.fun events assistant, so I can only help with things on party.fun — finding and buying event tickets, your wallet, and hosting or managing your own events. I can't help with that one, but I'd be glad to help you discover an event or plan one.";
 
 export const ROLE_BLOCK_REPLY = "Your current role is attendee/user, so you cannot create, host, edit, cancel or delete events. Event hosting is only available from organiser accounts. To host an event, sign up with or switch to an organiser account.";
+
+export const ADMIN_CREATE_BLOCK_REPLY = "As an admin you moderate the platform — you can edit and cancel/delete any event — but you cannot create or host events. Only organiser accounts can create events. Would you like to edit or cancel an existing event instead?";
 
 const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
 const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
@@ -162,10 +174,16 @@ function defaultBuildAgents(model, system) {
 async function instantiate(provider, model, maxTokens) {
   if (provider === 'gemini') {
     const { ChatGoogleGenerativeAI } = await import('@langchain/google-genai');
-    // thinkingBudget:0 disables the model's hidden reasoning so the token budget
-    // isn't spent thinking instead of answering (Gemini Flash models otherwise
-    // spend output tokens on hidden "thinking").
-    return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: 0 } });
+    // thinkingBudget:-1 = DYNAMIC thinking: the model decides how much hidden
+    // reasoning to spend, which meaningfully improves tool choice and
+    // instruction-following on the agent branches.
+    // IMPORTANT: Gemini counts thinking tokens against maxOutputTokens, so that
+    // budget must cover the hidden reasoning PLUS the answer. It is 4096 (not
+    // 1024) for exactly this reason — at 1024 a long list (e.g. 16 hosted events)
+    // got truncated mid-item because thinking had eaten the budget.
+    // (The cheap-tier classifier/guard in modelRouter stays as-is — one-word
+    // classifications don't need reasoning.)
+    return new ChatGoogleGenerativeAI({ model, apiKey: process.env.GEMINI_API_KEY, maxOutputTokens: maxTokens, thinkingConfig: { thinkingBudget: -1 } });
   }
   return null;
 }
@@ -232,15 +250,111 @@ function latestUserText(state) {
   return '';
 }
 
+// True when the assistant's previous turn asked the user for input (a reason, a
+// quantity, which event/field, etc.). Its reply is then a continuation of an on-topic
+// flow — even a bare "q" or "not nice" — so the scope guard must not reject it.
+const ASSISTANT_ASK_RX = /\b(reason|how many|which|what (would|do) you|please (provide|give|specify|confirm)|provide (a|an|the)|give (me )?(a|an|the)|specify|would you like|did you mean|what is the)\b/i;
+// The assistant's previous turn text (the AI message just before the current user reply).
+function previousAssistantText(state) {
+  const msgs = state?.messages ?? [];
+  let i = msgs.length - 1;
+  while (i >= 0 && msgs[i]?._getType?.() === 'human') i -= 1; // skip the current user reply
+  if (i < 0 || msgs[i]?._getType?.() !== 'ai') return '';
+  return textOf(msgs[i].content).trim();
+}
+function priorAssistantAsked(state) {
+  const text = previousAssistantText(state);
+  if (!text) return false;
+  return /\?\s*$/.test(text) || ASSISTANT_ASK_RX.test(text);
+}
+// True when the assistant's previous turn was clearly about events (a listing, a
+// "no events matching"/"did you mean" reply, etc.). A SHORT follow-up (e.g. correcting
+// a typo'd event name) is then a continuation of an on-topic flow — never off-topic —
+// so the scope guard must not refuse it even though it lacks an event keyword itself.
+const EVENT_CONTEXT_RX = /\b(no events?|did you mean|couldn't find|could not find|which (event|one)|event|events|ticket|tickets|pledge|wallet|organiser|organizer)\b/i;
+// A COMPARATIVE / referential follow-up ("how about X?", "what about the frisbee one?",
+// "and the next one?") pivots the SAME on-topic discussion onto another event. These lead with
+// an interrogative, so the wh-word filter below would wrongly reject them — and then the
+// context-free scope guard, seeing only e.g. "how about gymming for newbies?", reads it as a
+// gym question and refuses a legitimate event follow-up. Allowed only when the PREVIOUS
+// assistant turn was on-topic (enforced by inEventFlow's caller), so a cold "how about pizza?"
+// is not a free pass. Deliberately narrow: an off-topic phrasing like "what should I wear?"
+// does not match, so it still reaches the guard.
+const COMPARATIVE_FOLLOWUP_RX = /^(?:how|what)\s?(?:about|bout)\b|^and\b|^(?:the\s+)?(?:first|second|third|fourth|last|next|other)\s+one\b|^that\s+one\b/i;
+// A short reply that continues the flow (a name correction, "the second one", etc.) — NOT
+// a full standalone question. A wh-question ("what is 3*3") is not a mere continuation.
+function isShortContinuation(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (t.split(/\s+/).filter(Boolean).length > 6) return false;
+  if (COMPARATIVE_FOLLOWUP_RX.test(t)) return true; // "how about X?" — a continuation despite leading with a wh-word
+  if (/^(what|why|how|who|whom|whose|when|where|which|is|are|was|were|can|could|would|should|do|does|did|explain|tell|calculate|compute|solve|define)\b/i.test(t)) return false;
+  return true;
+}
+function inEventFlow(state) {
+  const prev = previousAssistantText(state);
+  if (!prev || !(ON_TOPIC_RX.test(prev) || EVENT_CONTEXT_RX.test(prev))) return false;
+  // Only bypass the guard for a short continuation, not a full new question.
+  return isShortContinuation(latestUserText(state));
+}
+
+// Deterministic hard block for clearly off-topic questions (arithmetic, coding, trivia)
+// that must be refused even mid-flow — the LLM guard is bypassed for continuations, so
+// this catches "what is 3*3" / "what is 4 + 4" regardless of the prior turn.
+const OFF_TOPIC_HARD_RX = /\d+(?:\.\d+)?\s*[-+*/×÷^]\s*\d|\bwhat\s+is\s+[-\d(][^?]*[-+*/×÷^]|\b(calculate|compute|solve|square\s+root|sqrt|factorial|derivative|integral)\b|\b(capital\s+of|who\s+(is|was)\s+the\b|president\s+of|prime\s+minister|translate|in\s+(french|spanish|chinese|german))\b|\b(write|give\s+me|generate)\s+(me\s+)?(a|some|the)?\s*(code|program|script|poem|essay|story|function|algorithm)\b|\b(python|javascript|typescript|java|c\+\+|html|css)\b/i;
+export function looksClearlyOffTopic(text) {
+  return OFF_TOPIC_HARD_RX.test(String(text || '').trim());
+}
+
+// Clear purchase intent — "help me purchase 4 tickets", "buy tickets for X", "i want to
+// pledge". Routed deterministically to the transaction branch: the cheap LLM classifier
+// sometimes labelled these read_only, landing them in a branch with no propose_pledge, and
+// the model then (truthfully) answered "I don't have that functionality".
+const BUY_INTENT_RX = /\b(buy|buying|purchase|purchasing|pledge|pledging|book|reserve)\b/i;
+const TICKETY_RX = /\b(ticket|tickets|pledge|pledging|seat|seats|spot|spots)\b/i;
+// A yes/no or wh- QUESTION about buying ("can i purchase tickets after 24 July?", "can i
+// still buy tickets for X?", "is it too late to buy tickets?") must be ANSWERED, not turned
+// into a purchase. Only an actual request routes to the buy flow. The interrogative/request
+// vocabulary is shared with listReplies' matchBuyIntent (buyIntent.js) so the two layers
+// can't drift; the trailing-"?" clause is this layer's alone — see isBuyQuestion's comment.
+export function looksLikePurchase(text) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (!BUY_INTENT_RX.test(t)) return false;
+  const isQuestion = TRAILING_QUESTION_RX.test(t) || INTERROGATIVE_LEAD_RX.test(t);
+  if (isQuestion && !REQUEST_RX.test(t)) return false; // a question about buying
+  // "buy/purchase" alone is enough when it's about tickets or an event, else require a
+  // ticket-ish noun so "buy" in an unrelated sentence doesn't hijack the routing.
+  return TICKETY_RX.test(t) || /\b(event|events)\b/i.test(t) || /^(help me |i want to |can you )?(buy|purchase)\b/i.test(t);
+}
+// "yes" (etc.) right after the assistant offered a purchase → continue into the buy flow.
+export function affirmsPurchase(latest, previousAssistant) {
+  return AFFIRMATION_RX.test(String(latest || '').trim())
+    && /\b(purchase|buy|ticket|tickets|pledge)\b/i.test(String(previousAssistant || ''));
+}
+
 function shouldBlockUserEventManagement(state, ctx) {
   if (String(ctx?.role || 'user').toLowerCase() !== 'user') return false;
   if (state?.intent !== 'event_mgmt') return false;
   return EVENT_MANAGEMENT_WRITE_RX.test(recentContext(state));
 }
 
+// Admins may edit/cancel/delete ANY event but must NOT create. When an admin's
+// event_mgmt request is a create/host/draft (and not an edit/cancel/delete), hard-refuse
+// deterministically instead of letting the LLM engage the create flow.
+function shouldBlockAdminCreate(state, ctx) {
+  if (String(ctx?.role || 'user').toLowerCase() !== 'admin') return false;
+  // Intentionally NOT gated on the classified intent — an admin's create/host/draft
+  // request must be refused no matter how classify routed it. Only skip when the
+  // message is clearly an edit/cancel/delete (which admins ARE allowed to do).
+  const text = latestUserText(state) || recentContext(state);
+  if (NON_CREATE_MANAGEMENT_RX.test(text)) return false;
+  return CREATE_EVENT_RX.test(text) || /\b(create|host|hosting|draft|plan|planning|organi[sz]e|launch|set\s?up|start)\b.{0,40}\b(event|party|gathering|meetup|mixer|night|session|festival|gala|workshop|social)\b/i.test(text) || /\b(create|host|draft)\s+an?\s+event\b/i.test(text);
+}
+
 function shouldAutoDraft(state, ctx) {
   const role = String(ctx?.role || 'user').toLowerCase();
-  if (role !== 'organiser' && role !== 'admin') return false;
+  if (role !== 'organiser') return false; // only organisers create/draft events (not admins)
   if (state?.intent !== 'event_mgmt') return false;
   const text = latestUserText(state) || recentContext(state);
   if (!CREATE_EVENT_RX.test(text)) return false;
@@ -355,6 +469,7 @@ const GraphState = Annotation.Root({
   intent: Annotation(),
   offtopic: Annotation(),
   roleBlocked: Annotation(),
+  adminCreateBlocked: Annotation(),
   autoDraft: Annotation(),
   proposals: Annotation({ reducer: (a = [], b = []) => a.concat(b), default: () => [] }),
   decisions: Annotation({ reducer: (a = {}, b = {}) => ({ ...a, ...b }), default: () => ({}) }),
@@ -368,22 +483,40 @@ function buildApp(model, system) {
 
   // Strict scope gate: runs first. Off-topic → a canned refusal and END (no branch/tools).
   const scope = async (state, config) => {
-    // Judge ONLY the latest user message (not the rolling context) so earlier
+    const latest = latestUserText(state);
+    // A clearly off-topic question (math/coding/trivia) is ALWAYS refused, even mid-flow,
+    // so an event-related prior turn can't let "what is 3*3" slip through.
+    if (looksClearlyOffTopic(latest)) return { offtopic: true };
+    // A reply to the agent's OWN question (e.g. a cancellation reason like "q", a
+    // quantity, or a field name) — or a SHORT follow-up while the assistant's last turn
+    // was about events (e.g. correcting a typo'd event name) — is a continuation.
+    if (priorAssistantAsked(state) || inEventFlow(state)) return { offtopic: false };
+    // Otherwise judge ONLY the latest user message (not the rolling context) so earlier
     // on-topic turns can't let an off-topic question through.
-    const onTopic = await dependencies.guard(latestUserText(state), config?.configurable?.ctx);
+    const onTopic = await dependencies.guard(latest, config?.configurable?.ctx);
     return { offtopic: !onTopic };
   };
   const refuse = () => ({ messages: [new AIMessage(OFF_TOPIC_REPLY)] });
   const roleRefuse = () => ({ messages: [new AIMessage(ROLE_BLOCK_REPLY)] });
 
   const classify = async (state, config) => {
+    // Deterministic override: a purchase ask (or a "yes" to the assistant's own purchase
+    // offer) MUST land in the transaction branch, which is the only one with the full buy
+    // flow. The cheap LLM classifier mis-labelled these, so the model ended up in a
+    // read-only branch and claimed it couldn't buy tickets.
+    const latest = latestUserText(state);
+    if (looksLikePurchase(latest) || affirmsPurchase(latest, previousAssistantText(state))) {
+      return { intent: 'transaction' };
+    }
     return { intent: await dependencies.classify(recentContext(state), config?.configurable?.ctx) };
   };
 
   const roleGate = (state, config) => ({
     roleBlocked: shouldBlockUserEventManagement(state, config?.configurable?.ctx),
+    adminCreateBlocked: shouldBlockAdminCreate(state, config?.configurable?.ctx),
     autoDraft: shouldAutoDraft(state, config?.configurable?.ctx),
   });
+  const adminCreateRefuse = () => ({ messages: [new AIMessage(ADMIN_CREATE_BLOCK_REPLY)] });
 
   const autoDraft = async (state, config) => {
     const ctx = config?.configurable?.ctx;
@@ -451,6 +584,7 @@ function buildApp(model, system) {
     .addNode('classify', classify)
     .addNode('role_gate', roleGate)
     .addNode('role_refuse', roleRefuse)
+    .addNode('admin_create_refuse', adminCreateRefuse)
     .addNode('auto_draft', autoDraft)
     .addNode('answer', runBranch('read_only'))
     .addNode('discover', runBranch('discovery'))
@@ -463,8 +597,9 @@ function buildApp(model, system) {
     .addConditionalEdges('scope', (state) => (state.offtopic ? 'refuse' : 'classify'), { refuse: 'refuse', classify: 'classify' })
     .addEdge('refuse', END)
     .addEdge('classify', 'role_gate')
-    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : state.autoDraft ? 'auto_draft' : routeIntent(state)), { role_refuse: 'role_refuse', auto_draft: 'auto_draft', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
+    .addConditionalEdges('role_gate', (state) => (state.roleBlocked ? 'role_refuse' : state.adminCreateBlocked ? 'admin_create_refuse' : state.autoDraft ? 'auto_draft' : routeIntent(state)), { role_refuse: 'role_refuse', admin_create_refuse: 'admin_create_refuse', auto_draft: 'auto_draft', answer: 'answer', discover: 'discover', bestfit: 'bestfit', manage: 'manage', transact: 'transact' })
     .addEdge('role_refuse', END)
+    .addEdge('admin_create_refuse', END)
     .addConditionalEdges('auto_draft', afterBranch, branchMap)
     .addConditionalEdges('answer', afterBranch, branchMap)
     .addConditionalEdges('discover', afterBranch, branchMap)
@@ -493,7 +628,7 @@ function shape(state, interrupted, { threadId, provider, modelId }) {
 // Start a run. `ctx` = { supabase, userId, role }; `mode` = 'ask'|'auto';
 // Returns { available, status, reply, proposals, results, threadId, provider, model }.
 export async function runGraph({ system, messages, ctx, preferred, mode: runMode = 'ask', threadId } = {}) {
-  const built = await dependencies.buildModel(preferred, 1024);
+  const built = await dependencies.buildModel(preferred, 4096);
   if (!built) return { available: false };
   const { model, provider, modelId } = built;
 
@@ -514,7 +649,7 @@ export async function runGraph({ system, messages, ctx, preferred, mode: runMode
 
 // Resume a parked thread with the user's decision on one proposal (confirm/reject).
 export async function resumeGraph({ system, ctx, preferred, threadId, proposalId, decision } = {}) {
-  const built = await dependencies.buildModel(preferred, 1024);
+  const built = await dependencies.buildModel(preferred, 4096);
   if (!built) return { available: false };
   const { model, provider, modelId } = built;
 

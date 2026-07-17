@@ -54,9 +54,10 @@ describe('payment RPC integration', { skip: integrationSkip }, () => {
     return b;
   }
 
+  // A wallet pledge as the signed-in user: the only pledge path an end user may call.
+  // It takes no payment parameters — there is deliberately nothing here to forge.
   const pledge = (client, args) => client.rpc('create_pledge', {
-    p_event_id: eventId, p_qty: 1, p_payment_method: 'wallet',
-    p_payment_intent_id: null, p_charged_amount: null, p_idempotency_key: null, ...args,
+    p_event_id: eventId, p_qty: 1, p_idempotency_key: null, ...args,
   });
 
   // 1. Idempotent replay: same key twice → one booking, one debit.
@@ -138,15 +139,69 @@ describe('payment RPC integration', { skip: integrationSkip }, () => {
   });
 
   // 6. Top-up idempotency: same PaymentIntent credits the wallet once.
+  //    wallet_topup is service_role-only now (see the authz block below), so this runs as the
+  //    backend does — via admin() — not as the user.
   it('wallet_topup credits only once for a repeated PaymentIntent', async () => {
     const b = await newBuyer(0);
     const pi = `pi_topup_${Date.now()}`;
-    const first = await b.client.rpc('wallet_topup', { p_amount: 25, p_payment_intent_id: pi });
+    const topup = () => admin().rpc('wallet_topup', { p_user_id: b.id, p_amount: 25, p_payment_intent_id: pi });
+    const first = await topup();
     assert.equal(first.error, null, `first topup errored: ${first.error?.message}`);
-    const second = await b.client.rpc('wallet_topup', { p_amount: 25, p_payment_intent_id: pi });
+    const second = await topup();
     // Either the RPC returns the same balance or errors on the unique index — but the
     // wallet must not be credited twice.
     assert.ok(second.error || second.data, 'second topup handled');
     assert.equal(await getWalletBalance(b.id), 25, 'credited exactly once');
+  });
+
+  // ── Authorization: an end user must not be able to mint money ────────────────
+  // These are the regression tests for a real vulnerability. The browser holds a genuine
+  // Supabase JWT and the anon key ships in the bundle, so ANY account holder could call these
+  // RPCs directly and bypass the Express backend entirely. `b.client` below is exactly that
+  // attacker: a normal signed-in user's client. Every assertion here must FAIL to buy.
+
+  it('a signed-in user CANNOT mint wallet balance (wallet_topup is service_role-only)', async () => {
+    const b = await newBuyer(0);
+    // Previously: validated only p_amount > 0, so this credited $100,000 against a fake PI.
+    const res = await b.client.rpc('wallet_topup', { p_user_id: b.id, p_amount: 100000, p_payment_intent_id: 'pi_fake' });
+    assert.ok(res.error || res.data?.error, 'topup must be refused for an end user');
+    assert.equal(await getWalletBalance(b.id), 0, 'no balance was minted');
+  });
+
+  it('a signed-in user CANNOT mint free tickets (create_pledge takes no payment params)', async () => {
+    const b = await newBuyer(0); // no money at all
+    // The original exploit: method='card' skipped the wallet debit, and a NULL charged_amount
+    // skipped the amount check, so neither money path ran.
+    const res = await b.client.rpc('create_pledge', {
+      p_event_id: eventId, p_qty: 5, p_payment_method: 'card',
+      p_payment_intent_id: null, p_charged_amount: null, p_idempotency_key: null,
+    });
+    assert.ok(res.error, 'the old payment-carrying signature must no longer exist');
+    assert.equal(await countBookings(b.id, eventId), 0, 'no booking was created');
+    assert.equal(await getWalletBalance(b.id), 0);
+  });
+
+  it('a signed-in user CANNOT call create_pledge_card directly', async () => {
+    const b = await newBuyer(0);
+    const res = await b.client.rpc('create_pledge_card', {
+      p_user_id: b.id, p_event_id: eventId, p_qty: 5,
+      p_payment_intent_id: 'pi_fake', p_charged_amount: 0.01, p_idempotency_key: null,
+    });
+    // Refused by the GRANT, or by the auth.uid()-is-not-null guard if a grant is ever fumbled.
+    assert.ok(res.error || res.data?.error === 'forbidden', 'card pledge must be service_role-only');
+    assert.equal(await countBookings(b.id, eventId), 0, 'no booking was created');
+  });
+
+  it('even via service_role, a card pledge without payment proof is refused', async () => {
+    // Defence in depth: the backend is trusted to have charged Stripe, but the RPC still
+    // refuses to record a card booking that carries no PaymentIntent + amount.
+    const b = await newBuyer(0);
+    const res = await admin().rpc('create_pledge_card', {
+      p_user_id: b.id, p_event_id: eventId, p_qty: 1,
+      p_payment_intent_id: null, p_charged_amount: null, p_idempotency_key: null,
+    });
+    assert.equal(res.error, null, `rpc errored: ${res.error?.message}`);
+    assert.equal(res.data?.error, 'payment_proof_required');
+    assert.equal(await countBookings(b.id, eventId), 0, 'no booking was created');
   });
 });

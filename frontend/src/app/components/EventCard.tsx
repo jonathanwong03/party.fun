@@ -20,15 +20,22 @@ export function EventCard({
 }) {
   const statusIndex = getActiveStatus(event);
   const hostUniversity = universityLabel(event.hostUniversity);
+  // A full event can't be bought — this card used to offer "Buy Ticket" right beside its own
+  // "0 spots left", and the purchase only failed later at checkout. `maxCapacity > 0` is
+  // load-bearing: an uncapped event reports spotsLeft 0 and is NOT sold out.
+  const soldOut = event.maxCapacity > 0 && event.spotsLeft === 0;
+  // Whenever the buy/pledge button is unavailable, the whole card becomes the way to open the
+  // details — otherwise a disabled button is a dead end (a sold-out card had no path to onView).
+  const cardClickable = alreadyPurchased || soldOut || event.status === 'cancelled' || event.status === 'completed';
 
   return (
     <div
-      className={`group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)] ${alreadyPurchased ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d2e]' : ''}`}
+      className={`group flex flex-col overflow-hidden rounded-2xl border transition hover:-translate-y-0.5 hover:border-[rgba(255,77,46,0.4)] ${cardClickable ? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ff4d2e]' : ''}`}
       style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}
-      role={alreadyPurchased ? 'button' : undefined}
-      tabIndex={alreadyPurchased ? 0 : undefined}
-      onClick={alreadyPurchased ? onView : undefined}
-      onKeyDown={alreadyPurchased ? (eventKey) => {
+      role={cardClickable ? 'button' : undefined}
+      tabIndex={cardClickable ? 0 : undefined}
+      onClick={cardClickable ? onView : undefined}
+      onKeyDown={cardClickable ? (eventKey) => {
         if (eventKey.key === 'Enter' || eventKey.key === ' ') {
           eventKey.preventDefault();
           onView();
@@ -93,14 +100,16 @@ export function EventCard({
             onClick={onView}
             className="mt-auto w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]"
             style={{ borderRadius: 9999 }}
-            disabled={event.status === 'cancelled' || event.status === 'completed'}
+            disabled={event.status === 'cancelled' || event.status === 'completed' || soldOut}
           >
-            {event.status === 'greenlit'
-              ? `Buy Ticket · $${event.price}`
-              : event.status === 'cancelled'
+            {event.status === 'cancelled'
               ? 'Cancelled'
               : event.status === 'completed'
               ? 'Completed'
+              : soldOut
+              ? 'Sold out'
+              : event.status === 'greenlit'
+              ? `Buy Ticket · $${event.price}`
               : `Pledge · $${event.price}`}
           </Button>
         )}

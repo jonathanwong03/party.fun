@@ -17,7 +17,7 @@ import { giveAwayTickets, deleteBooking, createPledge, fetchEvents, fetchProfile
 
 const EMPTY_COUNTS: ProfileCounts = { upcoming: 0, past: 0, cancelled: 0 };
 import { supabase } from './supabase';
-import { installIdleTimeout, resetActivity } from './idle';
+import { installIdleTimeout, resetActivity, enforceIdleNow } from './idle';
 import { Landing } from './pages/Landing';
 import { FAQ } from './pages/FAQ';
 import { EventDetail } from './pages/EventDetail';
@@ -324,8 +324,19 @@ function AppShell() {
     try { await deleteDraftRequest(id); } catch { /* already removed from state */ }
   };
   const refreshDrafts = async () => { try { setDrafts(await fetchDrafts()); } catch { /* keep current */ } };
-  // After an AI write, refresh events, drafts and wallet so edits/new drafts/top-ups/pledges/refunds show instantly.
-  const onAiDataChanged = () => { refreshEvents(); refreshDrafts(); refreshWallet(); };
+  // Reload the signed-in user's tickets/counts (drives purchasedEventIds).
+  const refreshProfile = async () => {
+    if (!role) return;
+    try {
+      const profile = await fetchProfile(role);
+      setProfileTickets(profile.tickets);
+      setProfileCounts(profile.counts);
+    } catch { /* keep current */ }
+  };
+  // After an AI write, refresh events, drafts, wallet AND profile so edits/new drafts/
+  // top-ups/pledges/refunds show instantly — the profile refresh flips a just-bought
+  // event's card to "Tickets already purchased" without a page reload.
+  const onAiDataChanged = () => { refreshEvents(); refreshDrafts(); refreshWallet(); refreshProfile(); };
 
   const replaceEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((event) => (event.id === updated.id ? updated : event)));
@@ -333,8 +344,10 @@ function AppShell() {
 
   // Restore session on page load and keep role/user in sync with Supabase Auth.
   useEffect(() => {
-    installIdleTimeout(); // 3-hour inactivity auto sign-out
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    installIdleTimeout(); // 30-minute inactivity auto sign-out
+    // Enforce idle expiry BEFORE restoring the session so a >30-min-idle user is signed
+    // out first and loads as a guest (clean logged-out events page, no stale-auth 401).
+    enforceIdleNow().then(() => supabase.auth.getSession()).then(async ({ data: { session } }) => {
       if (session) {
         const { data: profile } = await supabase
           .from('USER')
@@ -452,7 +465,7 @@ function AppShell() {
   };
 
   const handleLogin = (account: AuthUser) => {
-    resetActivity(); // start the 3-hour idle clock fresh on every login
+    resetActivity(); // start the 30-minute idle clock fresh on every login
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
     setRole(account.role);
     setUser(account);
@@ -545,7 +558,13 @@ function AppShell() {
       {!isAuthPage && !isOrganiserConsole && role && (
         <MobileNav role={role} route={activeRoute} go={go} />
       )}
-      {!isAuthPage && role && <AiAssistant role={role} onDataChanged={onAiDataChanged} />}
+      {!isAuthPage && role && (
+        <AiAssistant
+          role={role}
+          onDataChanged={onAiDataChanged}
+          onOpenCardForm={() => go({ name: 'wallet' })} // secure Stripe card form lives on the Wallet page
+        />
+      )}
     </div>
   );
 }
