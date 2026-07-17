@@ -280,7 +280,7 @@ test('every branch binds the universal READ tools (no false capability denials)'
   // same conversation flips between capable and incapable branches. Scoping a read-only tool
   // buys only prompt economy; this invariant is what stops the fourth recurrence.
   const universal = ['get_current_date', 'get_weather', 'get_event_forecast', 'get_event_details',
-    'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts'];
+    'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts', 'get_app_info'];
   for (const branch of Object.keys(BRANCH_TOOLS)) {
     for (const tool of universal) {
       assert.ok(BRANCH_TOOLS[branch].includes(tool), `${branch} must bind ${tool}`);
@@ -840,11 +840,11 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 27 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 27);
+test('AGENT_TOOLS exposes all 28 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 28);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
-  assert.ok(names.includes('list_live_events'));
+  assert.ok(names.includes('list_live_events') && names.includes('get_app_info'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
   assert.ok(names.includes('get_event_attendees') && names.includes('propose_edit_draft'));
@@ -942,6 +942,15 @@ test('get_current_date reports today in Singapore', async () => {
   const todaySg = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Singapore', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
   assert.equal(out.date, todaySg);
   assert.match(out.timezone, /Singapore/);
+});
+
+test('get_app_info returns the knowledge base covering the signup bonus and top-up cap', async () => {
+  // The tool must surface the app facts the agent kept refusing to answer (signup bonus, top-up
+  // cap) so a "how does the app work" question can be grounded on real text, not the model guessing.
+  const out = await EXECUTORS.get_app_info({}, ctxWith([]));
+  assert.match(out.reference, /signup bonus/i);
+  assert.match(out.reference, /\$20/);
+  assert.match(out.reference, /\$200 per transaction/i);
 });
 
 // ── Give-away tickets tool ───────────────────────────────────────────────────

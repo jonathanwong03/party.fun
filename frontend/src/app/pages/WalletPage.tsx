@@ -9,6 +9,7 @@ import { fetchWallet, createSetupIntent, saveCard, topUpWallet, type WalletInfo 
 import type { Route } from '../components/types';
 
 const money = (n: number) => `$${Number(n).toFixed(2)}`;
+const MAX_TOPUP = 200; // per-transaction cap; the backend enforces the authoritative limit too.
 const CARD_STYLE = { style: { base: { fontSize: '16px', color: '#f5f5f7', '::placeholder': { color: '#8a8a99' } }, invalid: { color: '#ff6b6b' } } };
 
 export function WalletPage({ go, onBalance }: { go: (r: Route) => void; onBalance?: (n: number) => void }) {
@@ -126,7 +127,9 @@ function CardSection({ wallet, onChange }: { wallet: WalletInfo | null; onChange
           <Button onClick={submit} disabled={busy || !stripe} className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 42 }}>
             {busy ? 'Saving…' : 'Save card'}
           </Button>
-          <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Test card: 4242 4242 4242 4242 · any future expiry · any CVC.</p>
+          {import.meta.env.DEV && (
+            <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Test card: 4242 4242 4242 4242 · any future expiry · any CVC.</p>
+          )}
         </div>
       )}
     </div>
@@ -138,13 +141,18 @@ function TopUpSection({ hasCard, onChange }: { hasCard: boolean; onChange: () =>
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState(false);
+  // One idempotency key per top-up. A double-click reuses it (Stripe dedups to a single charge);
+  // a fresh key is minted only after a successful top-up, so the next intentional one is distinct.
+  const [attemptId, setAttemptId] = useState(() => crypto.randomUUID());
 
   const submit = async () => {
     const value = Number(amount);
     if (!value || value <= 0) { setError('Enter a valid amount.'); return; }
+    if (value > MAX_TOPUP) { setError(`Top-ups are capped at ${money(MAX_TOPUP)} per transaction.`); return; }
     setBusy(true); setError(null); setOk(false);
     try {
-      await topUpWallet(value);
+      await topUpWallet(value, attemptId);
+      setAttemptId(crypto.randomUUID());
       setOk(true);
       await onChange();
     } catch (e) {
@@ -164,6 +172,7 @@ function TopUpSection({ hasCard, onChange }: { hasCard: boolean; onChange: () =>
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Amount (SGD)</Label>
             <Input value={amount} inputMode="decimal" onChange={(e) => { setAmount(e.target.value.replace(/[^\d.]/g, '')); setOk(false); }} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42, width: 160 }} />
+            <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Up to {money(MAX_TOPUP)} per transaction.</p>
           </div>
           <Button onClick={submit} disabled={busy} className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 42 }}>
             {busy ? 'Charging…' : 'Top up'}

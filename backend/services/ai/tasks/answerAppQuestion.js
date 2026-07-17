@@ -13,6 +13,12 @@ try {
   KNOWLEDGE = '';
 }
 
+// The whole curated knowledge base, for callers that want to ground an answer on it directly
+// (e.g. the graph agent's get_app_info tool) rather than through this module's own LLM call.
+export function getAppKnowledge() {
+  return KNOWLEDGE;
+}
+
 function buildSystem(reference = KNOWLEDGE) {
   return [
     'You are the party.fun help assistant. Answer questions about how the app works,',

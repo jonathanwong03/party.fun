@@ -28,7 +28,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
           Your payment was captured and your tickets are locked in.
         </p>
         <p className="mt-2 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>
-          🎟️ Your tickets have been emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.
+          Your tickets have been emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.
         </p>
       </div>
 
