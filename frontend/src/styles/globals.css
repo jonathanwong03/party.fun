@@ -3,7 +3,7 @@
 /* Light-mode surface tokens (applied when the root has no `.dark` class).
    Other light values come from theme.css :root. */
 :root {
-  --background: #f6f6f9;
+  --background: #e6e7ec;
   --surface: #ffffff;
   --surface-2: #eef0f4;
   --border-strong: rgba(0, 0, 0, 0.16);
@@ -69,33 +69,35 @@
 }
 
 /* App-wide scrollbars — white thumb on a black track, dark mode only.
-   Covers the root element itself (viewport scrollbar) and every scrollable
-   descendant. Light mode is intentionally left to the browser default. */
-.dark::-webkit-scrollbar,
-.dark ::-webkit-scrollbar {
+   Scoped to a dedicated `.dark-scrollbars` class set on <html> (NOT `.dark`, which
+   would activate `.dark body` font/background rules on the root). Covers the root
+   element itself (viewport scrollbar) and every scrollable descendant. Light mode is
+   intentionally left to the browser default. */
+.dark-scrollbars::-webkit-scrollbar,
+.dark-scrollbars ::-webkit-scrollbar {
   width: 12px;
   height: 12px;
 }
-.dark::-webkit-scrollbar-track,
-.dark ::-webkit-scrollbar-track {
+.dark-scrollbars::-webkit-scrollbar-track,
+.dark-scrollbars ::-webkit-scrollbar-track {
   background: #000;
 }
-.dark::-webkit-scrollbar-thumb,
-.dark ::-webkit-scrollbar-thumb {
+.dark-scrollbars::-webkit-scrollbar-thumb,
+.dark-scrollbars ::-webkit-scrollbar-thumb {
   background: #fff;
   border-radius: 8px;
   border: 3px solid #000; /* inset so the thumb reads as a rounded white bar */
 }
-.dark::-webkit-scrollbar-thumb:hover,
-.dark ::-webkit-scrollbar-thumb:hover {
+.dark-scrollbars::-webkit-scrollbar-thumb:hover,
+.dark-scrollbars ::-webkit-scrollbar-thumb:hover {
   background: #d4d4d4;
 }
-.dark::-webkit-scrollbar-corner,
-.dark ::-webkit-scrollbar-corner {
+.dark-scrollbars::-webkit-scrollbar-corner,
+.dark-scrollbars ::-webkit-scrollbar-corner {
   background: #000;
 }
 /* Firefox */
-.dark {
+.dark-scrollbars {
   scrollbar-color: #fff #000;
   scrollbar-width: thin;
 }

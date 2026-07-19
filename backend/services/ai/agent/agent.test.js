@@ -1153,6 +1153,10 @@ test('guardAllows lets short/continuation answers through, still blocks off-topi
   assert.equal(guardAllows('card'), true);
   assert.equal(guardAllows('wallet'), true);
   assert.equal(guardAllows('yes'), true);
+  // Questions about the app itself (pages/sections/FAQ/testimonials) are always in-scope.
+  assert.equal(guardAllows('is there a testimonials section?'), true);
+  assert.equal(guardAllows('is there a what students say section?'), true);
+  assert.equal(guardAllows('is there an FAQ?'), true);
   // A full off-topic question is NOT fast-pathed (falls through to the LLM guard).
   assert.equal(guardAllows('what is 2+2?'), false);
   assert.equal(guardAllows('write me a poem about cats'), false);
