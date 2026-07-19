@@ -298,7 +298,13 @@ function AppShell() {
     try {
       await updateEventRequest(updated);
       setEvents(await fetchEvents(role)); // reconcile with backend-computed values
-    } catch { /* state already updated */ }
+    } catch (err) {
+      // Optimistic-concurrency conflict: someone else saved a change to this event first. Revert
+      // to the server's copy and tell the editor to reload, so their edit can't silently clobber it.
+      const status = (err as { status?: number })?.status;
+      try { setEvents(await fetchEvents(role)); } catch { /* keep optimistic copy */ }
+      if (status === 409 && err instanceof Error && typeof window !== 'undefined') window.alert(err.message);
+    }
   };
 
   const refreshEvents = async () => {

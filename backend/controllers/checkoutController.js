@@ -4,6 +4,7 @@ import * as notificationService from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
 import { stripe, stripeEnabled } from '../services/stripeClient.js';
 import { pledgeWithPayment } from '../services/checkoutService.js';
+import { auditLog } from '../services/auditLog.js';
 import { formatVenueAddress } from '../utils/eventDisplay.js';
 
 // Error code → HTTP status for a failed pledge (unmapped codes fall back to 409).
@@ -112,6 +113,13 @@ export async function postPledge(req, res) {
     });
     return;
   }
+
+  // Audit the money movement (best-effort, never throws).
+  void auditLog({
+    actorUserId: req.user.id, action: 'pledge', targetType: 'event', targetId: eventId,
+    amount: result.amount != null ? Number(result.amount) : null,
+    metadata: { qty, method, bookingId: result.bookingId },
+  });
 
   const profile = result.profile?.profile;
   const capturedTotal = result.amount != null ? Number(result.amount) : null;

@@ -219,7 +219,12 @@ export async function patchEvent(req, res) {
 
   const result = await updateEvent(req.supabase, { ...req.body, id: eventId });
   if (result.error) {
-    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to update event.') });
+    // A stale edit (someone else saved first) is a 409 conflict, not a plain 400.
+    const status = result.error === 'conflict' ? 409 : 400;
+    const message = result.error === 'conflict'
+      ? 'This event changed since you opened it. Reload to see the latest, then re-apply your edit.'
+      : eventErrorMessage(result.error, 'Unable to update event.');
+    res.status(status).json({ status: result.error, message });
     return;
   }
   res.json({ status: 'ok' });

@@ -5,6 +5,9 @@
 
 import { createHash } from 'node:crypto';
 import { isRedisEnabled, cacheGetJson, cacheSetJson } from '../cache.js';
+import { withTimeout } from '../timeout.js';
+
+const EMBED_TIMEOUT_MS = 15000;
 
 const apiKey = () => process.env.GEMINI_API_KEY;
 const MODEL = () => process.env.AI_EMBED_MODEL || 'gemini-embedding-001';
@@ -17,11 +20,11 @@ async function defaultEmbed(text, taskType) {
   if (!apiKey()) return null;
   const { GoogleGenAI } = await import('@google/genai');
   const ai = new GoogleGenAI({ apiKey: apiKey() });
-  const resp = await ai.models.embedContent({
+  const resp = await withTimeout(ai.models.embedContent({
     model: MODEL(),
     contents: text,
     config: { outputDimensionality: EMBED_DIMS, taskType },
-  });
+  }), EMBED_TIMEOUT_MS, 'embedContent');
   const values = resp?.embeddings?.[0]?.values ?? resp?.embedding?.values ?? null;
   return Array.isArray(values) && values.length ? values : null;
 }

@@ -1,6 +1,6 @@
 import { describe, test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { runOnce, startDeadlineScheduler, dependencies } from './deadlineScheduler.js';
+import { runOnce, startDeadlineScheduler, dependencies, __resetSchedulerForTests } from './deadlineScheduler.js';
 
 describe('deadlineScheduler', () => {
   const originalAdminClient = dependencies.adminClient;
@@ -8,6 +8,7 @@ describe('deadlineScheduler', () => {
   const originalNotifyEventCompleted = dependencies.notifyEventCompleted;
   const originalRefundEventCardBookings = dependencies.refundEventCardBookings;
   const originalReconcilePayments = dependencies.reconcilePayments;
+  const originalCheckWalletDrift = dependencies.checkWalletDrift;
   const originalSetTimeout = dependencies.setTimeout;
   const originalSetInterval = dependencies.setInterval;
 
@@ -83,16 +84,20 @@ describe('deadlineScheduler', () => {
 
     dependencies.reconcilePayments = async () => {
       reconcilePaymentsCalled = true;
-      return { scanned: 0, refunded: 0 };
+      return { scanned: 0, refunded: 0, credited: 0 };
     };
+
+    dependencies.checkWalletDrift = async () => [];
   });
 
   afterEach(() => {
+    __resetSchedulerForTests();
     dependencies.adminClient = originalAdminClient;
     dependencies.notifyEventCancelled = originalNotifyEventCancelled;
     dependencies.notifyEventCompleted = originalNotifyEventCompleted;
     dependencies.refundEventCardBookings = originalRefundEventCardBookings;
     dependencies.reconcilePayments = originalReconcilePayments;
+    dependencies.checkWalletDrift = originalCheckWalletDrift;
     dependencies.setTimeout = originalSetTimeout;
     dependencies.setInterval = originalSetInterval;
   });
@@ -124,6 +129,15 @@ describe('deadlineScheduler', () => {
     assert.equal(notifyCompletedPayloads[0].revenue, 150);
     assert.equal(notifyCompletedPayloads[0].eventId, 'evt-completed-456');
     assert.deepEqual(notifyCompletedPayloads[0].organiser, { userId: undefined, email: 'host@test.com', username: 'hostie' });
+  });
+
+  test('skips an overlapping run so ticks never double-pay/double-cancel', async () => {
+    const first = runOnce();          // starts; sets the in-process flag before its first await
+    const second = await runOnce();   // flag is set → this tick is skipped
+    assert.equal(second, 'skipped', 'a re-entrant tick must not run');
+    await first;                      // let the first finish and clear the flag
+    const third = await runOnce();    // flag cleared → runs normally again
+    assert.notEqual(third, 'skipped');
   });
 
   test('startDeadlineScheduler configures correct timers for ticking checks', () => {

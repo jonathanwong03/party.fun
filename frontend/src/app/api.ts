@@ -194,7 +194,10 @@ async function apiFetch<T>(
     } catch {
       // non-JSON error body; keep the default message
     }
-    throw new Error(message);
+    // Preserve the HTTP status so callers can react to it (e.g. a 429 rate-limit shown gently).
+    const err = new Error(message) as Error & { status?: number };
+    err.status = response.status;
+    throw err;
   }
   return response.json() as Promise<T>;
 }

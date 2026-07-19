@@ -20,9 +20,10 @@ const LOOKBACK_DAYS = Number(process.env.RECONCILE_LOOKBACK_DAYS) || 7;
 const MIN_AGE_MS = (Number(process.env.RECONCILE_MIN_AGE_MINUTES) || 5) * 60 * 1000;
 
 export async function reconcilePayments() {
-  if (!stripeEnabled()) return { scanned: 0, refunded: 0 };
+  if (!stripeEnabled()) return { scanned: 0, refunded: 0, credited: 0 };
   let scanned = 0;
   let refunded = 0;
+  let credited = 0;
   try {
     const sdk = dependencies.getStripe();
     const admin = dependencies.getAdmin();
@@ -31,9 +32,36 @@ export async function reconcilePayments() {
     // Stripe auto-pagination over recent PaymentIntents. Expand the charge so we can see whether
     // it was already refunded — a refund does NOT change pi.status (stays 'succeeded').
     for await (const pi of sdk.paymentIntents.list({ created: { gte: createdGte }, limit: 100, expand: ['data.latest_charge'] })) {
-      if (pi?.metadata?.kind !== 'pledge' || pi.status !== 'succeeded') continue;
+      const kind = pi?.metadata?.kind;
+      if ((kind !== 'pledge' && kind !== 'topup') || pi.status !== 'succeeded') continue;
       if (pi.created && pi.created * 1000 > Date.now() - MIN_AGE_MS) continue; // too young to be sure it's an orphan
       scanned += 1;
+
+      // Orphaned TOP-UP: the card was charged but the wallet was never credited (the wallet_topup
+      // RPC failed after the charge). Deliver what the buyer paid for — credit it. Idempotent:
+      // wallet_txn_stripe_pi_uniq blocks a double credit, and we skip PIs that already have a txn.
+      if (kind === 'topup') {
+        const { data: existingTxn } = await admin
+          .from('WALLET_TRANSACTIONS')
+          .select('id')
+          .eq('stripePaymentIntentId', pi.id)
+          .maybeSingle();
+        if (existingTxn) continue; // already credited
+        const userId = pi?.metadata?.userId;
+        const amount = Number(pi.amount) / 100;
+        if (!userId || !(amount > 0)) {
+          console.warn(`[paymentReconciler] top-up PI ${pi.id} missing userId/amount — manual review.`);
+          continue;
+        }
+        const { data, error } = await admin.rpc('wallet_topup', { p_user_id: userId, p_amount: amount, p_payment_intent_id: pi.id });
+        if (error || data?.error) {
+          console.error(`[paymentReconciler] credit failed for orphan top-up ${pi.id}:`, error?.message || data?.error);
+          continue;
+        }
+        credited += 1;
+        console.warn(`[paymentReconciler] credited orphan top-up ${pi.id} (charge succeeded, wallet not credited).`);
+        continue;
+      }
 
       // Already refunded (by the inline compensating refund, or a previous sweep)? Then there is
       // nothing to do — attempting again just makes Stripe error "already refunded" every tick,
@@ -68,5 +96,5 @@ export async function reconcilePayments() {
   } catch (e) {
     console.error('[paymentReconciler] reconcilePayments error:', e?.message || e);
   }
-  return { scanned, refunded };
+  return { scanned, refunded, credited };
 }

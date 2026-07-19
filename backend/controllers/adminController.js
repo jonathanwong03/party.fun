@@ -1,6 +1,7 @@
 import { refundEventCardBookings } from '../services/stripeRefunds.js';
 import { notifyEventCancelled } from '../services/notificationService.js';
 import { adminClient } from '../services/supabaseAdmin.js';
+import { auditLog } from '../services/auditLog.js';
 import { buildLicensePdf } from '../services/licensePdf.js';
 
 // Returns the caller's USER row if they're an admin, else null.
@@ -32,6 +33,8 @@ export async function postAdminCancel(req, res) {
   const { data, error } = await req.supabase.rpc('admin_cancel_event', { p_event_id: eventId, p_reason: reason });
   if (error) return res.status(400).json({ status: 'error', message: error.message });
   if (data?.error) return res.status(400).json({ status: data.error, message: CANCEL_MESSAGES[data.error] ?? 'Unable to cancel event.' });
+
+  void auditLog({ actorUserId: req.user.id, action: 'admin_cancel_event', targetType: 'event', targetId: eventId, metadata: { reason } });
 
   // Card refunds + notify backers/organiser (attributed to admin) — fire-and-forget after responding.
   res.json({ status: 'ok' });

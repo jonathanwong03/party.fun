@@ -4,7 +4,7 @@
 // see helpers.js. Run with:  npm run test:integration
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { createEvent } from '../../services/eventService.js';
+import { createEvent, updateEvent } from '../../services/eventService.js';
 import {
   integrationSkip, makeUser, deleteUser, setWalletBalance, getWalletBalance,
   countBookings, futureIso, admin,
@@ -152,6 +152,95 @@ describe('payment RPC integration', { skip: integrationSkip }, () => {
     // wallet must not be credited twice.
     assert.ok(second.error || second.data, 'second topup handled');
     assert.equal(await getWalletBalance(b.id), 25, 'credited exactly once');
+  });
+
+  // 7. Cancel idempotency: a repeated cancel must not refund wallet backers twice.
+  //    Seeds its OWN event so cancelling it doesn't disturb the shared fixture.
+  it('cancel_event refunds wallet backers only once on a repeated cancel (no double refund)', async () => {
+    const seed = await createEvent(organiser.client, {
+      title: `ITest Cancel ${Date.now()}`,
+      description: 'Cancel idempotency test.',
+      location: 'Test Hall', address: '123 Test Rd',
+      startsAt: futureIso(21), endsAt: futureIso(21, 22), deadlineAt: futureIso(14), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    });
+    assert.ok(seed.eventId, `cancel-test event seed failed: ${JSON.stringify(seed)}`);
+    const localEventId = seed.eventId;
+    try {
+      const b = await newBuyer(100);
+      const pledged = await b.client.rpc('create_pledge', { p_event_id: localEventId, p_qty: 1, p_idempotency_key: null });
+      assert.equal(pledged.error, null, `pledge errored: ${pledged.error?.message}`);
+      assert.equal(await getWalletBalance(b.id), 90, 'debited $10');
+
+      const first = await organiser.client.rpc('cancel_event', { p_event_id: localEventId, p_reason: 'test cancel' });
+      assert.equal(first.error, null, `first cancel errored: ${first.error?.message}`);
+      assert.equal(first.data?.status, 'ok');
+      assert.equal(await getWalletBalance(b.id), 100, 'refunded exactly once');
+
+      const second = await organiser.client.rpc('cancel_event', { p_event_id: localEventId, p_reason: 'test cancel again' });
+      assert.equal(second.error, null, `second cancel errored: ${second.error?.message}`);
+      assert.equal(second.data?.alreadyCancelled, true, 'a repeated cancel is a no-op');
+      assert.equal(await getWalletBalance(b.id), 100, 'NOT refunded a second time');
+    } finally {
+      await admin().from('EVENT').delete().eq('id', localEventId);
+    }
+  });
+
+  // 8. Regression: cancel_event must refuse an event that has already started.
+  it('cancel_event refuses an already-started event (event_started guard)', async () => {
+    const seed = await createEvent(organiser.client, {
+      title: `ITest Started ${Date.now()}`,
+      description: 'event_started guard test.',
+      location: 'Test Hall', address: '123 Test Rd',
+      startsAt: futureIso(21), endsAt: futureIso(21, 22), deadlineAt: futureIso(14), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    });
+    assert.ok(seed.eventId, `started-guard event seed failed: ${JSON.stringify(seed)}`);
+    const id = seed.eventId;
+    try {
+      // Push the start into the past (the create path forbids past dates) to reach the guard.
+      await admin().from('EVENT').update({ startDate: new Date(Date.now() - 3600e3).toISOString() }).eq('id', id);
+      const res = await organiser.client.rpc('cancel_event', { p_event_id: id, p_reason: 'too late' });
+      assert.equal(res.data?.error, 'event_started');
+    } finally {
+      await admin().from('EVENT').delete().eq('id', id);
+    }
+  });
+
+  // 9. Optimistic concurrency: a stale edit is rejected; the current version applies.
+  it('update_event rejects a stale edit and accepts the current version', async () => {
+    const seed = await createEvent(organiser.client, {
+      title: `ITest Concurrency ${Date.now()}`,
+      description: 'Optimistic concurrency test.',
+      location: 'Test Hall', address: '123 Test Rd',
+      startsAt: futureIso(30), endsAt: futureIso(30, 22), deadlineAt: futureIso(20), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    });
+    assert.ok(seed.eventId, `concurrency event seed failed: ${JSON.stringify(seed)}`);
+    const id = seed.eventId;
+    const editable = {
+      id, title: 'Renamed', description: 'x', location: 'Hall', address: '1 Rd',
+      startsAt: futureIso(30), endsAt: futureIso(30, 22), deadlineAt: futureIso(20), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    };
+    try {
+      const stale = await updateEvent(organiser.client, { ...editable, updatedAt: '2000-01-01T00:00:00Z' });
+      assert.equal(stale.error, 'conflict', 'a stale base version must be rejected');
+
+      const { data: cur } = await admin().from('EVENT').select('updatedAt').eq('id', id).single();
+      const ok = await updateEvent(organiser.client, { ...editable, updatedAt: cur.updatedAt });
+      assert.equal(ok.status, 'ok', 'the current version applies');
+    } finally {
+      await admin().from('EVENT').delete().eq('id', id);
+    }
   });
 
   // ── Authorization: an end user must not be able to mint money ────────────────

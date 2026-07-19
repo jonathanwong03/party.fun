@@ -1,6 +1,7 @@
 import { cancelEvent } from './eventService.js';
 import { refundEventCardBookings } from './stripeRefunds.js';
 import { notifyEventCancelled } from './notificationService.js';
+import { auditLog } from './auditLog.js';
 
 export const dependencies = {
   cancelEvent,
@@ -15,8 +16,10 @@ export const dependencies = {
 // `cancel_event` action so refunds/notifications never diverge. Runs through the
 // caller's own (RLS-scoped) Supabase client.
 export async function cancelEventWithRefunds(sb, userId, eventId, reason) {
-  const result = await dependencies.cancelEvent(sb, eventId, (reason ?? '').trim() || 'Cancelled by the organiser');
+  const cleanReason = (reason ?? '').trim() || 'Cancelled by the organiser';
+  const result = await dependencies.cancelEvent(sb, eventId, cleanReason);
   if (result.error) return { error: result.error };
+  void auditLog({ actorUserId: userId, action: 'event_cancelled', targetType: 'event', targetId: eventId, metadata: { reason: cleanReason } });
 
   // Card-paid backers get a real Stripe refund to their card (wallet refunds done in the RPC).
   await dependencies.refundEventCardBookings(eventId);

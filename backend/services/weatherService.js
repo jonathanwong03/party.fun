@@ -12,6 +12,7 @@ import { isRedisEnabled, cacheGetJson, cacheSetJson } from './cache.js';
 const SINGAPORE = { lat: 1.3521, lon: 103.8198 };
 const RAIN_THRESHOLD_PCT = 70; // "> 70% chance of precipitation" → warn
 const HORIZON_DAYS = 10; // Google's daily forecast reaches ~10 days
+const WEATHER_FETCH_TIMEOUT_MS = 10000;
 const CACHE_TTL_MS = 30 * 60 * 1000; // 30 min per location
 const CACHE_TTL_S = CACHE_TTL_MS / 1000;
 
@@ -32,10 +33,18 @@ async function defaultFetchForecast(lat, lon) {
   // without it this returned only ~5 days and every later date looked like it had no forecast.
   const url = `https://weather.googleapis.com/v1/forecast/days:lookup?key=${encodeURIComponent(key)}`
     + `&location.latitude=${lat}&location.longitude=${lon}&days=${HORIZON_DAYS}&pageSize=${HORIZON_DAYS}`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`Weather API ${res.status}`);
-  const json = await res.json();
-  return Array.isArray(json?.forecastDays) ? json.forecastDays : [];
+  // Bound the call so a hung provider degrades to "unavailable" (assessEvent catches) instead of
+  // stalling the request.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEATHER_FETCH_TIMEOUT_MS);
+  try {
+    const res = await fetch(url, { signal: controller.signal });
+    if (!res.ok) throw new Error(`Weather API ${res.status}`);
+    const json = await res.json();
+    return Array.isArray(json?.forecastDays) ? json.forecastDays : [];
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Test seam: inject a synthetic forecast so tests never hit the network. Setting
