@@ -154,7 +154,7 @@ async function send(path: string, options: RequestInit, accessToken: string | nu
   const headers = new Headers(options.headers);
   if (accessToken) headers.set("Authorization", `Bearer ${accessToken}`);
   if (options.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
-  return fetch(path, { ...options, headers });
+  return fetch(path, { ...options, headers, cache: "no-store" });
 }
 
 async function apiFetch<T>(
@@ -188,15 +188,21 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;
+    let body: unknown = null;
     try {
-      const body = await response.json();
-      message = body.message || message;
+      body = await response.json();
+      message = (body as { message?: string }).message || message;
     } catch {
       // non-JSON error body; keep the default message
     }
     // Preserve the HTTP status so callers can react to it (e.g. a 429 rate-limit shown gently).
-    const err = new Error(message) as Error & { status?: number };
+    const err = new Error(message) as Error & { status?: number; balance?: number; required?: number };
     err.status = response.status;
+    if (body && typeof body === 'object') {
+      const details = body as { balance?: unknown; required?: unknown };
+      if (typeof details.balance === 'number') err.balance = details.balance;
+      if (typeof details.required === 'number') err.required = details.required;
+    }
     throw err;
   }
   return response.json() as Promise<T>;

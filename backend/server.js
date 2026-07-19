@@ -16,6 +16,7 @@ import aiRoutes from './routes/aiRoutes.js';
 import weatherRoutes from './routes/weatherRoutes.js';
 import reviewRoutes from './routes/reviewRoutes.js';
 import { startDeadlineScheduler } from './services/deadlineScheduler.js';
+import { noStoreApi } from './middleware/noStoreApi.js';
 
 const app = express();
 const PORT = process.env.API_PORT || process.env.PORT || 8000;
@@ -29,6 +30,8 @@ app.get('/api/health', (_req, res) => {
     service: 'party.fun API',
   });
 });
+
+app.use('/api', noStoreApi);
 
 // Auth (login/register/session) is handled directly by Supabase Auth in the
 // frontend, so there is no /api/auth route. These data routes forward the

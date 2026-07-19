@@ -385,6 +385,7 @@ function AppShell() {
         setUser(null);
         setEvents([]);
         setProfileTickets([]);
+        setWalletBalance(null);
       }
     });
 
@@ -492,6 +493,7 @@ function AppShell() {
     setUser(null);
     setEvents([]);
     setProfileTickets([]);
+    setWalletBalance(null);
     localStorage.removeItem('party_fun_user_id');
     navigate('/login', { replace: true });
   };
@@ -503,6 +505,7 @@ function AppShell() {
     setUser(null);
     setEvents([]);
     setProfileTickets([]);
+    setWalletBalance(null);
     navigate('/login', { replace: true });
   };
 
@@ -627,7 +630,7 @@ function CheckoutRoute({
   role: Role | null;
   go: (r: Route) => void;
   events: EventItem[];
-  onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card') => Promise<string | undefined>;
+  onPledge: (eventId: string, qty: number, amount: number, paymentMethod?: 'wallet' | 'card', attemptId?: string) => Promise<string | undefined>;
 }) {
   const { eventId = '' } = useParams();
   const location = useLocation();

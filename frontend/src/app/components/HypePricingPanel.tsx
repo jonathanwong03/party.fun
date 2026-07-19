@@ -73,15 +73,15 @@ export function EventSettingsPricingCard({ event }: { event: EventItem }) {
       <p className="mb-4 text-sm" style={{ color: 'var(--muted-foreground)' }}>Hype-driven pricing parameters for this event.</p>
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Base price (P<sub>base</sub>)</dt>
+          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Base price</dt>
           <dd className="mt-1" style={{ fontWeight: 700 }}>${event.basePrice.toFixed(2)}</dd>
         </div>
         <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Max price (P<sub>max</sub>)</dt>
+          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Max price</dt>
           <dd className="mt-1" style={{ fontWeight: 700 }}>${event.maxPrice.toFixed(2)}</dd>
         </div>
         <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Capacity (C)</dt>
+          <dt className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Capacity</dt>
           <dd className="mt-1" style={{ fontWeight: 700 }}>{event.maxCapacity}</dd>
         </div>
         <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>

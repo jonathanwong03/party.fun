@@ -77,6 +77,27 @@ const PLEDGE_MESSAGES = {
   admin_forbidden: 'Admin accounts cannot attend events or buy tickets.',
 };
 
+async function walletFailureDetails(req, eventId, qty, method) {
+  if (method !== 'wallet') return {};
+
+  try {
+    const [walletResult, quote] = await Promise.all([
+      req.supabase
+        .from('USER')
+        .select('walletBalance')
+        .eq('id', req.user.id)
+        .single(),
+      dependencies.quotePledge(req.supabase, eventId, qty),
+    ]);
+    return {
+      balance: Number(walletResult.data?.walletBalance ?? 0),
+      required: quote && !quote.error ? Number(quote.total ?? 0) : null,
+    };
+  } catch {
+    return {};
+  }
+}
+
 export async function getQuote(req, res) {
   const quote = await dependencies.quotePledge(req.supabase, req.params.eventId, req.query.qty);
   if (!quote) {
@@ -107,9 +128,23 @@ export async function postPledge(req, res) {
   const result = await pledgeWithPayment({ deps: dependencies, sb: req.supabase, userId: req.user.id, eventId, qty, method, attemptId });
   if (result.error) {
     const status = PLEDGE_STATUS[result.error] ?? 409;
+    const details = result.error === 'insufficient_funds'
+      ? await walletFailureDetails(req, eventId, qty, method)
+      : {};
+    if (result.error === 'insufficient_funds') {
+      console.warn('[checkout] insufficient_funds', {
+        userId: req.user.id,
+        eventId,
+        qty,
+        method,
+        balance: details.balance,
+        required: details.required,
+      });
+    }
     res.status(status).json({
       status: result.error,
       message: result.message ?? PLEDGE_MESSAGES[result.error] ?? 'Unable to complete pledge.',
+      ...details,
     });
     return;
   }

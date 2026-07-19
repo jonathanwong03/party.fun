@@ -44,6 +44,20 @@ describe('buildHypeDrivenQuote', () => {
     });
     assert.deepEqual(quote, { error: 'not_enough_tickets' });
   });
+
+  it('matches the fastevent2 six-ticket bonding-curve quote from checkout', () => {
+    const quote = buildHypeDrivenQuote('d9f48b5a-9692-4f13-858a-3c7e9ad7028a', 6, {
+      eventId: 'd9f48b5a-9692-4f13-858a-3c7e9ad7028a',
+      hypeDrivenPricing: true,
+      basePrice: 10,
+      maxPrice: 20,
+      maxCapacity: 155,
+      activeTicketCount: 10,
+    });
+
+    assert.equal(quote.total, 63.45);
+    assert.deepEqual(quote.lines.map((line) => line.subtotal), [10.46, 10.5, 10.55, 10.6, 10.65, 10.69]);
+  });
 });
 
 describe('quotePledge', () => {
