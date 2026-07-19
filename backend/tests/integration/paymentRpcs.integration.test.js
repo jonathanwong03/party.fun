@@ -243,6 +243,38 @@ describe('payment RPC integration', { skip: integrationSkip }, () => {
     }
   });
 
+  it('update_event refuses to edit a cancelled or completed event (not_editable)', async () => {
+    const seed = await createEvent(organiser.client, {
+      title: `ITest NotEditable ${Date.now()}`,
+      description: 'Edit-lock test.',
+      location: 'Test Hall', address: '123 Test Rd',
+      startsAt: futureIso(30), endsAt: futureIso(30, 22), deadlineAt: futureIso(20), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    });
+    assert.ok(seed.eventId, `not-editable event seed failed: ${JSON.stringify(seed)}`);
+    const id = seed.eventId;
+    const editable = {
+      id, title: 'Renamed', description: 'x', location: 'Hall', address: '1 Rd',
+      startsAt: futureIso(30), endsAt: futureIso(30, 22), deadlineAt: futureIso(20), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    };
+    try {
+      await admin().from('EVENT').update({ status: 'cancelled' }).eq('id', id);
+      const res = await updateEvent(organiser.client, editable);
+      assert.equal(res.error, 'not_editable', 'a cancelled event must refuse edits');
+
+      await admin().from('EVENT').update({ status: 'completed' }).eq('id', id);
+      const res2 = await updateEvent(organiser.client, editable);
+      assert.equal(res2.error, 'not_editable', 'a completed event must refuse edits');
+    } finally {
+      await admin().from('EVENT').delete().eq('id', id);
+    }
+  });
+
   // ── Authorization: an end user must not be able to mint money ────────────────
   // These are the regression tests for a real vulnerability. The browser holds a genuine
   // Supabase JWT and the anon key ships in the bundle, so ANY account holder could call these

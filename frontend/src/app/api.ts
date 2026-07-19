@@ -826,7 +826,7 @@ export type ChatAction = 'open_card_form';
 export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; action?: ChatAction | null; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
 export type ActionResult = { status?: string; message?: string };
 
-export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string }): Promise<EventCopySuggestions> {
+export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string; mode?: 'titles' | 'descriptions' }): Promise<EventCopySuggestions> {
   return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
 }
 

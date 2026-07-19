@@ -165,6 +165,9 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
 
   const status: EventStatus = existing?.status ?? 'early_bird';
   const locked = isEdit && status === 'greenlit';
+  // A cancelled or completed event is final — it cannot be edited at all (mirrors the
+  // server-side `not_editable` guard in update_event).
+  const readOnly = isEdit && (status === 'cancelled' || status === 'completed');
   const canCancelEvent = existing?.canCancel ?? existing?.mine ?? false;
   const canInviteCoOrganisers = isEdit && !!existing?.mine;
 
@@ -408,6 +411,43 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
       setInviteBusy(false);
     }
   };
+
+  // Cancelled/completed events are final: show a blocked notice instead of the editable form.
+  if (readOnly) {
+    return (
+      <div>
+        <main className="flex-1 px-6 py-8">
+          <div className="mx-auto max-w-[1536px]">
+            <button
+              onClick={() => go({ name: "hosted-events" })}
+              className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
+              style={{ color: "var(--muted-foreground)" }}
+            >
+              <ChevronLeft size={14} /> Back to hosted events
+            </button>
+            <div className="mb-8">
+              <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em" }}>Edit event</h1>
+            </div>
+            <div className="rounded-2xl border p-6" style={{ borderColor: "var(--border)", background: "var(--surface)" }}>
+              <div className="flex items-center gap-3">
+                {existing && <StatusBadge event={existing} />}
+              </div>
+              <p className="mt-3 text-sm" style={{ color: "var(--muted-foreground)" }}>
+                This event is {status === "cancelled" ? "cancelled" : "completed"} and can no longer be edited.
+              </p>
+              <button
+                onClick={() => go({ name: "hosted-events" })}
+                className="mt-4 inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-sm font-semibold transition hover:bg-white/5"
+                style={{ borderColor: "var(--border)" }}
+              >
+                <ChevronLeft size={14} /> Back to hosted events
+              </button>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -948,21 +988,21 @@ function AiCopyHelper({
 }) {
   const [names, setNames] = useState<string[]>([]);
   const [descriptions, setDescriptions] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState<'titles' | 'descriptions' | null>(null);
   const [hidden, setHidden] = useState(false);
 
-  async function generate() {
+  async function generate(mode: 'titles' | 'descriptions') {
     if (loading) return;
-    setLoading(true);
+    setLoading(mode);
     try {
-      const res = await suggestEventCopy({ title, theme });
+      const res = await suggestEventCopy({ title, theme, mode });
       if (!res.available) { setHidden(true); return; }
-      setNames(res.names ?? []);
-      setDescriptions(res.descriptions ?? []);
+      if (mode === 'titles') setNames(res.names ?? []);
+      else setDescriptions(res.descriptions ?? []);
     } catch {
       // leave as-is; user can retry
     } finally {
-      setLoading(false);
+      setLoading(null);
     }
   }
 
@@ -970,15 +1010,26 @@ function AiCopyHelper({
 
   return (
     <div className="mt-2 rounded-xl p-3" style={{ background: "var(--surface-2)", border: "1px solid var(--border)" }}>
-      <button
-        type="button"
-        onClick={generate}
-        disabled={loading}
-        className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
-        style={{ background: "#ff4d2e" }}
-      >
-        <Sparkles size={14} /> {loading ? "Thinking…" : "Suggest names & description with AI"}
-      </button>
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => generate('titles')}
+          disabled={!!loading}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+          style={{ background: "#ff4d2e" }}
+        >
+          <Sparkles size={14} /> {loading === 'titles' ? "Thinking…" : "Suggest event titles with AI"}
+        </button>
+        <button
+          type="button"
+          onClick={() => generate('descriptions')}
+          disabled={!!loading}
+          className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+          style={{ background: "#ff4d2e" }}
+        >
+          <Sparkles size={14} /> {loading === 'descriptions' ? "Thinking…" : "Suggest descriptions with AI"}
+        </button>
+      </div>
       {names.length > 0 && (
         <div className="mt-3">
           <div className="text-xs font-semibold uppercase tracking-wide" style={{ color: "var(--muted-foreground)" }}>Name ideas</div>

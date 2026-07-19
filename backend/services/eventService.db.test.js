@@ -261,6 +261,13 @@ describe('eventService Additional Database helpers', () => {
     assert.equal(syncEventCalled, null, 'a rejected edit must not re-embed the event');
   });
 
+  test('updateEvent maps a cancelled/completed edit to not_editable and does NOT re-embed', async () => {
+    const sb = { rpc: async () => ({ data: { error: 'not_editable' }, error: null }) };
+    const res = await updateEvent(sb, { id: 'evt-1', title: 'X' });
+    assert.deepEqual(res, { error: 'not_editable' });
+    assert.equal(syncEventCalled, null, 'a rejected edit must not re-embed the event');
+  });
+
   test('deleteEvent RPC mapping', async () => {
     const res = await deleteEvent(mockSb, 'evt-1');
     assert.deepEqual(res, { status: 'ok' });

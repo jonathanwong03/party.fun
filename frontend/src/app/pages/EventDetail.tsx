@@ -179,19 +179,25 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               </div>
             )}
 
-            <div className="mt-4 grid grid-cols-3 gap-3 text-sm">
-              <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Threshold</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.hypeThreshold} </div>
-              </div>
-              <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Pledged</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.activeTicketCount}</div>
-              </div>
-              <div className="rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Spots left</div>
-                <div className="mt-1" style={{ fontWeight: 700 }}>{event.spotsLeft}</div>
-              </div>
+            <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+              {[
+                { label: 'Hype threshold', value: event.hypeThreshold, hint: 'Minimum tickets pledged for the event to be confirmed.' },
+                { label: 'Pledged', value: event.activeTicketCount, hint: 'Tickets pledged so far.' },
+                { label: 'Maximum capacity', value: event.maxCapacity, hint: 'The most people who can attend this event.' },
+                { label: 'Spots left', value: event.spotsLeft, hint: 'Tickets still available before it sells out.' },
+              ].map((c) => (
+                <div key={c.label} className="group relative rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                  <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{c.label}</div>
+                  <div className="mt-1" style={{ fontWeight: 700 }}>{c.value}</div>
+                  {/* Hover tooltip explaining the term. */}
+                  <div
+                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-44 -translate-x-1/2 rounded-lg px-2.5 py-1.5 text-xs shadow-lg group-hover:block"
+                    style={{ background: '#ffffff', color: '#1a1a1a', fontWeight: 500 }}
+                  >
+                    {c.hint}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
@@ -207,7 +213,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                 </>
               ) : (
                 <>
-                  <li><strong>Buy early</strong> — the early_bird status is cheaper.</li>
+                  <li><strong>Buy early</strong> — tickets sold earlier are generally cheaper</li>
                   <li><strong>Reach the hype threshold</strong> — the event is confirmed.</li>
                   <li><strong>Miss the hype threshold?</strong> Active tickets are automatically refunded in full.</li>
                 </>

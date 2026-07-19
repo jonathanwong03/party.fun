@@ -241,6 +241,9 @@ function AppShell() {
 
   useEffect(() => {
     localStorage.setItem('theme', theme);
+    // Also mirror the class on <html> so app-wide (viewport) scrollbar styling can
+    // be scoped to dark mode — the inner wrapper `.dark` (below) can't reach it.
+    document.documentElement.classList.toggle('dark', theme === 'dark');
   }, [theme]);
 
   const toggleTheme = () => setTheme((t) => (t === 'dark' ? 'light' : 'dark'));

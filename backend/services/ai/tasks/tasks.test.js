@@ -30,6 +30,22 @@ test('suggestEventCopy parses names and descriptions (tolerates code fences)', a
   assert.equal(out.descriptions.length, 1);
 });
 
+test("suggestEventCopy mode:'titles' returns up to 3 names and no descriptions", async () => {
+  withResponse('{"names":["A","B","C","D","E"],"descriptions":["ignored"]}');
+  const out = await suggestEventCopy({ title: 'rave', mode: 'titles' });
+  assert.equal(out.available, true);
+  assert.deepEqual(out.names, ['A', 'B', 'C']);
+  assert.deepEqual(out.descriptions, []);
+});
+
+test("suggestEventCopy mode:'descriptions' returns descriptions and no names", async () => {
+  withResponse('{"names":["ignored"],"descriptions":["One.","Two.","Three."]}');
+  const out = await suggestEventCopy({ title: 'rave', mode: 'descriptions' });
+  assert.equal(out.available, true);
+  assert.deepEqual(out.names, []);
+  assert.equal(out.descriptions.length, 3);
+});
+
 test('revenueTips returns parsed tips', async () => {
   withResponse('{"tips":[{"title":"Lower early-bird","detail":"...","impact":"high"}]}');
   const out = await revenueTips({ event: { title: 'X' }, economics: { totalRevenue: 100, totalCost: 20, profit: 80, ticketCount: 10 } });

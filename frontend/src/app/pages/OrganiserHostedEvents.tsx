@@ -163,7 +163,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                       ) : (
                         <>
                           <button onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Eye size={13} /> View</button>
-                          {(e.canEdit ?? e.mine) && <button onClick={() => go({ name: 'edit-event', id: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Edit</button>}
+                          {(e.canEdit ?? e.mine) && e.status !== 'cancelled' && e.status !== 'completed' && <button onClick={() => go({ name: 'edit-event', id: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Edit</button>}
                           {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
                             <button onClick={() => setDeleting(e.id)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Trash2 size={13} /> Remove</button>
                           ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
@@ -247,7 +247,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                           ) : (
                             <>
                               <IconBtn label="View" onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })}><Eye size={14} /></IconBtn>
-                              {(e.canEdit ?? e.mine) && <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>}
+                              {(e.canEdit ?? e.mine) && e.status !== 'cancelled' && e.status !== 'completed' && <IconBtn label="Edit" onClick={() => go({ name: 'edit-event', id: e.id })}><Pencil size={14} /></IconBtn>}
                               {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
                                 <IconBtn label="Remove" danger onClick={() => setDeleting(e.id)}><Trash2 size={14} /></IconBtn>
                               ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
