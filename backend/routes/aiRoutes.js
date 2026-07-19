@@ -1,8 +1,21 @@
 import express from 'express';
 import { suggestEventCopy, revenueTips, recommendEvents, forYou, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory } from '../controllers/aiController.js';
 import { requireAuth, optionalAuth } from '../middleware/requireAuth.js';
+import { rateLimit } from '../middleware/rateLimit.js';
 
 const router = express.Router();
+
+// Each chat message fans out into several Gemini calls (scope guard → classify → branch agent →
+// tool calls), so it costs real money — throttle per user to bound abuse/runaway cost. Generous
+// enough that a natural back-and-forth never trips it; only rapid-fire/loops do. Confirm/reject
+// (/chat/resume) is deliberately NOT limited — clicking Confirm must never be throttled. Fail-open
+// when Redis is off (dev unaffected).
+const chatLimiter = rateLimit({
+  keyFn: (req) => req.user?.id ?? req.ip,
+  limit: 10,
+  windowSec: 20,
+  message: "I'm getting a lot of messages — give me a few seconds and try again.",
+});
 
 router.get('/models', requireAuth, models);
 router.get('/conversations', requireAuth, listConversations);
@@ -16,7 +29,7 @@ router.post('/revenue-tips/:eventId', requireAuth, revenueTips);
 router.post('/recommend-events', optionalAuth, recommendEvents);
 router.post('/for-you', requireAuth, forYou);
 router.post('/ask', requireAuth, ask);
-router.post('/chat', requireAuth, chat);
+router.post('/chat', requireAuth, chatLimiter, chat);
 router.post('/chat/resume', requireAuth, resumeChat);
 router.post('/execute-action', requireAuth, executeActionHandler);
 

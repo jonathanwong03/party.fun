@@ -219,7 +219,17 @@ export async function patchEvent(req, res) {
 
   const result = await updateEvent(req.supabase, { ...req.body, id: eventId });
   if (result.error) {
-    res.status(400).json({ status: result.error, message: eventErrorMessage(result.error, 'Unable to update event.') });
+    // A stale edit (someone else saved first) or an edit to a dead event is a 409, not a plain 400.
+    const status = result.error === 'conflict' || result.error === 'not_editable' ? 409 : 400;
+    let message;
+    if (result.error === 'conflict') {
+      message = 'This event changed since you opened it. Reload to see the latest, then re-apply your edit.';
+    } else if (result.error === 'not_editable') {
+      message = 'This event is cancelled or completed and can no longer be edited.';
+    } else {
+      message = eventErrorMessage(result.error, 'Unable to update event.');
+    }
+    res.status(status).json({ status: result.error, message });
     return;
   }
   res.json({ status: 'ok' });

@@ -85,6 +85,7 @@ export type EventItem = {
   startsAt?: string;
   endsAt?: string;
   deadlineAt?: string;
+  updatedAt?: string | null; // base version for optimistic-concurrency on edits
   // Backend-computed: uncapped fill ratio + long date / compact time strings.
   hypeRatio?: number;
   startLong?: string;

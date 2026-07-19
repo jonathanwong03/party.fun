@@ -243,7 +243,7 @@ describe('walletService', () => {
     });
   });
 
-  test('returns error when wallet_topup RPC fails', async () => {
+  test('returns credit_pending when the credit RPC fails after a successful charge (reconciler will credit)', async () => {
     const mockSb = {
       from: (table) => {
         if (table === 'USER') {
@@ -264,9 +264,11 @@ describe('walletService', () => {
     mockRpcResponse = { data: null, error: { message: 'Database lock timeout' } };
 
     const res = await topupWallet(mockSb, 'user-id-123', 50);
+    // The card was charged, so we must NOT report a plain failure that implies the money vanished;
+    // the reconciler credits the orphan. (The Stripe charge is not reversed.)
     assert.deepEqual(res, {
-      error: 'error',
-      message: 'Database lock timeout'
+      error: 'credit_pending',
+      message: 'Payment received — your wallet will be credited shortly.'
     });
   });
 });

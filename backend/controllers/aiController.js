@@ -48,8 +48,8 @@ function guard(req, res) {
 // POST /api/ai/suggest-event-copy
 export async function suggestEventCopy(req, res) {
   if (!guard(req, res)) return;
-  const { title, theme, audience, university } = req.body ?? {};
-  res.json(await suggestEventCopyTask({ title, theme, audience, university }));
+  const { title, theme, audience, university, mode } = req.body ?? {};
+  res.json(await suggestEventCopyTask({ title, theme, audience, university, mode }));
 }
 
 // POST /api/ai/revenue-tips/:eventId  (host-scoped)

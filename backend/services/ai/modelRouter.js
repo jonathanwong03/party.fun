@@ -1,4 +1,9 @@
 import { geminiProvider } from './providers/geminiProvider.js';
+import { withTimeout } from '../timeout.js';
+
+// Bound each model call so a hung Gemini request can't tie up a turn. Generous enough for a
+// tool-using generation; on timeout the candidate is treated as failed (fallback / null).
+const MODEL_TIMEOUT_MS = 45000;
 
 // Gemini-only router. Each cost tier resolves to a single {provider, model}
 // candidate; the tier helpers keep their ordered-list shape (a list of one) so
@@ -50,7 +55,7 @@ export async function runChat(candidates, { system, messages, tools, maxTokens }
     const impl = dependencies.providers[provider];
     if (!impl?.isConfigured?.() || typeof impl.chatWithTools !== 'function') continue;
     try {
-      return await impl.chatWithTools({ system, messages, tools, model, maxTokens });
+      return await withTimeout(impl.chatWithTools({ system, messages, tools, model, maxTokens }), MODEL_TIMEOUT_MS, `${provider}.chatWithTools`);
     } catch (e) {
       errors.push(`${provider}: ${e?.message || e}`);
     }
@@ -68,7 +73,7 @@ export async function runTier(tier, { system, messages, jsonSchema, maxTokens })
     const impl = dependencies.providers[provider];
     if (!impl || !impl.isConfigured?.()) continue;
     try {
-      const result = await impl.generate({ system, messages, jsonSchema, model, maxTokens });
+      const result = await withTimeout(impl.generate({ system, messages, jsonSchema, model, maxTokens }), MODEL_TIMEOUT_MS, `${provider}.generate`);
       if (result && typeof result.text === 'string' && result.text.trim()) return result;
       errors.push(`${provider}: empty response`);
     } catch (e) {

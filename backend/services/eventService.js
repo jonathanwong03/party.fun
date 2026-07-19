@@ -126,6 +126,8 @@ export function mapEventRow(row, userId) {
     startsAt: row.startDate ?? '',
     endsAt: row.endDate ?? '',
     deadlineAt: row.deadlineAt ?? '',
+    updatedAt: row.updatedAt ?? null, // optimistic-concurrency base version for edits
+
     // Long date + compact time strings for the detail page cards.
     startLong: row.startDate ? sgLong(row.startDate) : '',
     startClock: row.startDate ? sgClock(row.startDate) : '',
@@ -488,7 +490,11 @@ export async function createEvent(sb, e) {
 }
 
 export async function updateEvent(sb, e) {
-  const { data, error } = await sb.rpc('update_event', { p_event_id: e.id, ...eventRpcArgs(e) });
+  // Optimistic concurrency: pass the updatedAt the editor's form was based on (the frontend sends
+  // the whole EventItem, so e.updatedAt is that base version); the RPC returns 'conflict' if the
+  // row moved on. Null → the check is skipped (e.g. callers that don't carry a version).
+  const expectedUpdatedAt = e.expectedUpdatedAt ?? e.updatedAt ?? null;
+  const { data, error } = await sb.rpc('update_event', { p_event_id: e.id, ...eventRpcArgs(e), p_expected_updated_at: expectedUpdatedAt });
   if (error) throw new Error(error.message);
   if (data?.error) return { error: data.error };
   await invalidateEventCaches();

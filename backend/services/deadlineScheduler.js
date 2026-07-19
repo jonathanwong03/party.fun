@@ -2,6 +2,8 @@ import { adminClient } from './supabaseAdmin.js';
 import { notifyEventCancelled, notifyEventCompleted } from './notificationService.js';
 import { refundEventCardBookings } from './stripeRefunds.js';
 import { reconcilePayments } from './paymentReconciler.js';
+import { checkWalletDrift } from './walletIntegrity.js';
+import { getReadyRedis } from './redisClient.js';
 
 export const dependencies = {
   adminClient,
@@ -9,6 +11,7 @@ export const dependencies = {
   notifyEventCompleted,
   refundEventCardBookings,
   reconcilePayments,
+  checkWalletDrift,
   setTimeout: (fn, ms) => setTimeout(fn, ms),
   setInterval: (fn, ms) => setInterval(fn, ms),
 };
@@ -47,7 +50,43 @@ async function gatherAndNotify(admin, eventId) {
   });
 }
 
+// Re-entrancy guards. A run that outlasts DEADLINE_CHECK_INTERVAL_MS (a slow sweep, or a second
+// backend instance) must NOT overlap another — overlapping runs double-pay/double-cancel.
+//   1) an in-process flag stops the SAME process from overlapping itself;
+//   2) a best-effort Redis lock (fail-open, like the rest of the app) stops TWO instances.
+let running = false;
+const LOCK_KEY = 'lock:deadline-scheduler';
+const LOCK_TTL_SEC = 15 * 60; // safety expiry so a crashed run can't hold the lock forever
+
+async function acquireCrossInstanceLock() {
+  const redis = getReadyRedis();
+  if (!redis) return { proceed: true, release: null }; // no Redis → rely on the in-process flag
+  try {
+    const ok = await redis.set(LOCK_KEY, String(Date.now()), 'NX', 'EX', LOCK_TTL_SEC);
+    if (ok !== 'OK') return { proceed: false, release: null }; // another instance holds it
+    return { proceed: true, release: async () => { try { await redis.del(LOCK_KEY); } catch { /* best effort */ } } };
+  } catch {
+    return { proceed: true, release: null }; // Redis error → fail open (in-process flag still applies)
+  }
+}
+
+// Test seam: clear the in-process flag between tests.
+export function __resetSchedulerForTests() { running = false; }
+
 export async function runOnce() {
+  if (running) { console.warn('[DeadlineScheduler] previous run still in progress; skipping this tick.'); return 'skipped'; }
+  running = true;
+  const lock = await acquireCrossInstanceLock();
+  if (!lock.proceed) { running = false; console.warn('[DeadlineScheduler] another instance holds the lock; skipping this tick.'); return 'skipped'; }
+  try {
+    return await runSweep();
+  } finally {
+    running = false;
+    if (lock.release) await lock.release();
+  }
+}
+
+async function runSweep() {
   const admin = dependencies.adminClient();
 
   // 1) Cancel + refund (to wallet, in the RPC) events that missed their threshold.
@@ -90,9 +129,15 @@ export async function runOnce() {
     }
   }
 
-  // 3) Orphan recovery: refund pledge charges that succeeded but have no booking recorded.
-  const { refunded } = await dependencies.reconcilePayments();
+  // 3) Orphan recovery: refund pledge charges with no booking, and credit top-up charges with no
+  //    wallet credit (money the buyer already paid for).
+  const { refunded, credited } = await dependencies.reconcilePayments();
   if (refunded) console.log(`[DeadlineScheduler] Reconciler refunded ${refunded} orphaned charge(s).`);
+  if (credited) console.log(`[DeadlineScheduler] Reconciler credited ${credited} orphaned top-up(s).`);
+
+  // 4) Integrity check (detection only): flag any wallet whose balance disagrees with its ledger.
+  const drifts = await dependencies.checkWalletDrift();
+  if (drifts?.length) console.error(`[DeadlineScheduler] ${drifts.length} wallet(s) drifted from their ledger — see [walletDrift] logs.`);
 }
 
 export function startDeadlineScheduler() {

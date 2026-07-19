@@ -122,6 +122,10 @@ export const ROLE_BLOCK_REPLY = "Your current role is attendee/user, so you cann
 export const ADMIN_CREATE_BLOCK_REPLY = "As an admin you moderate the platform — you can edit and cancel/delete any event — but you cannot create or host events. Only organiser accounts can create events. Would you like to edit or cancel an existing event instead?";
 
 const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
+// Questions ABOUT the app itself (its pages, sections, FAQ, testimonials, features, how it
+// works). These are always in-scope — the assistant is a party.fun encyclopedia — so match
+// them deterministically instead of leaving them to the LLM guard's coin-flip.
+const APP_STRUCTURE_RX = /\b(faq|testimonials?|students?\s?say|reviews?|section|page|feature|features|how\s+(does|do)\b.*\bwork)\b/i;
 const GREETING_RX = /^(hi|hey|hello+|yo|hiya|good\s(morning|afternoon|evening)|thanks|thank\syou|thx|ty|cool|nice|great|sup|how\sare\syou|what\scan\syou\sdo|who\sare\syou|help|hi there)\b/i;
 // Short mid-flow continuations / confirmations — always on-topic (never block these).
 const AFFIRMATION_RX = /^(yes|yeah|yep|yup|sure|ok|okay|k|go\sahead|do\sit|sounds?\sgood|please|confirm|proceed|that\sone|the\s(first|second|third|last)\sone|first|second|third|either|both|whatever\syou\sthink|you\sdecide|any|no|nope|not\sreally)\b/i;
@@ -137,7 +141,7 @@ const NON_CREATE_MANAGEMENT_RX = /\b(edit|update|change|reschedule|rename|cancel
 export function guardAllows(text) {
   const t = String(text || '').trim();
   if (!t) return true;
-  return ON_TOPIC_RX.test(t) || GREETING_RX.test(t) || AFFIRMATION_RX.test(t) || SHORT_ANSWER_RX.test(t);
+  return ON_TOPIC_RX.test(t) || APP_STRUCTURE_RX.test(t) || GREETING_RX.test(t) || AFFIRMATION_RX.test(t) || SHORT_ANSWER_RX.test(t);
 }
 
 async function defaultGuard(text) {
@@ -146,7 +150,7 @@ async function defaultGuard(text) {
   if (guardAllows(t)) return true; // obvious in-scope / short-answer fast-path
   try {
     const res = await runTier('cheap', {
-      system: 'You gate an events-app assistant (party.fun). Decide if the user\'s latest message is IN SCOPE. In scope = anything about events, tickets, pledging, the wallet, hosting/organising events, event weather or dates, OR a greeting/thanks/pleasantry, OR asking what the assistant can do. Out of scope = general knowledge, math, coding, trivia, personal or unrelated topics. Reply with ONLY one word: on_topic or off_topic.',
+      system: 'You gate an events-app assistant (party.fun). Decide if the user\'s latest message is IN SCOPE. In scope = anything about events, tickets, pledging, the wallet, hosting/organising events, event weather or dates, OR questions about the party.fun app itself — its pages, sections, features, the FAQ/help page, testimonials, how the app works, or where to find something — OR a greeting/thanks/pleasantry, OR asking what the assistant can do. Out of scope = general knowledge, math, coding, trivia, personal or unrelated topics. Reply with ONLY one word: on_topic or off_topic.',
       messages: [{ role: 'user', content: t }],
       maxTokens: 8,
     });

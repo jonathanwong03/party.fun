@@ -56,7 +56,7 @@ describe('reconcilePayments (orphan recovery)', () => {
     reconciler.dependencies.getStripe = () => stripeMock({ pis: [succeededPledge('pi_1')], onRefund: (p, o) => refunds.push({ p, o }) });
     reconciler.dependencies.getAdmin = () => adminMock({}); // no booking for pi_1
     const result = await reconciler.reconcilePayments();
-    assert.deepEqual(result, { scanned: 1, refunded: 1 });
+    assert.deepEqual(result, { scanned: 1, refunded: 1, credited: 0 });
     assert.equal(refunds.length, 1);
     assert.equal(refunds[0].p.payment_intent, 'pi_1');
     assert.equal(refunds[0].o.idempotencyKey, 'orphan:pi_1');
@@ -71,11 +71,11 @@ describe('reconcilePayments (orphan recovery)', () => {
     assert.equal(result.refunded, 0);
   });
 
-  it('skips non-pledge and non-succeeded PaymentIntents', async () => {
+  it('skips unknown-kind and non-succeeded PaymentIntents', async () => {
     let refunded = 0;
     const pis = [
-      { id: 'pi_topup', status: 'succeeded', metadata: { kind: 'topup' } },
-      { id: 'pi_fail', status: 'requires_payment_method', metadata: { kind: 'pledge' } },
+      { id: 'pi_other', status: 'succeeded', metadata: { kind: 'other' } },        // not pledge/topup
+      { id: 'pi_fail', status: 'requires_payment_method', metadata: { kind: 'pledge' } }, // not succeeded
     ];
     reconciler.dependencies.getStripe = () => stripeMock({ pis, onRefund: () => { refunded += 1; } });
     reconciler.dependencies.getAdmin = () => adminMock({});
@@ -97,7 +97,36 @@ describe('reconcilePayments (orphan recovery)', () => {
     reconciler.dependencies.getStripe = () => stripeMock({ listThrows: true });
     reconciler.dependencies.getAdmin = () => adminMock({});
     const result = await reconciler.reconcilePayments();
-    assert.deepEqual(result, { scanned: 0, refunded: 0 });
+    assert.deepEqual(result, { scanned: 0, refunded: 0, credited: 0 });
+  });
+
+  // ── orphaned top-up recovery (credit, don't refund — deliver what they paid for) ────
+  const topupPi = (id, ageDays = 1) => ({ id, status: 'succeeded', metadata: { kind: 'topup', userId: 'u1' }, amount: 5000, created: Math.floor((Date.now() - ageDays * DAY) / 1000) });
+  function topupAdminMock({ existingTxnByPi = {}, onRpc } = {}) {
+    return {
+      from: () => ({ select: () => ({ eq: (_c, v) => ({ maybeSingle: async () => ({ data: existingTxnByPi[v] ?? null }) }) }) }),
+      rpc: async (name, args) => { onRpc?.(name, args); return { data: { balance: 100 }, error: null }; },
+    };
+  }
+
+  it('credits an orphaned top-up (charge succeeded, wallet never credited)', async () => {
+    const rpcCalls = [];
+    reconciler.dependencies.getStripe = () => stripeMock({ pis: [topupPi('pi_topup1')] });
+    reconciler.dependencies.getAdmin = () => topupAdminMock({ onRpc: (n, a) => rpcCalls.push({ n, a }) });
+    const result = await reconciler.reconcilePayments();
+    assert.equal(result.credited, 1);
+    assert.equal(rpcCalls.length, 1);
+    assert.equal(rpcCalls[0].n, 'wallet_topup');
+    assert.deepEqual(rpcCalls[0].a, { p_user_id: 'u1', p_amount: 50, p_payment_intent_id: 'pi_topup1' });
+  });
+
+  it('does not re-credit a top-up that already has a wallet transaction', async () => {
+    let rpcCalled = 0;
+    reconciler.dependencies.getStripe = () => stripeMock({ pis: [topupPi('pi_topup2')] });
+    reconciler.dependencies.getAdmin = () => topupAdminMock({ existingTxnByPi: { pi_topup2: { id: 7 } }, onRpc: () => { rpcCalled += 1; } });
+    const result = await reconciler.reconcilePayments();
+    assert.equal(result.credited, 0);
+    assert.equal(rpcCalled, 0);
   });
 
   it('does NOT re-refund an orphan whose charge is already refunded (the log-spam bug)', async () => {

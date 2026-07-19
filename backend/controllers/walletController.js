@@ -6,7 +6,7 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const attemptIdOf = (body) => (UUID_RE.test(body?.attemptId ?? '') ? body.attemptId : randomUUID());
 
 // HTTP status for each tagged topupWallet error.
-const TOPUP_STATUS = { stripe_disabled: 503, bad_amount: 400, no_card: 400, charge_failed: 402, charge_incomplete: 402, error: 500 };
+const TOPUP_STATUS = { stripe_disabled: 503, bad_amount: 400, no_card: 400, charge_failed: 402, charge_incomplete: 402, credit_pending: 202, error: 500 };
 
 const stripeOff = (res) =>
   res.status(503).json({ status: 'stripe_disabled', message: 'Card payments are not configured (STRIPE_SECRET_KEY missing).' });

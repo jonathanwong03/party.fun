@@ -171,7 +171,7 @@ function TopUpSection({ hasCard, onChange }: { hasCard: boolean; onChange: () =>
         <div className="mt-3 flex flex-wrap items-end gap-3">
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Amount (SGD)</Label>
-            <Input value={amount} inputMode="decimal" onChange={(e) => { setAmount(e.target.value.replace(/[^\d.]/g, '')); setOk(false); }} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42, width: 160 }} />
+            <Input value={amount} inputMode="decimal" onChange={(e) => { const next = e.target.value.replace(/[^\d.]/g, ''); if (/^\d*\.?\d{0,2}$/.test(next)) { setAmount(next); setOk(false); } }} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 42, width: 160 }} />
             <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Up to {money(MAX_TOPUP)} per transaction.</p>
           </div>
           <Button onClick={submit} disabled={busy} className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 42 }}>

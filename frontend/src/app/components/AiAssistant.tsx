@@ -194,8 +194,14 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
       // Card details are never collected in chat — the backend asks us to open the secure
       // Stripe card form instead.
       if (res.action === 'open_card_form') onOpenCardForm?.();
-    } catch {
-      setMessages([...next, { role: 'assistant', content: 'Something went wrong. Please try again.' }]);
+    } catch (e) {
+      // A 429 is the per-user chat rate-limit — show its friendly message as a normal reply so it
+      // reads as intentional, not a crash. Anything else is a generic failure.
+      const status = (e as { status?: number })?.status;
+      const content = status === 429 && e instanceof Error
+        ? e.message
+        : 'Something went wrong. Please try again.';
+      setMessages([...next, { role: 'assistant', content }]);
     } finally {
       setBusy(false);
     }

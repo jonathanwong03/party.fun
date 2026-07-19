@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import { stripe, stripeEnabled } from './stripeClient.js';
 import { adminClient } from './supabaseAdmin.js';
+import { auditLog } from './auditLog.js';
 
 export const dependencies = {
   stripe,
@@ -61,8 +62,12 @@ export async function topupWallet(sb, userId, amount, attemptId = randomUUID()) 
     p_amount: amt,
     p_payment_intent_id: pi.id,
   });
-  if (error) return { error: 'error', message: error.message };
+  // The charge already SUCCEEDED. A transport/RPC failure here must NOT tell the user their money
+  // vanished — the paymentReconciler sweeps succeeded top-up PIs with no wallet credit and credits
+  // them (idempotent via wallet_txn_stripe_pi_uniq), so the balance lands within a sweep or two.
+  if (error) return { error: 'credit_pending', message: 'Payment received — your wallet will be credited shortly.' };
   if (data?.error) return { error: data.error, message: 'Could not credit your wallet.' };
+  void auditLog({ actorUserId: userId, action: 'wallet_topup', targetType: 'wallet', targetId: userId, amount: amt, metadata: { paymentIntentId: pi.id } });
   return { status: 'ok', balance: data?.balance };
 }
 

@@ -248,6 +248,26 @@ describe('eventService Additional Database helpers', () => {
     assert.equal(syncEventCalled.eventId, 'evt-1');
   });
 
+  test('updateEvent sends p_expected_updated_at (optimistic-concurrency base version)', async () => {
+    await updateEvent(mockSb, { id: 'evt-1', title: 'X', updatedAt: '2026-07-17T08:00:00Z' });
+    const call = rpcCalls.find((c) => c.name === 'update_event');
+    assert.equal(call.args.p_expected_updated_at, '2026-07-17T08:00:00Z');
+  });
+
+  test('updateEvent maps a stale-edit conflict to a tagged error and does NOT re-embed', async () => {
+    const sb = { rpc: async () => ({ data: { error: 'conflict' }, error: null }) };
+    const res = await updateEvent(sb, { id: 'evt-1', title: 'X', updatedAt: '2026-07-17T08:00:00Z' });
+    assert.deepEqual(res, { error: 'conflict' });
+    assert.equal(syncEventCalled, null, 'a rejected edit must not re-embed the event');
+  });
+
+  test('updateEvent maps a cancelled/completed edit to not_editable and does NOT re-embed', async () => {
+    const sb = { rpc: async () => ({ data: { error: 'not_editable' }, error: null }) };
+    const res = await updateEvent(sb, { id: 'evt-1', title: 'X' });
+    assert.deepEqual(res, { error: 'not_editable' });
+    assert.equal(syncEventCalled, null, 'a rejected edit must not re-embed the event');
+  });
+
   test('deleteEvent RPC mapping', async () => {
     const res = await deleteEvent(mockSb, 'evt-1');
     assert.deepEqual(res, { status: 'ok' });
