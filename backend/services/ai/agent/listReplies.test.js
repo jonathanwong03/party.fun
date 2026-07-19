@@ -207,6 +207,19 @@ test('whyNotAttendable mirrors the attendableEvents filter', async () => {
   assert.equal(await whyNotAttendable(gymEvent({ startDate: iso(-1), endDate: iso(1) }), ctx), 'started');
   assert.equal(await whyNotAttendable(gymEvent({ hostId: 'u1' }), ctx), 'own_event');
   assert.equal(await whyNotAttendable(gymEvent({ id: 'e9' }), ctx), 'already_purchased');
+  assert.equal(await whyNotAttendable(gymEvent({ viewer_can_attend: false }), ctx), 'restricted_university');
+});
+
+test('list_available_events excludes a university-restricted event the viewer cannot join', async () => {
+  const ctx = buyCtx([
+    gymEvent(),
+    gymEvent({ id: 'e2', title: 'SMU Supper', viewer_can_attend: false, restricted_university: 'SMU' }),
+  ]);
+  const { events } = await EXECUTORS.list_available_events({}, ctx);
+  assert.deepEqual(events.map((e) => e.title), ['Gymming for newbies'], 'the SMU-only event is not offered to an ineligible viewer');
+  // A named buy for the ineligible event explains the restriction rather than starting a purchase.
+  const reply = await buildBuyIntentReply('SMU Supper', ctx);
+  assert.match(reply, /limited to students|not eligible|can't join/i);
 });
 
 test('resolveEvent does not offer a DISTANT semantic match as a suggestion', async () => {

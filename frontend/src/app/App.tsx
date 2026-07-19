@@ -508,7 +508,7 @@ function AppShell() {
   }
 
   return (
-    <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
+    <div id="app-root" className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
       {!isAuthPage && (
         <Navbar
           role={role}

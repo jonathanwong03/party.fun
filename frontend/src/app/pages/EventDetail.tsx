@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarClock, MapPin, Shield, ChevronLeft, ArrowRight, Timer, Minus, Plus, Mail, AlertTriangle } from 'lucide-react';
 import { Countdown } from '../components/Countdown';
 import { Button } from '../components/ui/button';
@@ -22,6 +22,12 @@ function avatarColor(seed: string) {
 
 export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId, qty, onGiveAway, fromProfile, fromOrganiser, fromPast }: { id: string; go: (r: Route) => void; role: Role | null; events: EventItem[]; purchasedEventIds?: Set<string>; bookingId?: string; qty?: number; onGiveAway?: (bookingId: string, quantity: number) => Promise<void>; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean }) {
   const [cancelling, setCancelling] = useState(false);
+  // Summary-card hint reveal. `stuckHint` is toggled by a tap (stays until tapped again);
+  // `heldHint` shows while a card is pressed (press-and-hold) and clears on release. Desktop
+  // still gets it on hover via group-hover.
+  const [stuckHint, setStuckHint] = useState<string | null>(null);
+  const [heldHint, setHeldHint] = useState<string | null>(null);
+  const pressStart = useRef(0);
   const [giveAwayQty, setGiveAwayQty] = useState(1);
   const [buyQty, setBuyQty] = useState(1);
   const [pledgeEstimate, setPledgeEstimate] = useState<string | null>(null);
@@ -186,12 +192,21 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                 { label: 'Maximum capacity', value: event.maxCapacity, hint: 'The most people who can attend this event.' },
                 { label: 'Spots left', value: event.spotsLeft, hint: 'Tickets still available before it sells out.' },
               ].map((c) => (
-                <div key={c.label} className="group relative rounded-lg p-3" style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                <div
+                  key={c.label}
+                  role="button"
+                  className="group relative cursor-pointer rounded-lg p-3"
+                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+                  onPointerDown={() => { pressStart.current = Date.now(); setHeldHint(c.label); }}
+                  onPointerUp={() => { setHeldHint(null); if (Date.now() - pressStart.current < 250) setStuckHint((p) => (p === c.label ? null : c.label)); }}
+                  onPointerLeave={() => setHeldHint(null)}
+                  onPointerCancel={() => setHeldHint(null)}
+                >
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{c.label}</div>
                   <div className="mt-1" style={{ fontWeight: 700 }}>{c.value}</div>
-                  {/* Hover tooltip explaining the term. */}
+                  {/* Tooltip: tap toggles it (sticky), press-and-hold shows it while held, desktop hover shows it. */}
                   <div
-                    className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 hidden w-44 -translate-x-1/2 rounded-lg px-2.5 py-1.5 text-xs shadow-lg group-hover:block"
+                    className={`pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-44 -translate-x-1/2 rounded-lg px-2.5 py-1.5 text-xs shadow-lg ${heldHint === c.label || stuckHint === c.label ? 'block' : 'hidden group-hover:block'}`}
                     style={{ background: '#ffffff', color: '#1a1a1a', fontWeight: 500 }}
                   >
                     {c.hint}

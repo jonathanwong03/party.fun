@@ -39,7 +39,7 @@ export function AllAttendees() {
   };
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-8 sm:px-6">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <h1 className="flex items-center gap-2" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
           <Users size={26} style={{ color: '#ff4d2e' }} /> Attendees
@@ -54,8 +54,8 @@ export function AllAttendees() {
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search event, name or email…" className="pl-9" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }} />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr style={{ color: 'var(--muted-foreground)' }} className="text-left">
               <Th>Event</Th><Th>Name</Th><Th>Email</Th><Th>Phone</Th><Th>Telegram</Th><Th>Tickets</Th><Th>Status</Th>

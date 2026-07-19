@@ -180,7 +180,7 @@ const tooltipStyle = { background: '#14141b', border: '1px solid rgba(255,255,25
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-8 sm:px-6">
       <h1 className="mb-6 flex items-center gap-2" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
         <Ticket size={26} style={{ color: '#ff4d2e' }} /> Analytics
       </h1>

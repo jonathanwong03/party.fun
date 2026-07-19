@@ -24,7 +24,7 @@ export function WalletPage({ go, onBalance }: { go: (r: Route) => void; onBalanc
   useEffect(() => { refresh().catch(() => {}).finally(() => setLoading(false)); }, []);
 
   return (
-    <div className="mx-auto max-w-[860px] px-6 py-8">
+    <div className="mx-auto max-w-[860px] px-4 py-8 sm:px-6">
       <button onClick={() => go({ name: 'landing' })} className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground" style={{ color: 'var(--muted-foreground)' }}>
         <ChevronLeft size={14} /> Back to events
       </button>

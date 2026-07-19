@@ -44,7 +44,7 @@ export function PendingInvites({ go, onChanged }: { go: (r: Route) => void; onCh
   };
 
   return (
-    <main className="mx-auto max-w-[1100px] px-6 py-8">
+    <main className="mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
       <div className="mb-8">
         <h1 className="flex items-center gap-2" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
           <UserPlus size={26} style={{ color: '#ff4d2e' }} /> Pending invites

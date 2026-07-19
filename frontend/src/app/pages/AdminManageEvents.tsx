@@ -30,7 +30,7 @@ export function AdminManageEvents({ go, events, onCancel }: { go: (r: Route) => 
   };
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-8">
+    <div className="mx-auto max-w-[1536px] px-4 py-8 sm:px-6">
       <h1 className="mb-6 flex items-center gap-2" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
         <ShieldAlert size={26} style={{ color: '#ff4d2e' }} /> Manage Events
       </h1>
@@ -40,8 +40,8 @@ export function AdminManageEvents({ go, events, onCancel }: { go: (r: Route) => 
         <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by event or organiser…" className="pl-9" style={{ background: 'var(--surface)', borderColor: 'var(--border)' }} />
       </div>
 
-      <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <table className="w-full text-sm">
+      <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+        <table className="w-full min-w-[640px] text-sm">
           <thead>
             <tr style={{ color: 'var(--muted-foreground)' }} className="text-left">
               <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Event</th>

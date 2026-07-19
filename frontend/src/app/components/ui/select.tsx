@@ -61,7 +61,9 @@ function SelectContent({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
-    <SelectPrimitive.Portal>
+    // Portal into the themed app-root wrapper (which carries the `.dark` class) instead of
+    // document.body, so popover tokens resolve to the correct light/dark values.
+    <SelectPrimitive.Portal container={typeof document !== "undefined" ? document.getElementById("app-root") ?? undefined : undefined}>
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(

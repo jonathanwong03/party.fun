@@ -49,7 +49,7 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
   const count = detailed?.length ?? basic?.length ?? 0;
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-8">
+    <div className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
       <button
         onClick={() => go({ name: 'event', id, ...(canViewDetails ? { fromOrganiser: true } : {}) })}
         className="mb-4 inline-flex items-center gap-1 text-sm hover:text-foreground"
@@ -73,8 +73,8 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
       ) : count === 0 ? (
         <div className="py-16 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>No one has locked in yet.</div>
       ) : canViewDetails ? (
-        <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-          <table className="w-full text-sm">
+        <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+          <table className="w-full min-w-[640px] text-sm">
             <thead>
               <tr className="text-xs uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
                 <th className="px-4 py-3 text-left">Attendee</th>
