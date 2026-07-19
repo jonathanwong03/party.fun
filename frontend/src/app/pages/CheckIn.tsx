@@ -58,7 +58,7 @@ export function CheckIn({ role, events }: { role: Role | null; events: EventItem
   };
 
   return (
-    <div className="mx-auto max-w-[1100px] px-6 py-8">
+    <div className="mx-auto max-w-[1100px] px-4 py-8 sm:px-6">
       <h1 className="mb-6 flex items-center gap-2" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
         <Ticket size={26} style={{ color: '#ff4d2e' }} /> Ticket check-in
       </h1>
@@ -119,8 +119,8 @@ export function CheckIn({ role, events }: { role: Role | null; events: EventItem
           )}
 
           {/* Ticket list */}
-          <div className="overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-2xl border" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
+            <table className="w-full min-w-[640px] text-sm">
               <thead>
                 <tr style={{ color: 'var(--muted-foreground)' }} className="text-left">
                   <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide">Code</th>

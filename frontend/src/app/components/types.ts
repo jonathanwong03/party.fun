@@ -1,6 +1,7 @@
 export type Route =
   | { name: 'landing' }
   | { name: 'faq' }
+  | { name: 'review' }
   | { name: 'event'; id: string; fromProfile?: boolean; fromOrganiser?: boolean; fromPast?: boolean; bookingId?: string; qty?: number }
   | { name: 'checkout'; id: string; qty?: number }
   | { name: 'confirmation'; id: string; qty: number; lines?: { label: string; count: number; subtotalText: string }[]; reference?: string }

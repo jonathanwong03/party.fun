@@ -1,4 +1,4 @@
-import { X, CalendarRange, Bookmark, User, Settings, LayoutDashboard, CalendarPlus, BarChart3, Users, Ticket, UserPlus } from 'lucide-react';
+import { X, CalendarRange, Bookmark, User, Settings, LayoutDashboard, CalendarPlus, BarChart3, Users, Ticket, UserPlus, Star } from 'lucide-react';
 import type { Role, Route } from './types';
 
 type Item = { label: string; icon: typeof X; target: Route; active: boolean };
@@ -42,7 +42,10 @@ export function Sidebar({
     { label: 'Settings', icon: Settings, target: { name: 'settings' }, active: route.name === 'settings' },
   ];
 
-  const items = [...baseItems, ...(isOrganiser ? organiserOnly : []), ...(isAdmin ? adminOnly : []), ...tail];
+  // Reviews is visible to every role (user / organiser / admin).
+  const reviewItem: Item = { label: 'Reviews', icon: Star, target: { name: 'review' }, active: route.name === 'review' };
+
+  const items = [...baseItems, ...(isOrganiser ? organiserOnly : []), ...(isAdmin ? adminOnly : []), reviewItem, ...tail];
 
   const handleClick = (target: Route) => {
     go(target);

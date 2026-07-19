@@ -118,6 +118,7 @@ function notBuyableReply(ev, reason) {
   if (reason === 'sold_out') return `"${t}" is at full capacity — every ticket has been taken, so you can't buy any. If someone gives theirs away the spots return to the pool, so it's worth checking back.`;
   if (reason === 'already_purchased') return `You already have tickets for "${t}", so you can't buy more for that event. If you no longer need them you can give some away.`;
   if (reason === 'own_event') return `"${t}" is your own event — you can't buy tickets for an event you're hosting.`;
+  if (reason === 'restricted_university') return `"${t}" is limited to students of a particular university, and your account isn't eligible — so you can't join this one.`;
   if (reason === 'cancelled') return `"${t}" has been cancelled, so tickets are no longer on sale.`;
   if (reason === 'completed' || reason === 'ended') return `"${t}" has already ended, so tickets are no longer on sale.`;
   if (reason === 'started') return `"${t}" has already started, so tickets are no longer on sale.`;

@@ -37,7 +37,9 @@ function DropdownMenuContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
-    <DropdownMenuPrimitive.Portal>
+    // Portal into the themed app-root wrapper (carries the `.dark` class) rather than
+    // document.body, so popover tokens resolve to the correct light/dark values.
+    <DropdownMenuPrimitive.Portal container={typeof document !== "undefined" ? document.getElementById("app-root") ?? undefined : undefined}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}

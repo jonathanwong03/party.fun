@@ -100,6 +100,11 @@ async function attendableEvents(ctx) {
     && (e.status === 'early_bird' || e.status === 'greenlit')
     && !purchased.has(String(e.id))
     && isFutureStart(e, now)
+    // University-restricted events the viewer can't join are NOT attendable — get_events
+    // returns them with viewer_can_attend=false rather than hiding them, so exclude them here
+    // or the assistant would offer an SMU-only event to an NUS user (the pledge RPC blocks it,
+    // but only after we'd promised they could join).
+    && e.viewer_can_attend !== false
     // A FULL event is not buyable: capacity used to be enforced only by the create_pledge RPC,
     // so a sold-out event was still listed as joinable and a purchase only failed at execute
     // time ("Not enough tickets are available") after the agent had built a whole proposal.
@@ -243,6 +248,8 @@ export async function whyNotAttendable(ev, ctx) {
   if (isPastEvent(ev)) return 'ended';
   if (!isFutureStart(ev)) return 'started';
   if (ev.hostId === ctx.userId) return 'own_event';
+  // University-restricted and the viewer isn't eligible — they simply can't join it.
+  if (ev.viewer_can_attend === false) return 'restricted_university';
   // Costs a getProfile round-trip, so it goes after the cheap synchronous checks. It comes
   // BEFORE sold_out because "you already have tickets" is the more useful truth for someone
   // who holds them — a full event they're already in isn't news.
@@ -299,6 +306,10 @@ function richRow(ev, ctx) {
     deadline: ev.deadline ?? ev.deadlineAt ?? null,
     venue: ev.location ?? null,
     address: ev.address ?? null,
+    // University eligibility so the model can tell an ineligible viewer they can't join,
+    // instead of implying an SMU-only event is open to them.
+    restrictedUniversity: ev.restricted_university || null,
+    canAttendUniversity: ev.viewer_can_attend !== false,
     mine: ctx ? ev.hostId === ctx.userId : undefined,
   };
 }

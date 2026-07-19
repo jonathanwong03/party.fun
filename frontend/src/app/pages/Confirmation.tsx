@@ -15,7 +15,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
   }
 
   return (
-    <div className="mx-auto max-w-[1536px] px-6 py-16">
+    <div className="mx-auto max-w-[1536px] px-4 py-16 sm:px-6">
       <div className="text-center">
         <div className="mx-auto grid size-16 place-items-center rounded-full"
           style={{ background: 'rgba(41,224,122,0.15)', border: '1px solid rgba(41,224,122,0.4)' }}>
@@ -36,10 +36,10 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
         <div className="flex items-baseline justify-between">
           <h3>{event.title}</h3>
         </div>
-        <div className="mt-3 grid grid-cols-3 gap-3 text-sm">
+        <div className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
           <Meta icon={Calendar} label="Date" value={`${event.date} · ${event.time}`} />
           <Meta icon={MapPin} label="Location" value={formatEventLocation(event)} />
-          <div className="rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
+          <div className="min-w-0 rounded-xl p-3" style={{ background: 'var(--surface-2)' }}>
             <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
               <Ticket size={12} /> Tickets
             </div>
@@ -47,8 +47,8 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
               {lines && lines.length > 0 ? (
                 lines.map((l) => (
                   <div key={l.label} className="flex items-baseline justify-between gap-2">
-                    <span>{l.count} × {l.label}</span>
-                    <span>{l.subtotalText}</span>
+                    <span className="min-w-0 break-words">{l.count} × {l.label}</span>
+                    <span className="shrink-0">{l.subtotalText}</span>
                   </div>
                 ))
               ) : (

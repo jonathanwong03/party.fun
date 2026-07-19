@@ -15,8 +15,12 @@ export function escapeHtml(value) {
     .replace(/"/g, '&quot;');
 }
 
-// Where email buttons send the user. Override APP_BASE_URL for a deployed site.
+// Where email buttons send the user. Override APP_BASE_URL for a deployed site (the FRONTEND origin).
 const APP_URL = process.env.APP_BASE_URL || 'http://localhost:5173';
+// The BACKEND origin, used ONLY for links that hit the API directly (the ticket-PDF download).
+// Frontend and backend deploy to different hosts (Vercel vs Render), so the PDF link can't use
+// APP_URL. Defaults to APP_URL so local dev keeps working through the Vite proxy.
+const API_URL = process.env.API_BASE_URL || APP_URL;
 
 const FONT = 'Arial, Helvetica, sans-serif';
 
@@ -158,7 +162,7 @@ export function bookingTicketTemplate({ userName, role, eventTitle, dateText, lo
       row('Tickets', `${remaining}`, '#ff4d2e') +
       row('Reference', reference ?? '—'),
     )}
-    ${qrToken ? button('Download your tickets (PDF)', `${APP_URL}/api/tickets/by-token/${qrToken}/pdf`) : ''}
+    ${qrToken ? button('Download your tickets (PDF)', `${API_URL}/api/tickets/by-token/${qrToken}/pdf`) : ''}
   `);
 }
 
@@ -272,6 +276,16 @@ export function eventCompletedTemplate({ organiserName, eventTitle, revenue }) {
     )}
     ${p('Operational costs are handled outside party.fun and are not deducted here.')}
     ${button('Go to Dashboard', `${APP_URL}/hosted-events`)}
+  `);
+}
+
+export function reviewInviteTemplate({ userName, role, eventTitle }) {
+  return emailShell(`
+    ${h1('How was it? ⭐')}
+    ${greet(userName, role)}
+    ${p(`<strong>${eventTitle}</strong> has wrapped up. How did it go? Leave a quick star rating and a few words — your review helps other students and the organiser.`)}
+    ${p('It only takes a moment, and you can edit it later.')}
+    ${button('Leave a review', `${APP_URL}/review`)}
   `);
 }
 

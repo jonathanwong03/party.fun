@@ -23,7 +23,7 @@ export function Profile({
   const orgId = user?.orgId?.trim();
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-10">
+    <div className="mx-auto max-w-xl px-4 py-10 sm:px-6">
       <button
         onClick={() => go({ name: 'landing' })}
         className="mb-4 inline-flex items-center gap-1 text-sm transition hover:text-foreground"

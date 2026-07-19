@@ -416,7 +416,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
   if (readOnly) {
     return (
       <div>
-        <main className="flex-1 px-6 py-8">
+        <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8">
           <div className="mx-auto max-w-[1536px]">
             <button
               onClick={() => go({ name: "hosted-events" })}
@@ -451,7 +451,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
 
   return (
     <div>
-      <main className="flex-1 px-6 py-8">
+      <main className="flex-1 px-4 py-6 sm:px-6 sm:py-8">
         <div className="mx-auto max-w-[1536px]">
           <button
             onClick={() => go({ name: "hosted-events" })}
@@ -1186,9 +1186,9 @@ function StatusRow({
   error?: string | null;
 }) {
   return (
-    <div className="grid grid-cols-[1fr_120px_120px] items-end gap-3">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_minmax(0,120px)_minmax(0,120px)] sm:items-end">
       <div
-        className="text-sm"
+        className="min-w-0 text-sm"
         style={{ color: "var(--foreground)", fontWeight: 500 }}
       >
         {label}

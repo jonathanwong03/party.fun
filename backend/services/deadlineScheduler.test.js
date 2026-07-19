@@ -6,6 +6,7 @@ describe('deadlineScheduler', () => {
   const originalAdminClient = dependencies.adminClient;
   const originalNotifyEventCancelled = dependencies.notifyEventCancelled;
   const originalNotifyEventCompleted = dependencies.notifyEventCompleted;
+  const originalNotifyReviewInvites = dependencies.notifyReviewInvites;
   const originalRefundEventCardBookings = dependencies.refundEventCardBookings;
   const originalReconcilePayments = dependencies.reconcilePayments;
   const originalCheckWalletDrift = dependencies.checkWalletDrift;
@@ -14,6 +15,7 @@ describe('deadlineScheduler', () => {
 
   let notifyCancelledPayloads = [];
   let notifyCompletedPayloads = [];
+  let notifyReviewInvitePayloads = [];
   let refundCardBookingsCalls = [];
   let reconcilePaymentsCalled = false;
   let expiredEventsData = [];
@@ -26,6 +28,7 @@ describe('deadlineScheduler', () => {
   beforeEach(() => {
     notifyCancelledPayloads = [];
     notifyCompletedPayloads = [];
+    notifyReviewInvitePayloads = [];
     refundCardBookingsCalls = [];
     reconcilePaymentsCalled = false;
     expiredEventsData = [];
@@ -78,6 +81,10 @@ describe('deadlineScheduler', () => {
       notifyCompletedPayloads.push(payload);
     };
 
+    dependencies.notifyReviewInvites = (payload) => {
+      notifyReviewInvitePayloads.push(payload);
+    };
+
     dependencies.refundEventCardBookings = async (eventId) => {
       refundCardBookingsCalls.push(eventId);
     };
@@ -95,6 +102,7 @@ describe('deadlineScheduler', () => {
     dependencies.adminClient = originalAdminClient;
     dependencies.notifyEventCancelled = originalNotifyEventCancelled;
     dependencies.notifyEventCompleted = originalNotifyEventCompleted;
+    dependencies.notifyReviewInvites = originalNotifyReviewInvites;
     dependencies.refundEventCardBookings = originalRefundEventCardBookings;
     dependencies.reconcilePayments = originalReconcilePayments;
     dependencies.checkWalletDrift = originalCheckWalletDrift;
@@ -129,6 +137,10 @@ describe('deadlineScheduler', () => {
     assert.equal(notifyCompletedPayloads[0].revenue, 150);
     assert.equal(notifyCompletedPayloads[0].eventId, 'evt-completed-456');
     assert.deepEqual(notifyCompletedPayloads[0].organiser, { userId: undefined, email: 'host@test.com', username: 'hostie' });
+    // Attendees are also invited to review the finished event.
+    assert.equal(notifyReviewInvitePayloads.length, 1);
+    assert.equal(notifyReviewInvitePayloads[0].eventId, 'evt-completed-456');
+    assert.equal(notifyReviewInvitePayloads[0].eventTitle, 'Rooftop Bar Party');
   });
 
   test('skips an overlapping run so ticks never double-pay/double-cancel', async () => {

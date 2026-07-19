@@ -185,6 +185,45 @@ export function notifyEventCompleted({ organiser, eventTitle, revenue, eventId }
   );
 }
 
+// After an event completes, invite every attendee to leave a star review. Fans out over the
+// event's backers (same pattern as the greenlit alert) via the service-role client.
+export function notifyReviewInvites({ eventId, eventTitle }) {
+  return fireAndForget('reviewInvite', async () => {
+    const supabase = dependencies.createServerClient();
+    if (!supabase) {
+      console.warn('[NotificationService] No Supabase client; skipped review-invite fan-out.');
+      return;
+    }
+    const { data: bookings, error } = await supabase
+      .from('BOOKINGS')
+      .select('userId, USER!inner(email, username, role)')
+      .eq('eventId', eventId)
+      .gt('activeTicketCount', 0);
+    if (error) {
+      console.error('[NotificationService] Failed to load attendees for review invite:', error.message);
+      return;
+    }
+    // De-duplicate by user (a user may hold multiple bookings) so nobody is emailed twice.
+    const seen = new Set();
+    const attendees = (bookings ?? []).filter((row) => {
+      const uid = row.userId;
+      if (!row.USER?.email || seen.has(uid)) return false;
+      seen.add(uid);
+      return true;
+    });
+    if (attendees.length === 0) return;
+    await Promise.all(attendees.map((row) => {
+      const user = row.USER;
+      return send('reviewInvite', {
+        to: user.email,
+        subject: `How was ${eventTitle}? Leave a review ⭐`,
+        html: templates.reviewInviteTemplate({ userName: user.username, role: user.role, eventTitle }),
+        logPayload: { userId: row.userId, eventId, type: 'review_invite' },
+      });
+    }));
+  });
+}
+
 export function notifyCoOrganiserInvite({ email, username, inviterName, eventTitle, eventId }) {
   return fireAndForget('coOrganiserInvite', () =>
     send('coOrganiserInvite', {

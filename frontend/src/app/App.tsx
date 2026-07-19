@@ -20,6 +20,7 @@ import { supabase } from './supabase';
 import { installIdleTimeout, resetActivity, enforceIdleNow } from './idle';
 import { Landing } from './pages/Landing';
 import { FAQ } from './pages/FAQ';
+import { Review } from './pages/Review';
 import { EventDetail } from './pages/EventDetail';
 import { Checkout } from './pages/Checkout';
 import { Confirmation } from './pages/Confirmation';
@@ -66,6 +67,8 @@ function pathForRoute(route: Route) {
       return '/events';
     case 'faq':
       return '/faq';
+    case 'review':
+      return '/review';
     case 'event':
       return `/events/${route.id}`;
     case 'checkout':
@@ -179,6 +182,7 @@ function routeFromPath(pathname: string, state: RouteState | null): Route {
   if (pathname === '/signup/organiser') return { name: 'register-organiser' };
   if (pathname === '/events') return { name: 'landing' };
   if (pathname === '/faq') return { name: 'faq' };
+  if (pathname === '/review') return { name: 'review' };
   if (pathname === '/profile') return { name: 'profile' };
   if (pathname === '/joined-events') return { name: 'joined-events' };
   if (pathname === '/analytics') return { name: 'analytics' };
@@ -508,7 +512,7 @@ function AppShell() {
   }
 
   return (
-    <div className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
+    <div id="app-root" className={`${theme === 'dark' ? 'dark' : ''} min-h-screen pb-16 md:pb-0`} style={{ background: 'var(--background)', color: 'var(--foreground)' }}>
       {!isAuthPage && (
         <Navbar
           role={role}
@@ -544,6 +548,7 @@ function AppShell() {
         <BrowserRoute path="/signup/organiser" element={<RegisterOrganiser go={go} />} />
         <BrowserRoute path="/events" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <Landing go={go} purchasedEventIds={purchasedEventIds} events={events} loading={loadingData} error={dataError} />} />
         <BrowserRoute path="/faq" element={<FAQ go={go} />} />
+        <BrowserRoute path="/review" element={<Review go={go} />} />
         <BrowserRoute path="/events/:eventId" element={role === 'admin' ? <Navigate to="/manage-events" replace /> : <EventDetailRoute role={role} go={go} events={events} purchasedEventIds={purchasedEventIds} onGiveAway={giveAway} />} />
         <BrowserRoute path="/events/:eventId/attendees" element={<AttendeesRoute role={role} go={go} events={events} />} />
         <BrowserRoute path="/checkout/:eventId" element={<CheckoutRoute role={role} go={go} events={events} onPledge={pledge} />} />

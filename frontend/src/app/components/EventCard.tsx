@@ -24,9 +24,12 @@ export function EventCard({
   // "0 spots left", and the purchase only failed later at checkout. `maxCapacity > 0` is
   // load-bearing: an uncapped event reports spotsLeft 0 and is NOT sold out.
   const soldOut = event.maxCapacity > 0 && event.spotsLeft === 0;
+  // University-restricted and this viewer isn't eligible → they can't buy; the button is
+  // replaced with a "<uni> members only" notice (the button stays for eligible students).
+  const universityBlocked = !!event.restrictedUniversity && event.canAttendUniversity === false;
   // Whenever the buy/pledge button is unavailable, the whole card becomes the way to open the
   // details — otherwise a disabled button is a dead end (a sold-out card had no path to onView).
-  const cardClickable = alreadyPurchased || soldOut || event.status === 'cancelled' || event.status === 'completed';
+  const cardClickable = alreadyPurchased || soldOut || universityBlocked || event.status === 'cancelled' || event.status === 'completed';
 
   return (
     <div
@@ -93,6 +96,10 @@ export function EventCard({
         {alreadyPurchased ? (
           <p className="mt-auto py-2 text-center text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
             Tickets already purchased
+          </p>
+        ) : universityBlocked ? (
+          <p className="mt-auto py-2 text-center text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+            {event.restrictedUniversity} members only
           </p>
         ) : (
           <Button
