@@ -1,5 +1,5 @@
 import { adminClient } from './supabaseAdmin.js';
-import { notifyEventCancelled, notifyEventCompleted } from './notificationService.js';
+import { notifyEventCancelled, notifyEventCompleted, notifyReviewInvites } from './notificationService.js';
 import { refundEventCardBookings } from './stripeRefunds.js';
 import { reconcilePayments } from './paymentReconciler.js';
 import { checkWalletDrift } from './walletIntegrity.js';
@@ -9,6 +9,7 @@ export const dependencies = {
   adminClient,
   notifyEventCancelled,
   notifyEventCompleted,
+  notifyReviewInvites,
   refundEventCardBookings,
   reconcilePayments,
   checkWalletDrift,
@@ -125,6 +126,8 @@ async function runSweep() {
           revenue: Number(event.profit ?? 0),
           eventId: event_id,
         });
+        // Invite every attendee to review the finished event.
+        dependencies.notifyReviewInvites({ eventId: event_id, eventTitle: event.title ?? 'your event' });
       } catch (e) { console.error(`[DeadlineScheduler] completion email failed for ${event_id}:`, e?.message || e); }
     }
   }

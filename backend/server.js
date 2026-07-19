@@ -14,6 +14,7 @@ import ticketsRoutes from './routes/ticketsRoutes.js';
 import adminRoutes from './routes/adminRoutes.js';
 import aiRoutes from './routes/aiRoutes.js';
 import weatherRoutes from './routes/weatherRoutes.js';
+import reviewRoutes from './routes/reviewRoutes.js';
 import { startDeadlineScheduler } from './services/deadlineScheduler.js';
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/tickets', ticketsRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/weather', weatherRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 app.use('/api', (req, res) => {
   res.status(404).json({

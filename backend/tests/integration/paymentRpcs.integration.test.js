@@ -275,6 +275,56 @@ describe('payment RPC integration', { skip: integrationSkip }, () => {
     }
   });
 
+  it('submit_review enforces completion + attendance, upserts, and appears in get_reviews', async () => {
+    const seed = await createEvent(organiser.client, {
+      title: `ITest Review ${Date.now()}`,
+      description: 'Review flow test.',
+      location: 'Test Hall', address: '123 Test Rd',
+      startsAt: futureIso(30), endsAt: futureIso(30, 22), deadlineAt: futureIso(20), image: '',
+      hypeThreshold: 5, maxCapacity: 100,
+      statuses: [{ statusName: 'early_bird', price: 10, qty: 50 }, { statusName: 'greenlit', price: 16, qty: 50 }],
+      hypeDrivenPricing: false,
+    });
+    assert.ok(seed.eventId, `review event seed failed: ${JSON.stringify(seed)}`);
+    const rid = seed.eventId;
+    const attendee = await newBuyer(100);
+    const outsider = await newBuyer(100);
+    try {
+      const p = await attendee.client.rpc('create_pledge', { p_event_id: rid, p_qty: 1, p_idempotency_key: null, p_payment_method: 'wallet' });
+      assert.equal(p.error, null, `pledge errored: ${p.error?.message}`);
+
+      // Event not completed yet → refused.
+      const early = await attendee.client.rpc('submit_review', { p_event_id: rid, p_rating: 5, p_body: 'too early' });
+      assert.equal(early.data?.error, 'event_not_completed');
+
+      await admin().from('EVENT').update({ status: 'completed' }).eq('id', rid);
+
+      // A non-attendee cannot review.
+      const out = await outsider.client.rpc('submit_review', { p_event_id: rid, p_rating: 4, p_body: 'nope' });
+      assert.equal(out.data?.error, 'not_attended');
+
+      // Rating out of range is refused.
+      const bad = await attendee.client.rpc('submit_review', { p_event_id: rid, p_rating: 9, p_body: 'x' });
+      assert.equal(bad.data?.error, 'bad_rating');
+
+      // Attendee submits, then edits — unique(userId,eventId) makes the second an upsert.
+      const ok1 = await attendee.client.rpc('submit_review', { p_event_id: rid, p_rating: 5, p_body: 'Amazing' });
+      assert.equal(ok1.data?.status, 'ok');
+      const ok2 = await attendee.client.rpc('submit_review', { p_event_id: rid, p_rating: 3, p_body: 'Changed my mind' });
+      assert.equal(ok2.data?.status, 'ok');
+      const { count } = await admin().from('REVIEWS').select('id', { count: 'exact', head: true }).eq('eventId', rid);
+      assert.equal(count, 1, 'one review per user per event');
+
+      const wall = await attendee.client.rpc('get_reviews');
+      assert.equal(wall.error, null);
+      const mine = (wall.data ?? []).find((r) => r.eventId === rid);
+      assert.ok(mine, 'the review appears on the wall');
+      assert.equal(mine.rating, 3, 'the wall reflects the edited rating');
+    } finally {
+      await admin().from('EVENT').delete().eq('id', rid); // cascades REVIEWS + BOOKINGS
+    }
+  });
+
   // ── Authorization: an end user must not be able to mint money ────────────────
   // These are the regression tests for a real vulnerability. The browser holds a genuine
   // Supabase JWT and the anon key ships in the bundle, so ANY account holder could call these

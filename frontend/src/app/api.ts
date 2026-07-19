@@ -826,6 +826,22 @@ export type ChatAction = 'open_card_form';
 export type ChatReply = { available: boolean; status?: ChatStatus; reply?: string; action?: ChatAction | null; proposals?: AgentProposal[]; results?: AgentResult[]; threadId?: string; conversationId?: string | null };
 export type ActionResult = { status?: string; message?: string };
 
+// ── Reviews ────────────────────────────────────────────────────────────────
+export type Review = { id: number; eventId: string; eventTitle: string; username: string; rating: number; body: string | null; createdAt: string };
+export type ReviewableEvent = { id: string; title: string; startDate?: string | null; endDate?: string | null; imageUrl?: string | null };
+
+export function fetchReviews(): Promise<{ reviews: Review[] }> {
+  return apiFetch<{ reviews: Review[] }>('/api/reviews');
+}
+
+export function fetchReviewableEvents(): Promise<{ events: ReviewableEvent[] }> {
+  return apiFetch<{ events: ReviewableEvent[] }>('/api/reviews/reviewable');
+}
+
+export function submitReview(eventId: string, rating: number, body: string): Promise<ActionResult> {
+  return apiFetch<ActionResult>(`/api/reviews/events/${eventId}`, { method: 'POST', body: JSON.stringify({ rating, body }) });
+}
+
 export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string; mode?: 'titles' | 'descriptions' }): Promise<EventCopySuggestions> {
   return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
 }
