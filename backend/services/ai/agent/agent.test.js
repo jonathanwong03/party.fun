@@ -633,7 +633,7 @@ test('event action tools resolve natural references semantically and ask when am
       ...ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } }).supabase,
       rpc: async (name) => {
         if (name === 'get_profile') return { data: { tickets: [] }, error: null };
-        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.91 }, { eventId: 'e2', similarity: 0.2 }], error: null };
+        if (name === 'match_events' || name === 'match_events_hybrid') return { data: [{ eventId: 'e1', similarity: 0.91 }, { eventId: 'e2', similarity: 0.2 }], error: null };
         return { data: events, error: null };
       },
     },
@@ -652,7 +652,7 @@ test('event action tools resolve natural references semantically and ask when am
       ...ctx.supabase,
       rpc: async (name) => {
         if (name === 'get_profile') return { data: { tickets: [] }, error: null };
-        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.84 }, { eventId: 'e2', similarity: 0.81 }], error: null };
+        if (name === 'match_events' || name === 'match_events_hybrid') return { data: [{ eventId: 'e1', similarity: 0.84 }, { eventId: 'e2', similarity: 0.81 }], error: null };
         return { data: events, error: null };
       },
     },
@@ -1043,7 +1043,7 @@ test('recommend_events ranks attendable events by semantic similarity', async ()
       userId: 'u1', role: 'user',
       supabase: { rpc: async (name) => {
         if (name === 'get_profile') return { data: { tickets: [] }, error: null };
-        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity: 0.92 }, { eventId: 'e2', similarity: 0.31 }], error: null };
+        if (name === 'match_events' || name === 'match_events_hybrid') return { data: [{ eventId: 'e1', similarity: 0.92 }, { eventId: 'e2', similarity: 0.31 }], error: null };
         return { data: events, error: null };
       } },
     };

@@ -2,14 +2,18 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { postPledge, dependencies } from './checkoutController.js';
 
-function mockSupabase() {
+function mockSupabase({ walletBalance = 100 } = {}) {
   return {
     from(table) {
       if (table === 'USER') {
         return {
-          select: () => ({
+          select: (columns) => ({
             eq: () => ({
-              single: async () => ({ data: { email: 'user@smu.edu.sg', username: 'jamie', role: 'user' } }),
+              single: async () => ({
+                data: String(columns).includes('walletBalance')
+                  ? { walletBalance }
+                  : { email: 'user@smu.edu.sg', username: 'jamie', role: 'user' },
+              }),
             }),
           }),
         };
@@ -136,6 +140,29 @@ describe('postPledge', () => {
     );
 
     assert.equal(res.statusCode, 409);
+    assert.equal(sendCalls.length, 0);
+  });
+
+  it('returns current wallet balance and required amount when wallet funds are insufficient', async () => {
+    dependencies.createPledge = async () => ({ error: 'insufficient_funds' });
+    dependencies.quotePledge = async () => ({ total: 63.45 });
+    const res = createMockRes();
+
+    await postPledge(
+      {
+        supabase: mockSupabase({ walletBalance: 42 }),
+        user: { id: 'user-1', role: 'user' },
+        params: { eventId: 'event-1' },
+        body: { qty: 6, paymentMethod: 'wallet' },
+        originalUrl: '/api/checkout/event-1/pledge',
+      },
+      res,
+    );
+
+    assert.equal(res.statusCode, 402);
+    assert.equal(res.body.status, 'insufficient_funds');
+    assert.equal(res.body.balance, 42);
+    assert.equal(res.body.required, 63.45);
     assert.equal(sendCalls.length, 0);
   });
 

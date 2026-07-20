@@ -13,23 +13,36 @@ import { formatEventLocation } from '../components/eventDisplay';
 type Tab = 'upcoming' | 'past' | 'cancelled';
 type Row = ProfileTicket & { event: EventItem };
 
-export function JoinedEvents({ go, events, tickets, counts, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; counts: ProfileCounts; onDelete: (bookingId: string) => Promise<void> }) {
+export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Route) => void; events: EventItem[]; tickets: ProfileTicket[]; counts: ProfileCounts; onDelete: (bookingId: string) => Promise<void> }) {
   const [tab, setTab] = useState<Tab>('upcoming');
   const [deleting, setDeleting] = useState<Row | null>(null);
   const rows = tickets
     .map((booking) => {
       const event = events.find((candidate) => candidate.id === booking.eventId);
-      return event ? { ...booking, event } : null;
+      if (!event) return null;
+      // Bucket by the event's STATUS first — a completed event belongs in Past and a cancelled
+      // one in Cancelled the moment its status flips, regardless of its calendar date. Fall back
+      // to the backend's date-based tab only for events that are still live.
+      const effectiveTab: Tab = event.status === 'cancelled' ? 'cancelled'
+        : event.status === 'completed' ? 'past'
+        : booking.tab;
+      return { ...booking, event, tab: effectiveTab };
     })
     .filter((row): row is Row => !!row && !row.event.mine);
   const items = rows.filter((row) => row.tab === tab);
+  // Derive the stat counts from the same status-aware buckets so they match the tabs.
+  const derivedCounts: ProfileCounts = {
+    upcoming: rows.filter((row) => row.tab === 'upcoming').length,
+    past: rows.filter((row) => row.tab === 'past').length,
+    cancelled: rows.filter((row) => row.tab === 'cancelled').length,
+  };
 
   return (
     <div className="mx-auto max-w-[1536px] px-4 py-6 sm:px-6 sm:py-8">
       <div className="mb-8 flex justify-around gap-4 rounded-2xl border p-6" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-        <Stat label="Pledged" value={String(counts.upcoming)} />
-        <Stat label="Completed" value={String(counts.past)} />
-        <Stat label="Cancelled" value={String(counts.cancelled)} />
+        <Stat label="Pledged" value={String(derivedCounts.upcoming)} />
+        <Stat label="Completed" value={String(derivedCounts.past)} />
+        <Stat label="Cancelled" value={String(derivedCounts.cancelled)} />
       </div>
 
       <div className="mb-6 flex items-baseline justify-between">

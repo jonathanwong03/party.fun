@@ -34,6 +34,24 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     return () => { ignore = true; };
   }, [role, id, qty]);
 
+  // Keep the wallet balance fresh: a checkout tab left open (or spent down in another tab)
+  // would otherwise show a stale balance and let the user try to pay against money that's no
+  // longer there. Re-fetch whenever this tab regains focus/visibility.
+  useEffect(() => {
+    const refresh = () => { fetchWallet().then(setWallet).catch(() => {}); };
+    const onVisible = () => { if (document.visibilityState === 'visible') refresh(); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    setSubmitError(null);
+  }, [id, qty, method, quote?.total, wallet?.balance]);
+
   if (!event) {
     return (
       <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -56,10 +74,43 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
     if (!canPay) return;
     try {
       setSubmitting(true);
-      const reference = await onPledge(event.id, qty, total, method, attemptId);
-      go({ name: 'confirmation', id, qty, lines: quote?.lines, reference });
+      let latestQuote = quote;
+      if (method === 'wallet') {
+        const [freshWallet, freshQuote] = await Promise.all([
+          fetchWallet(),
+          fetchQuote(role, id, qty),
+        ]);
+        setWallet(freshWallet);
+        setQuote(freshQuote);
+        latestQuote = freshQuote;
+        const freshTotal = Number(freshQuote?.total ?? 0);
+        if (freshWallet.balance < freshTotal) {
+          setSubmitError(`Not enough wallet balance — top up or pay by card.`);
+          return;
+        }
+      }
+
+      const reference = await onPledge(event.id, qty, latestQuote?.total ?? total, method, attemptId);
+      go({ name: 'confirmation', id, qty, lines: latestQuote?.lines, reference });
     } catch (error) {
+      const err = error as Error & { status?: number; balance?: number; required?: number };
       setSubmitError(error instanceof Error ? error.message : 'Unable to confirm pledge.');
+      // The server rejected the pledge — often because the shown balance was stale (spent in
+      // another tab). Pull the fresh wallet so the displayed balance reflects reality.
+      try {
+        const freshWallet = await fetchWallet();
+        setWallet(freshWallet);
+        const required = typeof err.required === 'number' ? err.required : total;
+        if (err.status === 402 && typeof err.balance === 'number' && typeof err.required === 'number') {
+          setSubmitError(`Not enough wallet balance — server saw $${err.balance.toFixed(2)} available for a $${err.required.toFixed(2)} payment.`);
+        } else if (freshWallet.balance >= required && err.status === 402) {
+          setSubmitError('Your wallet balance now looks sufficient. Please try Pay with wallet again.');
+        }
+      } catch {
+        if (typeof err.balance === 'number') {
+          setWallet((prev) => prev ? { ...prev, balance: err.balance! } : prev);
+        }
+      }
     } finally {
       setSubmitting(false);
     }

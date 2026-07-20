@@ -24,7 +24,10 @@ function PopoverContent({
   ...props
 }: React.ComponentProps<typeof PopoverPrimitive.Content>) {
   return (
-    <PopoverPrimitive.Portal>
+    // Portal into the themed app-root wrapper (carries the `.dark` class) rather than
+    // document.body, so popover tokens (calendars, time pickers, etc.) resolve to the
+    // correct light/dark values instead of always rendering light.
+    <PopoverPrimitive.Portal container={typeof document !== "undefined" ? document.getElementById("app-root") ?? undefined : undefined}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

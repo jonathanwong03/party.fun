@@ -1,5 +1,7 @@
 import { anyConfigured } from '../services/ai/modelRouter.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
+import { matchEventsHybrid } from '../services/ai/eventSearch.js';
+import { transcribeAudio, isSpeechEnabled } from '../services/ai/speechService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
@@ -104,18 +106,16 @@ export async function recommendEvents(req, res) {
       };
     });
 
-  // Semantic pre-ranking: order candidates by embedding similarity to the interests,
-  // then let the LLM pick/reason over the closest ones. Falls back to the raw list.
-  if (interests && String(interests).trim() && isEmbeddingEnabled()) {
-    const vec = await embedText(String(interests), { taskType: 'RETRIEVAL_QUERY' });
-    if (vec) {
-      const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 40 });
-      const order = new Map((matches ?? []).map((m, i) => [m.eventId, i]));
-      if (order.size) {
-        candidates = candidates
-          .filter((c) => order.has(c.id))
-          .sort((a, b) => order.get(a.id) - order.get(b.id));
-      }
+  // Hybrid pre-ranking: order candidates by full-text + vector relevance to the typed
+  // interests (so a named venue/event ranks too, not just conceptual matches), then let
+  // the LLM pick/reason over the closest ones. Falls back to the raw list.
+  if (interests && String(interests).trim()) {
+    const matches = await matchEventsHybrid(req.supabase, String(interests), { count: 40 });
+    const order = new Map(matches.map((m, i) => [m.eventId, i]));
+    if (order.size) {
+      candidates = candidates
+        .filter((c) => order.has(c.id))
+        .sort((a, b) => order.get(a.id) - order.get(b.id));
     }
   }
   candidates = candidates.slice(0, 40);
@@ -140,6 +140,9 @@ export async function forYou(req, res) {
   if (!profileText.trim()) return res.json({ ids: [] });
   const vec = await embedText(profileText, { taskType: 'RETRIEVAL_QUERY' });
   if (!vec) return res.json({ ids: [] });
+  // Deliberately VECTOR-ONLY (not hybrid): the "query" here is a long taste profile, not a
+  // search phrase. Running full-text over it would match every event sharing a common word
+  // and swamp the genuine semantic neighbours, so keyword fusion would make this feed worse.
   const { data: matches } = await req.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: 20 });
   res.json({ ids: (matches ?? []).map((m) => m.eventId).filter((id) => !joined.has(id)) });
 }
@@ -554,4 +557,25 @@ export async function executeActionHandler(req, res) {
     return res.status(code).json({ status: result.error, message: result.message });
   }
   res.json(result);
+}
+
+// POST /api/ai/transcribe — the assistant's mic button. Takes the raw recorded audio as the
+// request body (express.raw, Content-Type carries the browser's container) and returns the
+// transcript for the composer. Body is a Buffer, not JSON, so audio isn't base64-inflated
+// over the wire.
+export async function transcribe(req, res) {
+  if (!isSpeechEnabled()) {
+    return res.status(503).json({ status: 'unavailable', message: 'Voice input is not configured.' });
+  }
+  const audio = Buffer.isBuffer(req.body) ? req.body : null;
+  const result = await transcribeAudio(audio, req.get('content-type'));
+  if (result.error) {
+    const code = result.error === 'too_large' ? 413
+      : result.error === 'unsupported_format' ? 415
+      : result.error === 'unavailable' ? 503
+      : result.error === 'empty' || result.error === 'no_speech' ? 400
+      : 502;
+    return res.status(code).json({ status: result.error, message: result.message });
+  }
+  res.json({ text: result.text });
 }

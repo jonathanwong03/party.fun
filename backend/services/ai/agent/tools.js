@@ -8,6 +8,7 @@ import { assessEvent } from '../../weatherService.js';
 import { researchEventIdeas } from './research.js';
 import { rememberFact } from '../memory.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../embeddingService.js';
+import { matchEventsHybrid } from '../eventSearch.js';
 import { semanticDraftMatches } from '../draftEmbeddings.js';
 import { getAppKnowledge } from '../tasks/answerAppQuestion.js';
 import { retrieveDocChunks } from '../docKnowledge.js';
@@ -209,7 +210,7 @@ async function resolveEvent(ctx, events, ref) {
     }
   }
   // 2. Semantic matches (embeddings), high floor — only genuinely close events, never a guess.
-  const ranked = await semanticMatch(ctx, ref, { count: 8 });
+  const ranked = await hybridMatch(ctx, ref, { count: 8 });
   const byId = new Map(list.map((e) => [e.id, e]));
   for (const r of ranked) {
     if (byId.has(r.eventId) && Number(r.similarity ?? 0) >= SEMANTIC_SUGGEST_MIN) push(byId.get(r.eventId)?.title);
@@ -323,16 +324,19 @@ async function visibleEvents(ctx) {
   return (data ?? []).map((e) => ({ ...e, status: e.derived_status ?? e.status ?? 'early_bird' }));
 }
 
-// Rank event ids by SEMANTIC similarity to a free-text query (embed → match_events
-// RPC). Returns [{eventId, similarity}] best-first, or [] when embeddings are off /
-// unavailable so callers can fall back to keyword/price logic.
-async function semanticMatch(ctx, query, { count = 40, exclude = null } = {}) {
-  if (!isEmbeddingEnabled() || !String(query ?? '').trim()) return [];
-  const vec = await embedText(query, { taskType: 'RETRIEVAL_QUERY' });
-  if (!vec) return [];
-  const { data, error } = await ctx.supabase.rpc('match_events', { p_embedding: toVectorLiteral(vec), p_count: count, p_exclude: exclude });
-  if (error) return [];
-  return (data ?? []).map((r) => ({ eventId: r.eventId, similarity: r.similarity }));
+// Rank event ids by HYBRID relevance to a free-text query: Postgres full-text (exact
+// names, proper nouns) fused with vector similarity (meaning) via RRF in the
+// match_events_hybrid RPC. Returns [{eventId, similarity, score}] best-first, or [] when
+// nothing matches so callers can fall back to keyword/price logic.
+//
+// `similarity` stays the true COSINE value (null for a keyword-only hit) — callers gate
+// confidence on it. `score` is the RRF fusion value and only drives ordering.
+//
+// Degrades on two axes: with no embedding it runs keyword-only (so search still works when
+// embeddings are off or an event isn't backfilled), and if the hybrid RPC is missing (the
+// migration hasn't been applied yet) it falls back to the vector-only match_events.
+async function hybridMatch(ctx, query, opts = {}) {
+  return matchEventsHybrid(ctx.supabase, query, opts);
 }
 const sim2 = (s) => Math.round(Number(s) * 100) / 100;
 
@@ -904,7 +908,7 @@ export const EXECUTORS = {
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const attendable = (await attendableEvents(ctx)).filter((e) => (maxPrice == null || currentPrice(e) <= maxPrice));
     const byId = new Map(attendable.map((e) => [e.id, e]));
-    const ranked = (await semanticMatch(ctx, interests, { count: 40 })).filter((r) => byId.has(r.eventId));
+    const ranked = (await hybridMatch(ctx, interests, { count: 40 })).filter((r) => byId.has(r.eventId));
     if (ranked.length) {
       const rows = ranked.map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 5);
       return { count: rows.length, interests, semantic: true, events: rows };
@@ -920,7 +924,7 @@ export const EXECUTORS = {
     const maxPrice = args.maxPrice != null ? Number(args.maxPrice) : null;
     const attendable = (await attendableEvents(ctx)).filter((e) => (maxPrice == null || currentPrice(e) <= maxPrice));
     const byId = new Map(attendable.map((e) => [e.id, e]));
-    const ranked = (await semanticMatch(ctx, query, { count: 40 })).filter((r) => byId.has(r.eventId));
+    const ranked = (await hybridMatch(ctx, query, { count: 40 })).filter((r) => byId.has(r.eventId));
     if (ranked.length) {
       const rows = ranked.map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 10);
       return { count: rows.length, semantic: true, events: rows };
@@ -938,7 +942,7 @@ export const EXECUTORS = {
     const ev = resolved.event;
     if (!ev) return { error: 'Event not found or not visible to you.' };
     const text = [ev.title, ev.description, ev.location].filter(Boolean).join('\n');
-    const ranked = await semanticMatch(ctx, text, { count: 10, exclude: ev.id });
+    const ranked = await hybridMatch(ctx, text, { count: 10, exclude: ev.id });
     if (!ranked.length) return { reference: ev.title, semantic: false, events: [] };
     const byId = new Map(visible.map((e) => [e.id, e]));
     const rows = ranked.filter((r) => byId.has(r.eventId)).map((r) => ({ ...richRow(byId.get(r.eventId), ctx), similarity: sim2(r.similarity) })).slice(0, 5);
