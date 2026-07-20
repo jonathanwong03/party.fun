@@ -6,20 +6,17 @@ import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { AuthShell } from '../components/AuthShell';
 import { required, emailError, confirmError } from '../components/validation';
-import { registerRequest, sendWelcomeEmailRequest, type MemberType } from '../api';
+import { registerRequest, sendWelcomeEmailRequest } from '../api';
 import type { Route } from '../components/types';
-import { UNIVERSITIES, universityLabel } from '../components/universities';
+import { UNIVERSITIES, universityLabel, isValidMatric, MATRIC_HINT } from '../components/universities';
 
-const MATRIC_RE = /^[A-Za-z]\d{8}[A-Za-z]$/;
-const STAFF_RE = /^\d{9}$/;
-
-// Validate the membership ID against the member type. Returns an error string or null.
-export function memberIdError(memberType: MemberType | '', id: string): string | null {
+// Organisers are current students too — there is no staff/professor path any more,
+// so there is exactly one ID format. The rule lives in universities.ts so the forms,
+// the DB constraint and validate_signup_identity can't drift apart.
+export function matricError(id: string): string | null {
   const v = id.trim();
   if (!v) return 'Required';
-  if (memberType === 'student') return MATRIC_RE.test(v) ? null : 'Format: letter, 8 digits, letter (e.g. A12345678B)';
-  if (memberType === 'instructor' || memberType === 'professor') return STAFF_RE.test(v) ? null : 'Staff ID must be exactly 9 digits';
-  return null;
+  return isValidMatric(v) ? null : 'Format: letter, 8 digits, letter (e.g. A12345678B)';
 }
 
 export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
@@ -30,13 +27,10 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
   const [telegram, setTelegram] = useState('');
   const [phone, setPhone] = useState('');
   const [university, setUniversity] = useState('');
-  const [memberType, setMemberType] = useState<MemberType | ''>('');
-  const [orgId, setOrgId] = useState('');
+  const [matricNumber, setMatricNumber] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  const idLabel = memberType === 'student' ? 'Matriculation ID' : memberType ? 'Staff ID' : 'Matriculation / Staff ID';
 
   const errs = {
     organiserName: required(organiserName),
@@ -44,8 +38,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
     password: required(password),
     confirm: confirmError(password, confirm),
     university: university ? null : 'Select your university',
-    memberType: memberType ? null : 'Select your role',
-    orgId: memberType ? memberIdError(memberType, orgId) : 'Select your role first',
+    matricNumber: matricError(matricNumber),
   };
   const hasErr = Object.values(errs).some(Boolean);
 
@@ -75,7 +68,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
             await registerRequest({
               username: organiserName, email, password, role: 'organiser',
               telegram: telegram || undefined, phone: phone || undefined,
-              university, memberType: memberType as MemberType, orgId: orgId.trim(),
+              university, matricNumber: matricNumber.trim(),
             });
             try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
             go({ name: 'login' });
@@ -107,29 +100,16 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
           {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.university}</p>}
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>I am a</Label>
-            <Select value={memberType} onValueChange={(v) => { setMemberType(v as MemberType); }}>
-              <SelectTrigger style={{ background: 'var(--surface-2)', borderColor: attempted && errs.memberType ? '#ff4d2e' : 'var(--border)', height: 42 }}>
-                <SelectValue placeholder="Select role" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="student">Student</SelectItem>
-                <SelectItem value="instructor">Instructor</SelectItem>
-                <SelectItem value="professor">Professor</SelectItem>
-              </SelectContent>
-            </Select>
-            {attempted && errs.memberType && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.memberType}</p>}
-          </div>
+        <div>
           <Field
-            label={idLabel}
+            label="Matriculation number"
             autoComplete="off"
-            placeholder={memberType === 'student' ? 'e.g. A12345678B' : 'e.g. 912345678'}
-            value={orgId}
-            onChange={(e) => setOrgId(e.target.value)}
-            error={attempted ? errs.orgId : null}
+            placeholder="e.g. A12345678B"
+            value={matricNumber}
+            onChange={(e) => setMatricNumber(e.target.value.toUpperCase())}
+            error={attempted ? errs.matricNumber : null}
           />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{MATRIC_HINT}</p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -140,7 +120,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
           style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
           <Shield size={14} className="mt-0.5 shrink-0" />
-          <span>Organisers must be verified university members. Your matriculation / staff ID is unique to your account.</span>
+          <span>Organisers must be current university students. Your matriculation number is unique to your account.</span>
         </div>
 
         {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}

@@ -39,14 +39,17 @@ export async function makeUser({ role = 'user' } = {}) {
   const { data, error } = await a.auth.admin.createUser({ email, password, email_confirm: true });
   if (error) throw new Error(`createUser: ${error.message}`);
   const id = data.user.id;
-  // Organisers must satisfy user_organiser_membership_check: university + memberType +
-  // a format-valid orgId (professor = 9 digits). Regular users need none of these.
-  const patch = { role, onboarded: true };
-  if (role === 'organiser') {
-    patch.university = 'NTU';
-    patch.memberType = 'professor';
-    patch.orgId = String(Math.floor(100000000 + Math.random() * 900000000)); // 9 digits
-  }
+  // party.fun is students-only: user_student_membership_check requires EVERY onboarded
+  // account (not just organisers) to carry a university and a matriculation number
+  // matching ^[A-Za-z][0-9]{8}[A-Za-z]$. The number is globally unique, so randomise it.
+  const digits = String(Math.floor(10000000 + Math.random() * 90000000)); // 8 digits
+  const letter = () => String.fromCharCode(65 + Math.floor(Math.random() * 26));
+  const patch = {
+    role,
+    onboarded: true,
+    university: 'NTU',
+    matricNumber: `${letter()}${digits}${letter()}`,
+  };
   const { error: upErr } = await a.from('USER').update(patch).eq('id', id);
   if (upErr) throw new Error(`set role: ${upErr.message}`);
 

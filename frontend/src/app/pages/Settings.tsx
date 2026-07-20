@@ -12,7 +12,6 @@ import type { Route } from '../components/types';
 import { uploadAvatar, removeAvatar, setAvatar, updateUsernameRequest, updateContactRequest, changeUniversityRequest, fetchLicense, openLicensePdf, type AdminLicense, type AuthUser } from '../api';
 
 // Sentinel for the "I'm not enrolled into a university" option (stored as NULL).
-const NOT_ENROLLED = 'none';
 
 export function Settings({
   user,
@@ -125,13 +124,14 @@ export function Settings({
   // University (one-time change, attendees only)
   const canChangeUniversity = user?.role === 'user';
   const universityUsed = !!user?.universityChanged;
-  const currentUni = user?.university ?? null; // null = "not enrolled"
-  const [uniChoice, setUniChoice] = useState<string>(currentUni ?? NOT_ENROLLED);
+  const currentUni = user?.university ?? null;
+  const [uniChoice, setUniChoice] = useState<string>(currentUni ?? '');
   const [uniModal, setUniModal] = useState(false);
   const [uniError, setUniError] = useState<string | null>(null);
   const [uniSaved, setUniSaved] = useState(false);
   const [uniBusy, setUniBusy] = useState(false);
-  const uniTarget = uniChoice === NOT_ENROLLED ? null : uniChoice;
+  // Students only — "not enrolled" is no longer a choice, so a blank pick is a no-op.
+  const uniTarget = uniChoice || null;
   const uniDirty = uniTarget !== currentUni;
 
   const applyUniversity = async () => {
@@ -376,7 +376,6 @@ export function Settings({
               <SelectTrigger style={{ background: 'var(--surface-2)', height: 44 }}><SelectValue placeholder="Select your university" /></SelectTrigger>
               <SelectContent>
                 {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
-                <SelectItem value={NOT_ENROLLED}>I'm not enrolled into a university</SelectItem>
               </SelectContent>
             </Select>
             <Button

@@ -10,6 +10,17 @@ export const UNIVERSITIES = [
 
 export type UniversityCode = (typeof UNIVERSITIES)[number]["code"];
 
+// party.fun is for CURRENT university students only, so every account carries a
+// matriculation number: one letter, eight digits, one letter (e.g. A12345678B).
+// Defined once here — the same rule is enforced by the DB (user_matric_format_check)
+// and by validate_signup_identity, so all three must agree.
+export const MATRIC_RX = /^[A-Za-z]\d{8}[A-Za-z]$/;
+export const MATRIC_HINT = "e.g. A12345678B — one letter, 8 digits, one letter";
+
+export function isValidMatric(value?: string | null): boolean {
+  return MATRIC_RX.test(String(value ?? "").trim());
+}
+
 export function universityLabel(code?: string | null): string {
   const trimmed = code?.trim();
   if (!trimmed) return "";
