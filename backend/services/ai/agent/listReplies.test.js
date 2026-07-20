@@ -232,7 +232,7 @@ test('resolveEvent does not offer a DISTANT semantic match as a suggestion', asy
     supabase: {
       rpc: async (name) => {
         if (name === 'get_profile') return { data: { tickets: [] }, error: null };
-        if (name === 'match_events') return { data: [{ eventId: 'e1', similarity }], error: null };
+        if (name === 'match_events' || name === 'match_events_hybrid') return { data: [{ eventId: 'e1', similarity }], error: null };
         return { data: events, error: null };
       },
     },
