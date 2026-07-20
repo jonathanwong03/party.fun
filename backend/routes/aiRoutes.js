@@ -1,5 +1,5 @@
 import express from 'express';
-import { suggestEventCopy, revenueTips, recommendEvents, forYou, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory } from '../controllers/aiController.js';
+import { suggestEventCopy, revenueTips, recommendEvents, forYou, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory, transcribe } from '../controllers/aiController.js';
 import { requireAuth, optionalAuth } from '../middleware/requireAuth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
@@ -32,5 +32,22 @@ router.post('/ask', requireAuth, ask);
 router.post('/chat', requireAuth, chatLimiter, chat);
 router.post('/chat/resume', requireAuth, resumeChat);
 router.post('/execute-action', requireAuth, executeActionHandler);
+
+// Voice input for the assistant composer. Each call is a billed Google Speech request, so it
+// gets its own (looser than chat) throttle. express.raw keeps the audio as a Buffer — posting
+// it as JSON would base64-inflate every clip by ~33% and blow past the global 100kb json limit.
+const transcribeLimiter = rateLimit({
+  keyFn: (req) => req.user?.id ?? req.ip,
+  limit: 20,
+  windowSec: 60,
+  message: 'Too many voice messages — give it a few seconds.',
+});
+router.post(
+  '/transcribe',
+  requireAuth,
+  transcribeLimiter,
+  express.raw({ type: ['audio/*', 'application/octet-stream'], limit: '10mb' }),
+  transcribe,
+);
 
 export default router;

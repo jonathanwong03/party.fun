@@ -848,6 +848,24 @@ export function submitReview(eventId: string, rating: number, body: string): Pro
   return apiFetch<ActionResult>(`/api/reviews/events/${eventId}`, { method: 'POST', body: JSON.stringify({ rating, body }) });
 }
 
+// Send a recorded clip to Google Speech-to-Text (via our backend) and get the transcript.
+// Posts the Blob as the raw body — Content-Type carries the browser's container so the
+// server can pick the right encoding. Throws with the server's message on failure.
+export async function transcribeAudio(blob: Blob): Promise<string> {
+  const { data: { session } } = await supabase.auth.getSession();
+  const res = await fetch('/api/ai/transcribe', {
+    method: 'POST',
+    headers: {
+      'Content-Type': blob.type || 'application/octet-stream',
+      ...(session ? { Authorization: `Bearer ${session.access_token}` } : {}),
+    },
+    body: blob,
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.message || 'Could not transcribe that — try again.');
+  return String(data?.text ?? '').trim();
+}
+
 export function suggestEventCopy(input: { title?: string; theme?: string; audience?: string; university?: string; mode?: 'titles' | 'descriptions' }): Promise<EventCopySuggestions> {
   return apiFetch<EventCopySuggestions>('/api/ai/suggest-event-copy', { method: 'POST', body: JSON.stringify(input) });
 }

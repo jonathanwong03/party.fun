@@ -1,6 +1,7 @@
 import { anyConfigured } from '../services/ai/modelRouter.js';
 import { embedText, toVectorLiteral, isEmbeddingEnabled } from '../services/ai/embeddingService.js';
 import { matchEventsHybrid } from '../services/ai/eventSearch.js';
+import { transcribeAudio, isSpeechEnabled } from '../services/ai/speechService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
@@ -556,4 +557,25 @@ export async function executeActionHandler(req, res) {
     return res.status(code).json({ status: result.error, message: result.message });
   }
   res.json(result);
+}
+
+// POST /api/ai/transcribe — the assistant's mic button. Takes the raw recorded audio as the
+// request body (express.raw, Content-Type carries the browser's container) and returns the
+// transcript for the composer. Body is a Buffer, not JSON, so audio isn't base64-inflated
+// over the wire.
+export async function transcribe(req, res) {
+  if (!isSpeechEnabled()) {
+    return res.status(503).json({ status: 'unavailable', message: 'Voice input is not configured.' });
+  }
+  const audio = Buffer.isBuffer(req.body) ? req.body : null;
+  const result = await transcribeAudio(audio, req.get('content-type'));
+  if (result.error) {
+    const code = result.error === 'too_large' ? 413
+      : result.error === 'unsupported_format' ? 415
+      : result.error === 'unavailable' ? 503
+      : result.error === 'empty' || result.error === 'no_speech' ? 400
+      : 502;
+    return res.status(code).json({ status: result.error, message: result.message });
+  }
+  res.json({ text: result.text });
 }

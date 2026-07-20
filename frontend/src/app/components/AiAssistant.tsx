@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft } from 'lucide-react';
+import { MessageCircle, X, Send, Sparkles, Check, Trash2, Plus, History, ArrowLeft, Mic, Square } from 'lucide-react';
 import {
   sendChat, resumeChat, fetchAiAvailability,
-  fetchConversations, fetchConversation, deleteConversation,
+  fetchConversations, fetchConversation, deleteConversation, transcribeAudio,
   type ChatMessage, type AgentProposal, type AiConversation,
 } from '../api';
 import type { Role } from './types';
+import { startRecording, isRecordingSupported, type Recording } from './audioRecorder';
 
 type Turn = ChatMessage & { proposals?: AgentProposal[]; threadId?: string };
 type ActionState = { status: 'idle' | 'busy' | 'done' | 'error'; message?: string };
@@ -77,6 +78,12 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
   const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [input, setInput] = useState('');
   const [busy, setBusy] = useState(false);
+  // Voice input (mic → Google Speech-to-Text → composer text).
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recordingRef = useRef<Recording | null>(null);
+  const autoStopRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [actions, setActions] = useState<Record<string, ActionState>>({});
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null); // null = anchored bottom-right
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -162,6 +169,62 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
     }
     return { proposals: [] };
   }
+
+  // ── Voice input ────────────────────────────────────────────────────────────
+  // Capture 16 kHz mono WAV in the browser (see audioRecorder.ts — MediaRecorder is avoided
+  // because iOS Safari only emits mp4/AAC, which Google's v1 API can't decode), send the clip
+  // to Google Speech-to-Text and drop the transcript into the composer. Never auto-sent: the
+  // user reviews/edits, then presses Send. Google's sync endpoint tops out around a minute,
+  // so recording auto-stops at 55s.
+  const MAX_RECORD_MS = 55_000;
+
+  async function stopRecording() {
+    if (autoStopRef.current) { clearTimeout(autoStopRef.current); autoStopRef.current = null; }
+    const rec = recordingRef.current;
+    if (!rec) return;
+    recordingRef.current = null;
+    setRecording(false);
+
+    const blob = await rec.stop();
+    if (blob.size === 0) return;
+    setTranscribing(true);
+    try {
+      const text = await transcribeAudio(blob);
+      // Append rather than replace, so dictation can extend whatever is already typed.
+      if (text) setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+    } catch (e) {
+      setVoiceError(e instanceof Error ? e.message : 'Could not transcribe that — try again.');
+    } finally {
+      setTranscribing(false);
+    }
+  }
+
+  async function beginRecording() {
+    setVoiceError(null);
+    if (!isRecordingSupported()) {
+      setVoiceError("This browser can't record audio.");
+      return;
+    }
+    try {
+      recordingRef.current = await startRecording();
+    } catch (e) {
+      // Permission denial is by far the common case; anything else surfaces its own message.
+      const msg = e instanceof Error && !/getUserMedia|record/i.test(e.message)
+        ? 'Microphone access was blocked — allow it in your browser settings.'
+        : (e instanceof Error ? e.message : 'Could not start recording.');
+      setVoiceError(msg);
+      return;
+    }
+    setRecording(true);
+    autoStopRef.current = setTimeout(() => { void stopRecording(); }, MAX_RECORD_MS);
+  }
+
+  // Never leave the mic open if the panel unmounts mid-recording.
+  useEffect(() => () => {
+    if (autoStopRef.current) clearTimeout(autoStopRef.current);
+    recordingRef.current?.cancel();
+    recordingRef.current = null;
+  }, []);
 
   async function submit() {
     const text = input.trim();
@@ -355,19 +418,41 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
             {busy && <div className="text-xs" style={muted}>Thinking…</div>}
           </div>
 
-          <div className="flex items-end gap-2 border-t p-3" style={{ borderColor: 'var(--border)' }}>
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-              placeholder="Ask anything…  (Shift+Enter for a new line)"
-              rows={2}
-              className="max-h-32 flex-1 resize-none rounded-lg px-3 py-2 text-sm outline-none"
-              style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
-            />
-            <button onClick={submit} disabled={busy || !input.trim()} className="flex size-9 items-center justify-center rounded-lg text-white transition disabled:opacity-40" style={{ background: '#ff4d2e' }}>
-              <Send size={16} />
-            </button>
+          <div className="border-t p-3" style={{ borderColor: 'var(--border)' }}>
+            {(recording || transcribing || voiceError) && (
+              <div className="mb-2 flex items-center gap-2 text-xs" style={{ color: voiceError ? '#ff9a82' : 'var(--muted-foreground)' }}>
+                {recording && <span className="size-2 shrink-0 animate-pulse rounded-full" style={{ background: '#ff4d2e' }} />}
+                <span>{voiceError ?? (recording ? 'Listening… tap the square to stop.' : 'Transcribing…')}</span>
+              </div>
+            )}
+            <div className="flex items-end gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+                placeholder="Ask anything…  (Shift+Enter for a new line)"
+                rows={2}
+                className="max-h-32 flex-1 resize-none rounded-lg px-3 py-2 text-sm outline-none"
+                style={{ background: 'var(--surface-2)', border: '1px solid var(--border)', color: 'var(--foreground)' }}
+              />
+              <button
+                onClick={() => { void (recording ? stopRecording() : beginRecording()); }}
+                disabled={busy || transcribing}
+                aria-label={recording ? 'Stop recording' : 'Record a voice message'}
+                title={recording ? 'Stop recording' : 'Speak your message'}
+                className="flex size-9 items-center justify-center rounded-lg transition disabled:opacity-40"
+                style={{
+                  background: recording ? '#ff4d2e' : 'var(--surface-2)',
+                  border: '1px solid var(--border)',
+                  color: recording ? '#fff' : 'var(--muted-foreground)',
+                }}
+              >
+                {recording ? <Square size={14} /> : <Mic size={16} />}
+              </button>
+              <button onClick={submit} disabled={busy || !input.trim()} className="flex size-9 items-center justify-center rounded-lg text-white transition disabled:opacity-40" style={{ background: '#ff4d2e' }}>
+                <Send size={16} />
+              </button>
+            </div>
           </div>
         </>
       )}
