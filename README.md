@@ -243,7 +243,7 @@ Use these accounts for the scripted demo:
 
 These are real Supabase Auth accounts. Sessions persist, so refreshing keeps the user signed in. New signups create an `auth.users` row, and a Postgres trigger (`handle_new_user`) inserts the matching `USER` profile row.
 
-**Students only.** Both signup forms (attendee and organiser) require a **university** and a **matriculation number** — one letter, 8 digits, one letter (e.g. `A12345678B`) — validated identically in the form, in `validate_signup_identity`, and by a DB CHECK. Accounts predating this rule were set back to `onboarded = false` by [20260721_students_only.sql](backend/migrations/20260721_students_only.sql), so they keep all their events and bookings but are routed to **Finish setting up** on next login to supply the missing details.
+**Students only.** Both signup forms (attendee and organiser) require a **university** and a **matriculation number** — one letter, 8 digits, one letter (e.g. `A12345678B`) — validated identically in the form, in `validate_signup_identity`, and by a DB CHECK. Accounts predating this rule are **backfilled** by [20260721_students_only.sql](backend/migrations/20260721_students_only.sql) with a generated matriculation number (`Z00000001Z`, `Z00000002Z`, … drawn from a sequence so they're unique by construction) and carry on uninterrupted — nothing is deleted and nobody is bounced back through setup. Rows with no `university` (attendees who previously chose "I'm not enrolled") default to **SMU**, which they can correct once from Settings — so no existing account is interrupted. The column stays nullable because Google OAuth legitimately creates a shell `USER` row with no matriculation number before the person reaches *Finish setting up*.
 
 ## Full demo runbook
 

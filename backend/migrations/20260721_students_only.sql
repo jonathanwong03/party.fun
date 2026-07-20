@@ -8,13 +8,28 @@
 -- existed here, but only on the `memberType = 'student'` branch; this makes it
 -- universal and deletes the 9-digit staff-ID branch.
 --
--- EXISTING ROWS ARE NOT DELETED. Accounts that can't satisfy the new rule (old
--- professor staff IDs, attendees who never supplied one) are flipped to
--- onboarded = false, which the app already routes to FinishSignup — so they keep
--- every event, booking and ticket and simply complete their profile on next login.
+-- EXISTING ROWS ARE NOT DELETED AND NOT INTERRUPTED. Accounts without a usable
+-- matriculation number (old professor staff IDs, attendees who never supplied one)
+-- are BACKFILLED with a generated one, and accounts with no university default to
+-- SMU — so every existing account stays onboarded and nobody is bounced back through
+-- setup. All events, bookings and tickets are untouched.
+--
+-- The column stays NULLABLE on purpose: the Google OAuth flow inserts a shell USER
+-- row via handle_new_user BEFORE the person picks anything, so a NULL matriculation
+-- number is a legitimate transient state on every OAuth signup.
+--
+-- Safe to run more than once.
 
 -- ── 1. Rename the column and its unique index ────────────────────────────────
-ALTER TABLE public."USER" RENAME COLUMN "orgId" TO "matricNumber";
+DO $do$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'USER' AND column_name = 'orgId'
+  ) THEN
+    ALTER TABLE public."USER" RENAME COLUMN "orgId" TO "matricNumber";
+  END IF;
+END $do$;
 ALTER INDEX IF EXISTS user_org_id_unique RENAME TO user_matric_unique;
 
 -- One matriculation number = exactly one account (a student cannot hold both an
@@ -34,13 +49,26 @@ UPDATE public."USER"
  WHERE "matricNumber" IS NOT NULL
    AND "matricNumber" !~ '^[A-Za-z][0-9]{8}[A-Za-z]$';
 
--- Anyone now missing a university or matriculation number must complete their
--- profile. onboarded = false is the existing gate (App.tsx / AuthCallback.tsx route
--- these users to FinishSignup and they cannot reach the app until it is true).
+-- Generated numbers are drawn from a sequence so they are unique by construction —
+-- the global unique index below would reject a collision, and random generation can
+-- collide. The Z…Z shape (Z00000001Z, Z00000002Z, …) marks them as system-generated:
+--   select * from public."USER" where "matricNumber" ~ '^Z[0-9]{8}Z$';
+CREATE SEQUENCE IF NOT EXISTS public.user_backfill_matric_seq;
+
+-- Backfill rather than gate: these accounts carry on uninterrupted.
 UPDATE public."USER"
-   SET onboarded = false
- WHERE "matricNumber" IS NULL
-    OR university IS NULL;
+   SET "matricNumber" = 'Z' || lpad(nextval('public.user_backfill_matric_seq')::text, 8, '0') || 'Z'
+ WHERE "matricNumber" IS NULL;
+
+-- user_student_membership_check below requires a university for every onboarded
+-- account. Rather than send these accounts back through FinishSignup, default them
+-- to SMU so nobody is interrupted. NOTE this is a guess: it only affects attendees
+-- who previously chose "I'm not enrolled into a university", and it decides which
+-- university-restricted events they can join — they can correct it once from
+-- Settings (the one-time university change).
+UPDATE public."USER"
+   SET university = 'SMU'
+ WHERE university IS NULL;
 
 -- ── 4. Constraints ───────────────────────────────────────────────────────────
 ALTER TABLE public."USER" DROP CONSTRAINT IF EXISTS user_org_id_format_check;
