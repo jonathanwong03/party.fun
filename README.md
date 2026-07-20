@@ -243,6 +243,8 @@ Use these accounts for the scripted demo:
 
 These are real Supabase Auth accounts. Sessions persist, so refreshing keeps the user signed in. New signups create an `auth.users` row, and a Postgres trigger (`handle_new_user`) inserts the matching `USER` profile row.
 
+**Students only.** Both signup forms (attendee and organiser) require a **university** and a **matriculation number** — one letter, 8 digits, one letter (e.g. `A12345678B`) — validated identically in the form, in `validate_signup_identity`, and by a DB CHECK. Accounts predating this rule were set back to `onboarded = false` by [20260721_students_only.sql](backend/migrations/20260721_students_only.sql), so they keep all their events and bookings but are routed to **Finish setting up** on next login to supply the missing details.
+
 ## Full demo runbook
 
 This section is the recommended end-to-end walkthrough for a live demo. It assumes **every** migration in `backend/migrations/` has been applied, in filename order — several steps below depend on ones later than `20260623_coorganisers.sql` (e.g. §13 needs `20260625_university_gating_and_capacity.sql`, and the Analytics calculator needs `20260707_event_calculator.sql`).
@@ -582,7 +584,7 @@ Admin accounts are seeded with `node backend/scripts/seedAdmins.js`.
 
 Data lives in Supabase Postgres, with RLS enabled on every table. The **core** tables:
 
-- `USER`: profile rows, keyed to `auth.users.id` (role `user`, `organiser` or `admin`)
+- `USER`: profile rows, keyed to `auth.users.id` (role `user`, `organiser` or `admin`). party.fun is for **current university students only**, so every onboarded account carries a `university` and a globally unique `matricNumber` (`^[A-Za-z][0-9]{8}[A-Za-z]$`) — enforced by `user_matric_format_check` and `user_student_membership_check`. One matriculation number maps to exactly one account, so a student cannot hold both an attendee and an organiser account.
 - `EVENT`: event identity, schedule, venue + coordinates, and lifecycle status
 - `EVENT_SETTINGS`: hype threshold, maximum capacity, deadline, and the pricing model
 - `PRICE_STATUSES`: Early Birds and Greenlit prices and capacities

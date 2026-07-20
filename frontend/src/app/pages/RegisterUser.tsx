@@ -9,11 +9,8 @@ import { required, emailError, confirmError } from '../components/validation';
 import { registerRequest, uploadAvatar, sendWelcomeEmailRequest } from '../api';
 import { supabase } from '../supabase';
 import { PRESET_AVATARS } from '../components/media';
-import { UNIVERSITIES, universityLabel } from '../components/universities';
+import { UNIVERSITIES, universityLabel, isValidMatric, MATRIC_HINT } from '../components/universities';
 import type { Route } from '../components/types';
-
-// Sentinel for the "I'm not enrolled into a university" option (stored as NULL).
-const NOT_ENROLLED = 'none';
 
 export function RegisterUser({ go }: { go: (r: Route) => void }) {
   const [username, setUsername] = useState('');
@@ -23,6 +20,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
   const [telegram, setTelegram] = useState('');
   const [phone, setPhone] = useState('');
   const [university, setUniversity] = useState('');
+  const [matricNumber, setMatricNumber] = useState('');
   const [attempted, setAttempted] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -51,7 +49,8 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
     email: emailError(email),
     password: required(password),
     confirm: confirmError(password, confirm),
-    university: university ? null : 'Please choose an option.',
+    university: university ? null : 'Please choose your university.',
+    matricNumber: isValidMatric(matricNumber) ? null : 'Enter a valid matriculation number.',
   };
   const hasErr = Object.values(errs).some(Boolean);
 
@@ -80,7 +79,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           try {
             // A preset avatar is a stable URL — pass it through signup metadata so the
             // DB trigger stores it (no session needed). An uploaded file is handled below.
-            await registerRequest({ username, email, password, role: 'user', avatarUrl: presetUrl ?? undefined, telegram: telegram || undefined, phone: phone || undefined, university: university === NOT_ENROLLED ? undefined : university });
+            await registerRequest({ username, email, password, role: 'user', avatarUrl: presetUrl ?? undefined, telegram: telegram || undefined, phone: phone || undefined, university, matricNumber: matricNumber.trim() });
             // Upload the optional avatar only if signup produced a session (no email
             // confirmation). Otherwise it can be set later in Settings.
             if (avatarFile) {
@@ -157,11 +156,22 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
             </SelectTrigger>
             <SelectContent>
               {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
-              <SelectItem value={NOT_ENROLLED}>I'm not enrolled into a university</SelectItem>
             </SelectContent>
           </Select>
           {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.university}</p>}
           <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Used to access events restricted to a university's members. You can change this once later.</p>
+        </div>
+
+        <div>
+          <Field
+            label="Matriculation number"
+            autoComplete="off"
+            placeholder="e.g. A12345678B"
+            value={matricNumber}
+            onChange={(e) => setMatricNumber(e.target.value.toUpperCase())}
+            error={attempted ? errs.matricNumber : null}
+          />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{MATRIC_HINT}. party.fun is for current university students, and your matriculation number is unique to your account.</p>
         </div>
 
         {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}

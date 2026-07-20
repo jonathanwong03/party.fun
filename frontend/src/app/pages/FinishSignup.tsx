@@ -5,23 +5,23 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { AuthShell } from '../components/AuthShell';
-import { fetchCurrentUser, completeOauthSignupRequest, sendWelcomeEmailRequest, type AuthUser, type MemberType } from '../api';
-import { memberIdError } from './RegisterOrganiser';
-import { UNIVERSITIES, universityLabel } from '../components/universities';
+import { fetchCurrentUser, completeOauthSignupRequest, sendWelcomeEmailRequest, type AuthUser } from '../api';
+import { matricError } from './RegisterOrganiser';
+import { UNIVERSITIES, universityLabel, MATRIC_HINT } from '../components/universities';
 import type { Role, Route } from '../components/types';
 
-// Sentinel for the "I'm not enrolled into a university" option (stored as NULL).
-const NOT_ENROLLED = 'none';
-
-// Shown to a brand-new Google user: pick a role + confirm a username, exactly once.
-// Organisers must also supply their university + matriculation/staff ID.
+// Two audiences, one screen:
+//   * a brand-new Google user picking a role + username for the first time, and
+//   * an EXISTING account that predates the students-only rule — the 20260721
+//     migration set onboarded = false on those, and App.tsx routes them here until
+//     they supply a university + matriculation number.
+// Every account is a current student, so both fields are required for both roles.
 export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin: (user: AuthUser) => void }) {
   const [ready, setReady] = useState(false);
   const [role, setRole] = useState<Role>('user');
   const [username, setUsername] = useState('');
   const [university, setUniversity] = useState('');
-  const [memberType, setMemberType] = useState<MemberType | ''>('');
-  const [orgId, setOrgId] = useState('');
+  const [matricNumber, setMatricNumber] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,25 +37,16 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
 
   if (!ready) return null;
 
-  const idLabel = memberType === 'student' ? 'Matriculation ID' : memberType ? 'Staff ID' : 'Matriculation / Staff ID';
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!username.trim()) { setError('Please choose a username.'); return; }
-    if (role === 'organiser') {
-      if (!university) { setError('Please choose your university.'); return; }
-      if (!memberType) { setError('Please choose Student, Instructor or Professor.'); return; }
-      const idErr = memberIdError(memberType, orgId);
-      if (idErr) { setError(`${idLabel}: ${idErr}`); return; }
-    } else if (!university) {
-      setError('Please choose your university (or "I\'m not enrolled").'); return;
-    }
+    if (!university) { setError('Please choose your university.'); return; }
+    const idErr = matricError(matricNumber);
+    if (idErr) { setError(`Matriculation number: ${idErr}`); return; }
     setSubmitting(true);
     try {
-      const org = role === 'organiser' ? { university, memberType: memberType as MemberType, orgId: orgId.trim() } : undefined;
-      const userUniversity = role === 'user' ? (university === NOT_ENROLLED ? null : university) : undefined;
-      const user = await completeOauthSignupRequest(role, username, org, userUniversity);
+      const user = await completeOauthSignupRequest(role, username, university, matricNumber.trim());
       try { await sendWelcomeEmailRequest(); } catch { /* non-blocking */ }
       onLogin(user);
     } catch (err) {
@@ -77,50 +68,27 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
           <Input value={username} autoComplete="off" placeholder="Choose a username" onChange={(e) => setUsername(e.target.value)} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }} />
         </div>
 
-        {role === 'user' && (
-          <div>
-            <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Which university are you from?</Label>
-            <Select value={university} onValueChange={setUniversity}>
-              <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select your university" /></SelectTrigger>
-              <SelectContent>
-                {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
-                <SelectItem value={NOT_ENROLLED}>I'm not enrolled into a university</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Used to access events restricted to a university's members. You can change this once later.</p>
-          </div>
-        )}
+        <div>
+          <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Which university are you from?</Label>
+          <Select value={university} onValueChange={setUniversity}>
+            <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select your university" /></SelectTrigger>
+            <SelectContent>
+              {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
 
-        {role === 'organiser' && (
-          <>
-            <div>
-              <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>University</Label>
-              <Select value={university} onValueChange={setUniversity}>
-                <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select your university" /></SelectTrigger>
-                <SelectContent>
-                  {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>I am a</Label>
-                <Select value={memberType} onValueChange={(v) => setMemberType(v as MemberType)}>
-                  <SelectTrigger style={{ background: 'var(--surface-2)' }}><SelectValue placeholder="Select role" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="student">Student</SelectItem>
-                    <SelectItem value="instructor">Instructor</SelectItem>
-                    <SelectItem value="professor">Professor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{idLabel}</Label>
-                <Input value={orgId} autoComplete="off" placeholder={memberType === 'student' ? 'e.g. A12345678B' : 'e.g. 912345678'} onChange={(e) => setOrgId(e.target.value)} style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }} />
-              </div>
-            </div>
-          </>
-        )}
+        <div>
+          <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Matriculation number</Label>
+          <Input
+            value={matricNumber}
+            autoComplete="off"
+            placeholder="e.g. A12345678B"
+            onChange={(e) => setMatricNumber(e.target.value.toUpperCase())}
+            style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
+          />
+          <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{MATRIC_HINT}. party.fun is for current university students.</p>
+        </div>
 
         {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
 

@@ -74,7 +74,6 @@ export type MutationResponse = {
   reference?: string;
 };
 
-export type MemberType = 'student' | 'instructor' | 'professor';
 export type University = 'NUS' | 'NTU' | 'SMU' | 'SUSS' | 'SUTD' | 'SIM' | 'SIT';
 
 export type AuthUser = {
@@ -86,8 +85,8 @@ export type AuthUser = {
   telegram?: string | null;
   phone?: string | null;
   university?: string | null;
-  memberType?: MemberType | null;
-  orgId?: string | null;
+  // Every account is a current student: one letter, 8 digits, one letter.
+  matricNumber?: string | null;
   // True once the user has used their one-time university change in Settings.
   universityChanged?: boolean;
 };
@@ -101,13 +100,11 @@ function signupErrorMessage(code: string | undefined, username?: string): string
       ? `The username ${name} has already been taken. Please choose another username.`
       : "That username has already been taken. Please choose another username.";
   }
-  if (code === "org_id_taken") return "That matriculation / staff ID is already registered.";
+  if (code === "matric_taken") return "That matriculation number is already registered to another account.";
   if (code === "username_required") return "Please choose a username.";
   if (code === "invalid_role") return "Please choose a valid account type.";
   if (code === "invalid_university") return "Please choose your university.";
-  if (code === "invalid_member_type") return "Please choose Student, Instructor or Professor.";
-  if (code === "invalid_matric") return "Matriculation ID must be a letter, 8 digits, then a letter (e.g. A12345678B).";
-  if (code === "invalid_staff_id") return "Staff ID must be exactly 9 digits.";
+  if (code === "invalid_matric") return "Matriculation number must be a letter, 8 digits, then a letter (e.g. A12345678B).";
   if (code === "already_onboarded") return "This account is already set up. Please log in.";
   return "Could not validate those account details.";
 }
@@ -116,16 +113,14 @@ async function validateSignupIdentity(input: {
   username: string;
   role: Role;
   university?: string | null;
-  memberType?: MemberType | null;
-  orgId?: string | null;
+  matricNumber?: string | null;
   currentUserId?: string | null;
 }): Promise<void> {
   const { data, error } = await supabase.rpc("validate_signup_identity", {
     p_username: input.username.trim(),
     p_role: input.role,
     p_university: input.university ?? null,
-    p_member_type: input.memberType ?? null,
-    p_org_id: input.orgId?.trim() ?? null,
+    p_matric_number: input.matricNumber?.trim() ?? null,
     p_current_user_id: input.currentUserId ?? null,
   });
   if (error) throw new Error(error.message);
@@ -288,7 +283,7 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
   if (!session) return null;
   const { data: profile, error } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, memberType, orgId, universityChanged")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, onboarded, university, matricNumber, universityChanged")
     .eq("id", session.user.id)
     .single();
   if (error || !profile) return null;
@@ -301,8 +296,7 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
     telegram: profile.socialLink,
     phone: profile.contact,
     university: profile.university,
-    memberType: profile.memberType,
-    orgId: profile.orgId,
+    matricNumber: profile.matricNumber,
     universityChanged: profile.universityChanged,
     onboarded: profile.onboarded,
   };
@@ -313,8 +307,8 @@ export async function fetchCurrentUser(): Promise<(AuthUser & { onboarded: boole
 export async function completeOauthSignupRequest(
   role: Role,
   username: string,
-  org?: { university: string; memberType: MemberType; orgId: string },
-  userUniversity?: string | null,
+  university: string,
+  matricNumber: string,
 ): Promise<AuthUser> {
   const {
     data: { session },
@@ -322,17 +316,15 @@ export async function completeOauthSignupRequest(
   await validateSignupIdentity({
     role,
     username,
-    university: org?.university ?? userUniversity ?? null,
-    memberType: org?.memberType ?? null,
-    orgId: org?.orgId ?? null,
+    university,
+    matricNumber,
     currentUserId: session?.user.id ?? null,
   });
   const { data, error } = await supabase.rpc("complete_oauth_signup", {
     p_role: role,
     p_username: username.trim(),
-    p_university: org?.university ?? userUniversity ?? null,
-    p_member_type: org?.memberType ?? null,
-    p_org_id: org?.orgId?.trim() ?? null,
+    p_university: university,
+    p_matric_number: matricNumber.trim(),
   });
   if (error) throw new Error(error.message);
   const result = data as { status?: string; error?: string };
@@ -369,7 +361,7 @@ export async function loginRequest(
 
   const { data: profile, error: profileError } = await supabase
     .from("USER")
-    .select("id, username, email, role, avatarUrl, socialLink, contact, university, memberType, orgId, universityChanged")
+    .select("id, username, email, role, avatarUrl, socialLink, contact, university, matricNumber, universityChanged")
     .eq("id", data.user.id)
     .single();
 
@@ -384,8 +376,7 @@ export async function loginRequest(
     telegram: profile.socialLink,
     phone: profile.contact,
     university: profile.university,
-    memberType: profile.memberType,
-    orgId: profile.orgId,
+    matricNumber: profile.matricNumber,
     universityChanged: profile.universityChanged,
   };
 }
@@ -398,18 +389,16 @@ export async function registerRequest(input: {
   avatarUrl?: string;
   telegram?: string;
   phone?: string;
-  university?: string;
-  memberType?: MemberType;
-  orgId?: string;
+  university: string;
+  matricNumber: string;
 }): Promise<AuthUser> {
   const username = input.username.trim();
-  const orgId = input.orgId?.trim() ?? null;
+  const matricNumber = input.matricNumber.trim();
   await validateSignupIdentity({
     username,
     role: input.role,
-    university: input.university ?? null,
-    memberType: input.memberType ?? null,
-    orgId,
+    university: input.university,
+    matricNumber,
   });
   const { data, error } = await supabase.auth.signUp({
     email: input.email,
@@ -422,16 +411,15 @@ export async function registerRequest(input: {
         avatarUrl: input.avatarUrl ?? null,
         telegram: input.telegram ?? null,
         phone: input.phone ?? null,
-        university: input.university ?? null,
-        memberType: input.memberType ?? null,
-        orgId,
+        university: input.university,
+        matricNumber,
       },
     },
   });
   if (error) {
     const lower = String(error.message || "").toLowerCase();
     if (lower.includes("username_taken")) throw new Error(signupErrorMessage("username_taken", username));
-    if (lower.includes("org_id_taken")) throw new Error(signupErrorMessage("org_id_taken"));
+    if (lower.includes("matric_taken")) throw new Error(signupErrorMessage("matric_taken"));
     throw new Error(error.message);
   }
   if (!data.user) throw new Error("Sign up failed — please try again.");
@@ -443,9 +431,8 @@ export async function registerRequest(input: {
     avatarUrl: input.avatarUrl,
     telegram: input.telegram ?? null,
     phone: input.phone ?? null,
-    university: input.university ?? null,
-    memberType: input.memberType ?? null,
-    orgId,
+    university: input.university,
+    matricNumber,
   };
 }
 
