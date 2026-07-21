@@ -1,20 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Star } from 'lucide-react';
 import type { Route } from '../components/types';
-import { fetchReviews, fetchReviewableEvents, submitReview, type Review as ReviewItem, type ReviewableEvent } from '../api';
-
-const GOLD = '#ffcb3c';
-
-// Read-only star row for a submitted review.
-function StarDisplay({ rating }: { rating: number }) {
-  return (
-    <div className="flex items-center gap-0.5">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <Star key={n} size={16} color={n <= rating ? GOLD : 'var(--muted-foreground)'} fill={n <= rating ? GOLD : 'none'} />
-      ))}
-    </div>
-  );
-}
+import { fetchReviewableEvents, submitReview, type ReviewableEvent } from '../api';
+import { GOLD } from '../components/StarDisplay';
 
 // Interactive 1-5 star picker.
 function StarPicker({ value, onChange }: { value: number; onChange: (v: number) => void }) {
@@ -87,7 +75,6 @@ function ReviewForm({ event, onDone }: { event: ReviewableEvent; onDone: () => v
 }
 
 export function Review({ go }: { go: (r: Route) => void }) {
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
   const [reviewable, setReviewable] = useState<ReviewableEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -95,8 +82,7 @@ export function Review({ go }: { go: (r: Route) => void }) {
   const load = async () => {
     setLoading(true); setError(null);
     try {
-      const [r, e] = await Promise.all([fetchReviews(), fetchReviewableEvents()]);
-      setReviews(r.reviews ?? []);
+      const e = await fetchReviewableEvents();
       setReviewable(e.events ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reviews.');
@@ -114,49 +100,25 @@ export function Review({ go }: { go: (r: Route) => void }) {
       </button>
 
       <h1 style={{ color: 'var(--foreground)', fontWeight: 800, fontSize: 28, letterSpacing: '-0.02em' }}>Reviews</h1>
-      <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>Rate events you attended and see what other students said.</p>
+      <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>Rate the events you attended. Your review appears on the events page for other students to see.</p>
 
       {loading ? (
         <p className="mt-8 text-sm" style={{ color: 'var(--muted-foreground)' }}>Loading…</p>
       ) : error ? (
         <p className="mt-8 text-sm" style={{ color: '#ff9a82' }}>{error}</p>
+      ) : reviewable.length === 0 ? (
+        <div className="mt-8 rounded-2xl border p-6 text-center text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--muted-foreground)' }}>
+          Nothing to review right now. Once an event you joined has finished, it'll show up here.
+        </div>
       ) : (
-        <>
-          {reviewable.length > 0 && (
-            <section className="mt-8">
-              <h2 className="mb-3" style={{ fontWeight: 700, fontSize: 18 }}>Events you can review</h2>
-              <div className="space-y-3">
-                {reviewable.map((e) => (
-                  <ReviewForm key={e.id} event={e} onDone={load} />
-                ))}
-              </div>
-            </section>
-          )}
-
-          <section className="mt-8">
-            <h2 className="mb-3" style={{ fontWeight: 700, fontSize: 18 }}>All reviews</h2>
-            {reviews.length === 0 ? (
-              <div className="rounded-2xl border p-6 text-center text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--muted-foreground)' }}>
-                No reviews yet. Once you attend an event, you'll be able to leave the first one.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {reviews.map((r) => (
-                  <div key={r.id} className="rounded-2xl border p-5" style={{ borderColor: 'var(--border)', background: 'var(--surface)' }}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="truncate" style={{ fontWeight: 700 }}>{r.eventTitle}</div>
-                        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>by {r.username}</div>
-                      </div>
-                      <StarDisplay rating={r.rating} />
-                    </div>
-                    {r.body && <p className="mt-3 text-sm" style={{ color: 'var(--foreground)', lineHeight: 1.6 }}>{r.body}</p>}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
-        </>
+        <section className="mt-8">
+          <h2 className="mb-3" style={{ fontWeight: 700, fontSize: 18 }}>Events you can review</h2>
+          <div className="space-y-3">
+            {reviewable.map((e) => (
+              <ReviewForm key={e.id} event={e} onDone={load} />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

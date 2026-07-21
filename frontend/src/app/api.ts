@@ -820,7 +820,7 @@ export type ChatReply = { available: boolean; status?: ChatStatus; reply?: strin
 export type ActionResult = { status?: string; message?: string };
 
 // ── Reviews ────────────────────────────────────────────────────────────────
-export type Review = { id: number; eventId: string; eventTitle: string; username: string; rating: number; body: string | null; createdAt: string };
+export type Review = { id: number; eventId: string; eventTitle: string; username: string; avatarUrl: string | null; university: string | null; rating: number; body: string | null; createdAt: string };
 export type ReviewableEvent = { id: string; title: string; startDate?: string | null; endDate?: string | null; imageUrl?: string | null };
 
 export function fetchReviews(): Promise<{ reviews: Review[] }> {

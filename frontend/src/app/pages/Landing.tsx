@@ -5,7 +5,7 @@ import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { eventBadgeKey, type EventItem, type Route } from '../components/types';
 import { UNIVERSITIES, universityLabel } from '../components/universities';
-import { fetchEventRecommendations, fetchSemanticEventIds, type EventRecommendation } from '../api';
+import { fetchEventRecommendations, fetchReviews, fetchSemanticEventIds, type EventRecommendation, type Review } from '../api';
 import { TestimonialsCarousel } from '../components/TestimonialsCarousel';
 
 
@@ -40,6 +40,17 @@ export function Landing({
     }, 300);
     return () => { cancelled = true; clearTimeout(t); };
   }, [q]);
+
+  // Real reviews for the testimonials carousel. Public, so guests get them too. Failure is
+  // non-fatal: the carousel simply doesn't render — it must never block the events feed.
+  const [reviews, setReviews] = useState<Review[]>([]);
+  useEffect(() => {
+    let ignore = false;
+    fetchReviews()
+      .then((r) => { if (!ignore) setReviews(r.reviews ?? []); })
+      .catch(() => { if (!ignore) setReviews([]); });
+    return () => { ignore = true; };
+  }, []);
 
   // On the DEPLOYED free-tier backend, the first request after idle can take ~30s (Render
   // cold start). After a few seconds of loading, reassure the visitor. Production only —
@@ -200,7 +211,7 @@ export function Landing({
       )}
 
       {/* Testimonials */}
-      <TestimonialsCarousel />
+      <TestimonialsCarousel reviews={reviews} />
     </div>
   );
 }

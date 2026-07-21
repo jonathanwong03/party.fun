@@ -1,31 +1,48 @@
 import { useEffect, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
+import type { Review } from '../api';
+import { StarDisplay } from './StarDisplay';
 
 const ACCENT = '#ff4d2e';
 
-// Fictional party.fun testimonials. Faces are stable portrait URLs (randomuser.me).
-const TESTIMONIALS = [
-  { name: 'James Seng', role: 'SMU · Year 3', quote: 'I found my whole friend group through party.fun. Pledging early meant the event actually happened — and I got the cheapest tickets.', img: 'https://randomuser.me/api/portraits/men/32.jpg' },
-  { name: 'Priya Menon', role: 'NUS · Year 2', quote: 'The recommendations are scarily good. I said I was into live music and it lined up three gigs I would never have found otherwise.', img: 'https://randomuser.me/api/portraits/women/44.jpg' },
-  { name: 'Marcus Tan', role: 'SUSS · Year 2', quote: 'As an organiser, seeing real demand before committing a cent changed everything. No more empty venues or out-of-pocket losses.', img: 'https://randomuser.me/api/portraits/men/76.jpg' },
-  { name: 'Sofia Reyes', role: 'NTU · Year 1', quote: 'Refunds went straight back to my wallet when an event fell through. It just works — I never worry about losing my money.', img: 'https://randomuser.me/api/portraits/women/68.jpg' },
-  { name: 'Daniel Ong', role: 'NUS · Year 4', quote: 'Inviting co-organisers and checking people in with QR codes made our fundraiser run itself. Highly recommend for any campus club.', img: 'https://randomuser.me/api/portraits/men/12.jpg' },
-];
+// Avatar is optional — OAuth signups and anyone who never set one have avatarUrl = null,
+// so fall back to the first letter of their username.
+function Avatar({ url, name }: { url: string | null; name: string }) {
+  if (url) {
+    return <img src={url} alt={name} className="mx-auto mb-4 size-20 rounded-full object-cover" />;
+  }
+  return (
+    <div
+      className="mx-auto mb-4 grid size-20 place-items-center rounded-full"
+      style={{ background: 'var(--border)', color: 'var(--muted-foreground)', fontWeight: 700, fontSize: 26 }}
+      aria-label={name}
+    >
+      {(name || '?').charAt(0).toUpperCase()}
+    </div>
+  );
+}
 
-export function TestimonialsCarousel() {
+// Real user reviews, newest first (the backend returns at most 20). Wraps back to the
+// first after the last, so the loop length follows however many reviews exist.
+export function TestimonialsCarousel({ reviews }: { reviews: Review[] }) {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
-  const n = TESTIMONIALS.length;
-  const next = () => setI((c) => (c + 1) % n);
-  const prev = () => setI((c) => (c - 1 + n) % n);
+  const n = reviews.length;
+
+  // Guard the index: a shrinking list (or a refetch) must not leave it out of range.
+  useEffect(() => { setI((c) => (n === 0 ? 0 : c % n)); }, [n]);
 
   useEffect(() => {
-    if (paused) return undefined;
+    if (paused || n <= 1) return undefined;
     const t = setInterval(() => setI((c) => (c + 1) % n), 4000);
     return () => clearInterval(t);
   }, [n, paused]);
 
-  const t = TESTIMONIALS[i];
+  if (n === 0) return null;
+
+  const next = () => setI((c) => (c + 1) % n);
+  const prev = () => setI((c) => (c - 1 + n) % n);
+  const r = reviews[Math.min(i, n - 1)];
   const arrowBtn = 'grid size-9 place-items-center rounded-full border transition hover:bg-white/5';
 
   return (
@@ -43,16 +60,21 @@ export function TestimonialsCarousel() {
         </button>
 
         <div className="min-h-[13rem] flex-1 text-center">
-          <img
-            src={t.img}
-            alt={t.name}
-            className="mx-auto mb-4 size-20 rounded-full object-cover"
-          />
-          <p className="mx-auto max-w-xl text-base" style={{ color: 'var(--foreground)', lineHeight: 1.6 }}>
-            &ldquo;{t.quote}&rdquo;
-          </p>
-          <p className="mt-4" style={{ color: 'var(--foreground)', fontWeight: 700 }}>{t.name}</p>
-          <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{t.role}</p>
+          <Avatar url={r.avatarUrl} name={r.username} />
+
+          {/* A review can be stars-only, in which case there is no quote to show. */}
+          {r.body?.trim() && (
+            <p className="mx-auto max-w-xl text-base" style={{ color: 'var(--foreground)', lineHeight: 1.6 }}>
+              &ldquo;{r.body.trim()}&rdquo;
+            </p>
+          )}
+
+          <div className="mt-4 flex justify-center">
+            <StarDisplay rating={r.rating} size={20} />
+          </div>
+
+          <p className="mt-3" style={{ color: 'var(--foreground)', fontWeight: 700 }}>{r.username}</p>
+          {r.university && <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{r.university}</p>}
         </div>
 
         <button onClick={next} aria-label="Next" className={arrowBtn} style={{ borderColor: 'var(--border)', color: 'var(--muted-foreground)' }}>
@@ -61,11 +83,11 @@ export function TestimonialsCarousel() {
       </div>
 
       <div className="mt-6 flex justify-center gap-2">
-        {TESTIMONIALS.map((_, idx) => (
+        {reviews.map((rev, idx) => (
           <button
-            key={idx}
+            key={rev.id}
             onClick={() => setI(idx)}
-            aria-label={`Go to testimonial ${idx + 1}`}
+            aria-label={`Go to review ${idx + 1}`}
             className="size-2 rounded-full transition"
             style={{ background: idx === i ? ACCENT : 'var(--border)' }}
           />

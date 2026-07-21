@@ -216,6 +216,8 @@ The concepts that matter most (there are ~27 pages in [frontend/src/app/pages/](
 - **Draft event** — an unpublished event saved in the organiser's Drafts tab, resumed and published later via the Create Event form. The AI assistant creates new events as drafts.
 - **Event status** — `early_bird` (open, collecting pledges) → `greenlit` (hit its hype threshold; confirmed) → `completed` (finished, paid out); or `cancelled` (organiser cancelled, or missed threshold by deadline — all pledges refunded).
 
+- **Reviews** (`/review`) — after an event they joined has finished, a student can rate it 1–5 stars and write a short review. The page lists only the events they can still review plus the submission form; submitted reviews surface in the landing page's **"What students say"** carousel (the 20 most recent, newest first, with the reviewer's avatar, text, rating, username and university). The carousel is public, so signed-out guests see it too — `get_reviews` is granted to `anon` and `GET /api/reviews` uses `optionalAuth`.
+
 Other pages worth knowing: **Wallet** (`/wallet` — balance, linked card, top-ups, ledger), **Analytics** (`/analytics` — forecast + profit calculator + AI tips), **Check-in** (`/tickets` — scan a ticket QR), **All Attendees** (`/attendees`), **Pending Invites** (`/pending-invites` — co-organiser invitations), **Manage Events** (`/manage-events` — admin moderation), **Settings** (incl. changing your university), **Profile**, **Checkout**, **Confirmation**, **FAQ**, and the auth set (Google OAuth callback + onboarding, phone-OTP verify, forgot/reset password).
 
 ## Concepts & glossary
