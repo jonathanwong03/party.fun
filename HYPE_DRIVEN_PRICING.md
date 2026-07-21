@@ -1,9 +1,8 @@
-# PRD: Hype-Driven Pricing
+# Hype-Driven Pricing
 
-**Status:** ready-for-agent  
+**Status:** implemented  
 **Feature slug:** hype-driven-pricing  
-**Branch context:** `experiment`  
-**Related docs:** `CONTEXT.md`, `DBTABLES.md`
+**Related docs:** [APP_OVERVIEW.md](APP_OVERVIEW.md#hype-driven-pricing) (as-built behaviour, database columns and lock rules)
 
 ---
 

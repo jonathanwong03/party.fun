@@ -29,9 +29,11 @@ The agent must always reason from the current user's role.
 | User | Can browse, pledge, top up wallet, give away tickets, and view joined events. |
 | Organiser | Can create drafts/events, edit owned events, invite co-organisers, view attendees, and check in tickets. |
 | Co-organiser | Is still an organiser account, but for invited events can only edit, check in tickets, and view attendees. Cannot cancel/delete the owner's event. |
-| Admin | Can moderate/cancel events if admin mode is enabled. |
+| Admin | Moderates only: can edit and cancel/delete **any** event (a reason is mandatory). **Cannot create or host events, and cannot buy tickets.** Admins do not use the All Events discovery page or attendee ticket flows. |
 
 The agent must not assume organiser/admin permissions unless the current role and backend tools confirm them.
+
+Role rules are enforced deterministically by the graph's `role_gate` node, not left to the model: a **user** asking to create/edit/cancel is refused, and an **admin** asking to create is refused.
 
 ## Event Lifecycle
 
@@ -177,6 +179,16 @@ For "cheapest event" or "events I can buy", the agent should use buyable events 
 - Events where the user already has active tickets.
 - Events blocked by university restriction.
 
+## Students Only
+
+party.fun is exclusively for **current university students**.
+
+The agent must know:
+
+- Every account requires a **university** and a **matriculation number** — one letter, 8 digits, one letter (e.g. `A12345678B`).
+- A matriculation number is globally unique and maps to exactly one account, so a student cannot hold both an attendee and an organiser account.
+- There are no instructor, professor, staff or alumni accounts. Organisers are students too — the agent must never suggest otherwise.
+
 ## University Restriction
 
 The agent must know:
@@ -186,6 +198,7 @@ The agent must know:
 - Users can change university only once.
 - Organisers can restrict events to their own university.
 - Restricted events should not be recommended as buyable to ineligible users.
+- Each event carries a `canAttendUniversity` eligibility flag computed for the current viewer; the attendable-event tools exclude events the viewer cannot join, and the pledge RPC enforces it again at purchase time.
 
 ## Ticket Rules
 
@@ -210,19 +223,23 @@ The agent must know:
 - Only the owner can invite or revoke co-organisers.
 - Pending, declined, or revoked invitees have no event-management access.
 
-## Forecasting and Analytics
+## Analytics (profit calculator)
 
-The agent should understand forecast outputs:
+Analytics is a **profit calculator, not a predictor.** The agent must not present it as a forecast of what will happen.
 
-- Projected ticket revenue.
-- Projected tickets sold.
-- Daily sales/revenue.
-- Operational cost estimate.
-- Estimated net.
+The organiser sets hypothetical ticket prices/quantities (respecting the event's hype or tiered model) and an editable list of operational-cost line items. The calculator reports:
 
-The agent must explain forecasts as estimates, not guarantees.
+- Total revenue.
+- Total cost.
+- **Profit = total revenue − total cost.**
 
-The agent should avoid claiming operational costs are charged, deducted, or paid through the app unless the backend explicitly does that. Operational costs are forecasted for planning and analytics.
+The agent must know:
+
+- Calculator prices are **hypothetical** — they never change the live event.
+- State is saved per event (`EVENT_CALCULATOR`); `get_event_forecast` returns these figures.
+- **Operational costs are NOT charged through party.fun.** They are organiser-entered estimates paid elsewhere. The agent must never claim the app deducts them.
+- Completed greenlit events record a ticket-revenue payout to the organiser's wallet; operational costs are not deducted from it.
+- The agent may suggest concrete edits (prices, hype threshold, capacity, dates, description, marketing) to sell more tickets or improve profit.
 
 ## Weather Awareness
 
@@ -253,15 +270,29 @@ Research output should be treated as inspiration, not guaranteed fact.
 The agent should know that emails may be sent for:
 
 - Account creation.
-- Pledge confirmation.
+- Pledge confirmation (and the booking's tickets as a QR PDF).
+- Pledge cancellation / refund.
 - Ticket give-away.
 - Event creation.
+- Event edited (sent to every backer).
 - Event cancellation.
 - Missed hype threshold.
-- Password reset.
 - Greenlit notification.
+- Event completed — the organiser's revenue payout summary.
+- Co-organiser invitation.
+- Password reset.
 
 The agent must not promise email delivery. Email failure does not necessarily mean the underlying domain action failed.
+
+## Retrieval and Memory Awareness
+
+The agent must know what it can retrieve:
+
+- **Hybrid event search** — semantic vector search (Gemini embeddings in pgvector) fused with Postgres full-text keyword search, so both meaning ("gaming" → an arcade/esports night) and exact names/venues match. Powers recommendations, the All Events search bar, and "more like this".
+- **Past-event benchmarks** — retrieval over **completed** events, used only as historical guidance for pricing/capacity/revenue advice, never presented as current availability.
+- **App knowledge** — the agent answers "how does party.fun work" questions from its own knowledge base rather than declining them as out of scope.
+- **User memory** — a per-user store of durable preferences (interests/budget for attendees; venue/theme/pricing preferences for organisers), written via the `remember` tool and injected each turn. It works silently; there is no user-facing memory panel.
+- **Voice input** — the assistant composer has a mic button that transcribes speech. The transcript is dropped into the composer for the user to review and is **never auto-sent**. The agent should be able to explain this if asked.
 
 ## Security and Backend Authority
 
