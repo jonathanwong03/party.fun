@@ -151,17 +151,52 @@ TEST_SUPABASE_ANON_KEY=...           # defaults to SUPABASE_ANON_KEY
 
 > ⚠️ Point these at a **disposable Supabase branch** or a local `supabase start` database — never the production project. The suite creates and deletes auth users and rows.
 
-## Deploying
+## Deploying to the cloud
 
-The reference deployment is **frontend on Vercel**, **backend on Render**, one **Supabase** project. Getting the app working end-to-end means four things beyond pushing code — each has bitten this project:
+The reference deployment is **frontend on Vercel**, **backend on Render**, one **Supabase** project — all three have free tiers. Deploy in this order (the app is two packages in one repo, so each host points at a **subdirectory**).
 
-**1. Apply migrations BEFORE deploying the backend that calls them.** Several `backend/migrations/*` files `DROP`/recreate RPCs and *change their signatures*. If the database is applied but the backend is still the old code (or vice-versa), calls fail with **"Could not find the function public.<name>(…) in the schema cache"**. Order: migrate Supabase first, then deploy the matching backend. Never leave the DB ahead of the code.
+### Step 1 — Supabase (database + auth)
 
-**2. Backend env (Render)** — mirror [backend/.env.example](backend/.env.example). Beyond the Supabase URL/anon key, **`SUPABASE_SERVICE_ROLE_KEY` is required** — card payments (`create_pledge_card`), wallet top-ups (`wallet_topup`), admin moderation, the deadline scheduler and Stripe refunds all run through the service-role client. Without it, wallet pledges work but **card/top-up throw**. Also set `STRIPE_SECRET_KEY`, `RESEND_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_WEATHER_API_KEY`, and `APP_BASE_URL` (the deployed frontend URL, for email links).
+1. Create a project at [supabase.com](https://supabase.com). From **Project Settings → API**, copy the **Project URL**, the **anon/publishable** key, and the **service-role** key (secret).
+2. Apply **every** file in [backend/migrations/](backend/migrations/) **in filename order**, via the Supabase **SQL editor** (paste and run each in turn). Order matters and it is non-negotiable: several migrations `DROP`/recreate RPCs and *change their signatures*, and the backend calls them by name — a database that is behind (or ahead of) the code fails at runtime with **"Could not find the function public.<name>(…) in the schema cache"**. Always migrate Supabase *before* deploying the matching backend.
 
-**3. Frontend env (Vercel)** — all four `VITE_` keys from [frontend/.env.example](frontend/.env.example): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, `VITE_STRIPE_PUBLISHABLE_KEY`.
+### Step 2 — Render (backend)
 
-**4. Two dashboards outside the repo:**
+Create a new **Web Service** from this repo ([render.com](https://render.com) → New → Web Service) and set:
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `backend` |
+| **Build Command** | `npm install` |
+| **Start Command** | `npm start` (runs `node server.js`) |
+
+Render injects `PORT` automatically and the server honours it — no port config needed. Add the environment variables, mirroring [backend/.env.example](backend/.env.example):
+
+- `SUPABASE_URL`, `SUPABASE_ANON_KEY`, and **`SUPABASE_SERVICE_ROLE_KEY` (required in prod)** — card payments (`create_pledge_card`), wallet top-ups (`wallet_topup`), admin moderation, the deadline scheduler and Stripe refunds all run through the service-role client; without it wallet pledges work but **card/top-up throw**.
+- `STRIPE_SECRET_KEY`, `RESEND_API_KEY`, `GEMINI_API_KEY`, `GOOGLE_WEATHER_API_KEY`, and `APP_BASE_URL` (your deployed **frontend** URL, used for links in emails).
+
+Deploy, then copy the service URL Render gives you (e.g. `https://your-backend.onrender.com`) — you need it in Step 3.
+
+### Step 3 — Vercel (frontend)
+
+Import the repo at [vercel.com](https://vercel.com) → New Project, and set:
+
+| Setting | Value |
+|---|---|
+| **Root Directory** | `frontend` |
+| **Framework Preset** | Vite (Build `vite build`, Output `dist`) |
+
+**Point the frontend at your backend.** [frontend/vercel.json](frontend/vercel.json) proxies `/api/*` to a backend URL that is **hardcoded to this project's own Render service**. Edit it and replace that origin with your Step-2 Render URL — otherwise your deployed frontend silently calls the wrong backend:
+
+```json
+{ "source": "/api/:path*", "destination": "https://your-backend.onrender.com/api/:path*" }
+```
+
+Then add the four `VITE_` keys from [frontend/.env.example](frontend/.env.example): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`, `VITE_GOOGLE_MAPS_API_KEY`, `VITE_STRIPE_PUBLISHABLE_KEY`. Deploy.
+
+### Step 4 — Two dashboards outside the repo
+
+These aren't code — miss them and auth/maps break only in production:
 
 - **Supabase → Authentication → URL Configuration** (or Google/Facebook OAuth silently bounces users to `localhost`). Set **Site URL** to the deployed origin (e.g. `https://your-app.vercel.app`) and add `<origin>/auth/callback` to the **Redirect URLs** allow-list (keep `http://localhost:5173/auth/callback` for dev; `https://your-app-*.vercel.app/**` covers preview deploys). Supabase falls back to the Site URL whenever `redirectTo` isn't allow-listed — a localhost Site URL is what makes production OAuth land on localhost even though [frontend/src/app/api.ts](frontend/src/app/api.ts) already sends the correct `window.location.origin/auth/callback`.
 - **Google Cloud → the Maps API key** (or address autocomplete returns *"not authorized … referer: …"*). Add the deployed origin to the key's **HTTP-referrer** allow-list (`https://your-app.vercel.app/*`, plus `https://your-app-*.vercel.app/*` for previews, keep localhost), and enable both **Maps JavaScript API** and **Places API**.
