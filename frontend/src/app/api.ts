@@ -806,6 +806,8 @@ export function saveEventCalculator(eventId: string, state: CalculatorState): Pr
 export type EventCopySuggestions = { available: boolean; names?: string[]; descriptions?: string[] };
 export type RevenueTip = { title: string; detail: string; impact: 'high' | 'medium' | 'low' };
 export type RevenueTips = { available: boolean; tips?: RevenueTip[] };
+export type OperationalCostTip = { name: string; why: string };
+export type OperationalCostTips = { available: boolean; costs?: OperationalCostTip[] };
 export type EventRecommendation = { eventId: string; title: string; cheapestPrice: number | null; reason: string };
 export type EventRecommendations = { available: boolean; recommendations?: EventRecommendation[] };
 export type AssistantAnswer = { available: boolean; answer?: string };
@@ -859,6 +861,10 @@ export function suggestEventCopy(input: { title?: string; theme?: string; audien
 
 export function fetchRevenueTips(eventId: string): Promise<RevenueTips> {
   return apiFetch<RevenueTips>(`/api/ai/revenue-tips/${eventId}`, { method: 'POST', body: JSON.stringify({}) });
+}
+
+export function fetchOperationalCostTips(eventId: string): Promise<OperationalCostTips> {
+  return apiFetch<OperationalCostTips>(`/api/ai/operational-costs/${eventId}`, { method: 'POST', body: JSON.stringify({}) });
 }
 
 export function fetchEventRecommendations(interests: string): Promise<EventRecommendations> {

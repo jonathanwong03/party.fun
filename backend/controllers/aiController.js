@@ -4,6 +4,7 @@ import { matchEventsHybrid } from '../services/ai/eventSearch.js';
 import { transcribeAudio, isSpeechEnabled } from '../services/ai/speechService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
+import { operationalCostTips as operationalCostTipsTask } from '../services/ai/tasks/operationalCostTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
@@ -76,6 +77,21 @@ export async function revenueTips(req, res) {
     pricingModel: ev.hypeDrivenPricing ? 'hype' : 'tiered',
   };
   res.json(await revenueTipsTask({ event, economics }));
+}
+
+// POST /api/ai/operational-costs/:eventId  (host-scoped)
+// Probable operational cost categories inferred from the event's name + description.
+export async function operationalCostTips(req, res) {
+  if (!guard(req, res)) return;
+  let events;
+  try { events = await listEventsRaw(req.supabase, req.user.id); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
+  const ev = (events ?? []).find((e) => e.id === req.params.eventId);
+  if (!ev) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  if (ev.hostId !== req.user.id && !ev.canEdit && !ev.isCoOrganiser && req.user.role !== 'admin') {
+    return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
+  }
+  res.json(await operationalCostTipsTask({ event: { title: ev.title, description: ev.description } }));
 }
 
 // POST /api/ai/recommend-events
@@ -165,6 +181,7 @@ const AGENT_SYSTEM = () => [
   '',
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
   'EXACT TITLES: always name an event using its EXACT title as returned by the tools — keep the original capitalisation and punctuation (including any trailing "!", "&", etc.). NEVER lowercase, abbreviate, reword, or echo the user\'s own spelling of an event name; e.g. if the tool title is "Supper at Springleaf prata!!!", write it exactly that way even if the user typed "supper at springleaf prata".',
+  'OPERATIONAL COSTS & REVENUE: when an organiser asks what an event might COST to run, or how to earn/increase ticket revenue, first identify the event by name (get_event_details gives its title + description). Do NOT just report the recorded operational total — it is often $0 because the organiser has not filled the calculator in. Instead INFER the event TYPE from its name and description and think it through: suggest the PROBABLE operational cost categories specific to that kind of event (e.g. venue/space hire, food & drinks, AV/production, talent or host fees, marketing/promotion, staffing, décor, printing, permits/insurance) with a one-line why for each, and give concrete ways to sell more tickets for THAT event (pricing, timing, audience targeting, promotion). Always make it specific to the event, not generic. Remind them operational costs are their own estimates and are not charged through party.fun.',
   'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
   'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
   'BINARY (YES/NO) QUESTIONS: when the user asks a yes/no question ("am I an organiser?", "can I still buy tickets for X?", "is X sold out?", "can I attend X?", "have I already bought tickets for X?", "can I edit X?", "is it too late?", "will I be refunded if X is cancelled?"), LEAD with "Yes" or "No", then ONE short line saying why, grounded in tool data. Never answer a yes/no question with a bare noun and never dodge it. A QUESTION about buying ("can I buy tickets after 24 July?") is a question — ANSWER it; do NOT start the purchase flow unless they actually ask to buy.',

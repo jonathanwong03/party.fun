@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   AreaChart, Area, PieChart, Pie, Cell, Legend,
 } from 'recharts';
 import { TrendingUp, Users, DollarSign, CalendarCheck, Ticket, Zap, CheckCircle2, Sparkles, LineChart as LineChartIcon } from 'lucide-react';
-import { fetchAnalytics, fetchHostedSummary, fetchEventCalculator, saveEventCalculator, fetchRevenueTips, type AnalyticsData, type DayCount, type HostedSummary, type CalculatorState, type CalcCost, type RevenueTip } from '../api';
+import { fetchAnalytics, fetchHostedSummary, fetchEventCalculator, saveEventCalculator, fetchRevenueTips, fetchOperationalCostTips, type AnalyticsData, type DayCount, type HostedSummary, type CalculatorState, type CalcCost, type RevenueTip, type OperationalCostTip } from '../api';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import type { EventItem, Role, Route } from '../components/types';
 
@@ -285,8 +285,8 @@ function ProfitCalculator({ events }: { events: EventItem[] }) {
       {loading || !state || !econ ? <Empty text={loading ? 'Loading…' : 'Pick an event.'} />
         : (
           <div className="space-y-5">
-            <CalcTickets state={state} onChange={edit} />
-            <CalcCosts state={state} onChange={edit} />
+            <CalcTickets state={state} onChange={edit} eventId={eventId} />
+            <CalcCosts state={state} onChange={edit} eventId={eventId} />
             <CalcTotals econ={econ} />
             <div className="flex items-center gap-3">
               <button
@@ -299,7 +299,6 @@ function ProfitCalculator({ events }: { events: EventItem[] }) {
               </button>
               <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Your prices, quantities and costs are saved per event.</span>
             </div>
-            <RevenueTipsPanel eventId={eventId} />
           </div>
         )}
     </ChartCard>
@@ -339,22 +338,27 @@ function computeEcon(state: CalculatorState) {
   return { totalRevenue: revenue, totalCost: cost, profit: Math.round((revenue - cost) * 100) / 100, ticketCount, avgTicketPrice: avgPrice };
 }
 
-// AI revenue-boost tips for the selected event (on-demand).
-function RevenueTipsPanel({ eventId }: { eventId: string }) {
-  const [tips, setTips] = useState<RevenueTip[] | null>(null);
+const impactColor = (i: RevenueTip['impact']) => (i === 'high' ? 'var(--status-green)' : i === 'medium' ? 'var(--status-amber)' : 'var(--muted-foreground)');
+
+// Generic on-demand AI suggestion panel: a button that fetches suggestions and REPLACES them on
+// every press (regenerate). The button stays visible; give it a `key` so it resets per event.
+function AiSuggestions<T>({ label, fetcher, renderItem }: {
+  label: string;
+  fetcher: () => Promise<{ available: boolean; items: T[] }>;
+  renderItem: (item: T, i: number) => ReactNode;
+}) {
+  const [items, setItems] = useState<T[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
 
-  useEffect(() => { setTips(null); setError(false); }, [eventId]);
-
-  async function load() {
-    if (!eventId || loading) return;
+  async function run() {
+    if (loading) return;
     setLoading(true);
     setError(false);
     try {
-      const res = await fetchRevenueTips(eventId);
+      const res = await fetcher();
       if (!res.available) setError(true);
-      else setTips(res.tips ?? []);
+      else setItems(res.items); // replace with the fresh set
     } catch {
       setError(true);
     } finally {
@@ -362,39 +366,25 @@ function RevenueTipsPanel({ eventId }: { eventId: string }) {
     }
   }
 
-  const impactColor = (i: RevenueTip['impact']) => (i === 'high' ? '#29e07a' : i === 'medium' ? '#ffcb3c' : '#8a8a99');
-
   return (
-    <div className="mt-4 border-t pt-4" style={{ borderColor: 'var(--border)' }}>
-      {tips === null ? (
+    <div className="mt-3 flex flex-col gap-2">
+      <button
+        onClick={run}
+        disabled={loading}
+        className="inline-flex w-fit items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
+        style={{ background: '#ff4d2e' }}
+      >
+        <Sparkles size={14} /> {loading ? 'Thinking…' : label}
+      </button>
+      {error && <span className="text-xs" style={{ color: '#ff4d2e' }}>Couldn't generate right now — please try again.</span>}
+      {items && items.length > 0 && (
         <div className="flex flex-col gap-2">
-          <button
-            onClick={load}
-            disabled={loading}
-            className="inline-flex w-fit items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-semibold text-white transition disabled:opacity-50"
-            style={{ background: '#ff4d2e' }}
-          >
-            <Sparkles size={14} /> {loading ? 'Thinking…' : error ? 'Try again' : 'Get AI tips'}
-          </button>
-          {error && <span className="text-xs" style={{ color: '#ff4d2e' }}>Couldn't generate tips right now — please try again.</span>}
+          <div className="space-y-2">{items.map((it, i) => renderItem(it, i))}</div>
+          <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>Tap the button again for a fresh set.</span>
         </div>
-      ) : tips.length === 0 ? (
-        <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>No tips available right now.</div>
-      ) : (
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
-            <Sparkles size={14} style={{ color: '#ff4d2e' }} /> AI revenue tips
-          </div>
-          {tips.map((t, i) => (
-            <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm" style={{ fontWeight: 600, color: 'var(--foreground)' }}>{t.title}</span>
-                <span className="text-xs uppercase" style={{ color: impactColor(t.impact), fontWeight: 700 }}>{t.impact}</span>
-              </div>
-              <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{t.detail}</div>
-            </div>
-          ))}
-        </div>
+      )}
+      {items && items.length === 0 && !error && (
+        <span className="text-xs" style={{ color: 'var(--muted-foreground)' }}>No suggestions right now.</span>
       )}
     </div>
   );
@@ -420,10 +410,12 @@ function Stepper({ value, onChange }: { value: number; onChange: (v: number) => 
 }
 
 // A $-prefixed numeric field for prices/costs (allows decimals, non-negative).
-function MoneyField({ value, onChange }: { value: number; onChange: (v: number) => void }) {
+// `dark` forces a black field with white text + white native spinner arrows (via color-scheme:
+// dark) — used for the ticket-revenue price inputs so they read the same in both themes.
+function MoneyField({ value, onChange, dark }: { value: number; onChange: (v: number) => void; dark?: boolean }) {
   return (
-    <div className="inline-flex items-center rounded-lg" style={{ background: 'var(--surface)', border: '1px solid var(--border)' }}>
-      <span className="pl-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>$</span>
+    <div className="inline-flex items-center rounded-lg" style={{ background: dark ? '#000000' : 'var(--surface)', border: dark ? '1px solid rgba(255,255,255,0.18)' : '1px solid var(--border)' }}>
+      <span className="pl-2 text-sm" style={{ color: dark ? 'rgba(255,255,255,0.7)' : 'var(--muted-foreground)' }}>$</span>
       <input
         type="number"
         min={0}
@@ -431,7 +423,7 @@ function MoneyField({ value, onChange }: { value: number; onChange: (v: number) 
         value={value}
         onChange={(e) => onChange(Math.max(0, Number(e.target.value) || 0))}
         className="w-24 rounded-lg px-1.5 py-1.5 text-sm"
-        style={{ background: 'transparent', color: 'var(--foreground)' }}
+        style={{ background: 'transparent', color: dark ? '#ffffff' : 'var(--foreground)', colorScheme: dark ? 'dark' : undefined }}
       />
     </div>
   );
@@ -447,13 +439,35 @@ function CalcRow({ label, children, right }: { label: React.ReactNode; children?
   );
 }
 
+// A revenue-tip card (title + impact + detail).
+function RevenueTipCard(t: RevenueTip, i: number): ReactNode {
+  return (
+    <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-sm" style={{ fontWeight: 600, color: 'var(--foreground)' }}>{t.title}</span>
+        <span className="text-xs uppercase" style={{ color: impactColor(t.impact), fontWeight: 700 }}>{t.impact}</span>
+      </div>
+      <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{t.detail}</div>
+    </div>
+  );
+}
+
 // Ticket revenue rows — tiered (early-bird/greenlit) or a hype bonding curve.
-function CalcTickets({ state, onChange }: { state: CalculatorState; onChange: (s: CalculatorState) => void }) {
+function CalcTickets({ state, onChange, eventId }: { state: CalculatorState; onChange: (s: CalculatorState) => void; eventId: string }) {
   const t = state.tickets;
   const header = (
     <div className="mb-1 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--muted-foreground)' }}>
       <Ticket size={14} style={{ color: '#ff4d2e' }} /> Ticket revenue
     </div>
+  );
+  // On-demand AI tips to sell more tickets — sits below the ticket rows and regenerates on re-press.
+  const revenueTipsButton = (
+    <AiSuggestions<RevenueTip>
+      key={eventId}
+      label="Get AI tips to increase revenue"
+      fetcher={async () => { const r = await fetchRevenueTips(eventId); return { available: r.available, items: r.tips ?? [] }; }}
+      renderItem={RevenueTipCard}
+    />
   );
 
   if (t.model === 'hype') {
@@ -462,14 +476,15 @@ function CalcTickets({ state, onChange }: { state: CalculatorState; onChange: (s
       <div>
         {header}
         <div className="rounded-xl px-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <CalcRow label="Base price"><MoneyField value={t.basePrice} onChange={(v) => setHype({ basePrice: v })} /></CalcRow>
-          <CalcRow label="Max price"><MoneyField value={t.maxPrice} onChange={(v) => setHype({ maxPrice: v })} /></CalcRow>
+          <CalcRow label="Base price"><MoneyField value={t.basePrice} onChange={(v) => setHype({ basePrice: v })} dark /></CalcRow>
+          <CalcRow label="Max price"><MoneyField value={t.maxPrice} onChange={(v) => setHype({ maxPrice: v })} dark /></CalcRow>
           <CalcRow label="Capacity"><Stepper value={t.capacity} onChange={(v) => setHype({ capacity: v })} /></CalcRow>
           <CalcRow label="Tickets to sell" right={`$${calcHypeRevenue(t.basePrice, t.maxPrice, t.capacity, t.qty).toFixed(2)}`}>
             <Stepper value={t.qty} onChange={(v) => setHype({ qty: v })} />
           </CalcRow>
         </div>
         <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Hype pricing: each ticket costs more as more sell (base → max along the curve).</div>
+        {revenueTipsButton}
       </div>
     );
   }
@@ -482,17 +497,18 @@ function CalcTickets({ state, onChange }: { state: CalculatorState; onChange: (s
       <div className="rounded-xl px-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
         {t.tiers.map((tier, i) => (
           <CalcRow key={tier.key} label={tier.label} right={`$${((Number(tier.price) || 0) * (Number(tier.qty) || 0)).toFixed(2)}`}>
-            <MoneyField value={tier.price} onChange={(v) => setTier(i, { price: v })} />
+            <MoneyField value={tier.price} onChange={(v) => setTier(i, { price: v })} dark />
             <Stepper value={tier.qty} onChange={(v) => setTier(i, { qty: v })} />
           </CalcRow>
         ))}
       </div>
+      {revenueTipsButton}
     </div>
   );
 }
 
 // Editable operational-cost line items (add / rename / re-price / delete).
-function CalcCosts({ state, onChange }: { state: CalculatorState; onChange: (s: CalculatorState) => void }) {
+function CalcCosts({ state, onChange, eventId }: { state: CalculatorState; onChange: (s: CalculatorState) => void; eventId: string }) {
   const costs: CalcCost[] = state.costs ?? [];
   const setCost = (i: number, patch: Partial<CalcCost>) => onChange({ ...state, costs: costs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)) });
   const addCost = () => onChange({ ...state, costs: [...costs, { name: '', amount: 0 }] });
@@ -522,7 +538,19 @@ function CalcCosts({ state, onChange }: { state: CalculatorState; onChange: (s: 
           </div>
         ))}
       </div>
-      <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Costs are paid outside party.fun — the app never charges them.</div>
+      {/* On-demand AI: probable operational costs specific to this event; regenerates on re-press. */}
+      <AiSuggestions<OperationalCostTip>
+        key={eventId}
+        label="Get potential operational costs with AI"
+        fetcher={async () => { const r = await fetchOperationalCostTips(eventId); return { available: r.available, items: r.costs ?? [] }; }}
+        renderItem={(c, i) => (
+          <div key={i} className="rounded-xl p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
+            <span className="text-sm" style={{ fontWeight: 600, color: 'var(--foreground)' }}>{c.name}</span>
+            <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{c.why}</div>
+          </div>
+        )}
+      />
+      <div className="mt-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>Costs are paid outside party.fun — the app never charges them.</div>
     </div>
   );
 }

@@ -121,7 +121,7 @@ export const ROLE_BLOCK_REPLY = "Your current role is attendee/user, so you cann
 
 export const ADMIN_CREATE_BLOCK_REPLY = "As an admin you moderate the platform — you can edit and cancel/delete any event — but you cannot create or host events. Only organiser accounts can create events. Would you like to edit or cancel an existing event instead?";
 
-const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay)\b/i;
+const ON_TOPIC_RX = /\b(event|events|ticket|tickets|pledge|pledging|wallet|top\s?up|top-up|refund|organiser|organizer|host|hosting|hosted|draft|drafts|price|pricing|greenlit|hype|early[\s-]?bird|party\.?fun|attend|attending|join|joined|buy|weather|rain|forecast|date|today|deadline|give\s?away|give-?away|co-?organiser|co-?organizer|revenue|profit|capacity|venue|cancel|card|cash|pay|cost|costs|operational|budget|expenses?|spend|spending)\b/i;
 // Questions ABOUT the app itself (its pages, sections, FAQ, testimonials, features, how it
 // works). These are always in-scope — the assistant is a party.fun encyclopedia — so match
 // them deterministically instead of leaving them to the LLM guard's coin-flip.

@@ -30,7 +30,7 @@ const actionMeta = (action: string) => ACTION_META[action] ?? { label: 'Action n
 // Known "Label: value" detail lines in the agent's list output. Matched by a label
 // whitelist (not a bare colon) because item titles can contain colons, e.g.
 // "Grad Ball: Black-Tie Gala".
-const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|location|address|deadline|tickets?|tickets sold|hype|hype threshold|threshold|capacity|early[- ]?bird|greenlit|revenue|profit|cost|reason)\b[^:]*:/i;
+const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|location|address|deadline|tickets?|tickets sold|spots?\s*left|start\s*date|end\s*date|starts?|ends?|sold|backers?|attendees?|max(?:imum)?\s*capacity|hype|hype threshold|threshold|capacity|early[- ]?bird|greenlit|revenue|profit|cost|reason)\b[^:]*:/i;
 
 // Deterministically number lists the model failed to number. A list = an intro
 // paragraph ending with ":" followed by >=2 item TITLES (paragraphs that aren't
