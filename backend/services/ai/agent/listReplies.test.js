@@ -261,6 +261,51 @@ test('buildBuyIntentReply confirms a typo and passes an exact name through', asy
   assert.equal(await buildBuyIntentReply('Game night and escape rooms', ctx), null);
 });
 
+test('a name differing only by punctuation resolves EXACTLY (no "Did you mean")', async () => {
+  // The real case: event titled with trailing "!!!", user types it without. Same event.
+  const prata = { id: 'e1', title: 'Supper at Springleaf prata!!!', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 8 }] };
+  // Buyable → null (agent proceeds to method → quantity), never a "Did you mean".
+  const ctx = buyCtx([prata]);
+  assert.equal(await buildBuyIntentReply('supper at springleaf prata', ctx), null);
+  // Already owned → the honest reason, naming the real (decorated) title — still no "Did you mean".
+  const owned = buyCtx([prata], { tickets: [{ eventId: 'e1', tab: 'upcoming' }] });
+  const reply = await buildBuyIntentReply('supper at springleaf prata', owned);
+  assert.match(reply, /already have tickets for "Supper at Springleaf prata!!!"/);
+  assert.doesNotMatch(reply, /Did you mean/i);
+});
+
+test('hyphenated titles still resolve exactly (regression guard)', async () => {
+  const crawl = { id: 'e1', title: 'Late-Night Supper Crawl', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 8 }] };
+  assert.equal(await buildBuyIntentReply('late night supper crawl', buyCtx([crawl])), null);
+});
+
+test('a real typo still asks to confirm and does NOT auto-resolve (money safety)', async () => {
+  const prata = { id: 'e1', title: 'Supper at Springleaf prata!!!', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 8 }] };
+  const reply = await buildBuyIntentReply('supper at springlef prata', buyCtx([prata])); // missing an 'a'
+  assert.match(reply, /Did you mean "Supper at Springleaf prata!!!"\?/);
+});
+
+test('1-2 char junk events ("t", "1") are never offered as suggestions', async () => {
+  const pool = [
+    { id: 'e1', title: 't', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 1 }] },
+    { id: 'e2', title: '1', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 1 }] },
+  ];
+  // A query that contains "t" and "1" but matches no real event → no "did you mean t/1".
+  const res = await resolveVisibleRef(buyCtx(pool), 'street party 1st night');
+  assert.deepEqual(res.ambiguous ?? [], []);
+  assert.equal(res.event ?? null, null);
+});
+
+test('two events differing only in punctuation resolve to NEITHER (ambiguous, no silent pick)', async () => {
+  const pool = [
+    { id: 'e1', title: 'Party!', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 5 }] },
+    { id: 'e2', title: 'Party?', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 5 }] },
+  ];
+  const res = await resolveVisibleRef(buyCtx(pool), 'party');
+  assert.equal(res.event ?? null, null); // never silently picks one
+  assert.deepEqual((res.ambiguous ?? []).slice().sort(), ['Party!', 'Party?']);
+});
+
 // ── superlative / single-fact asks must reach the LLM ──────────────────────────
 test('matchListQuery returns null for SUPERLATIVE asks (all four kinds)', () => {
   // The reported bug: this dumped every hosted event, unordered and with no dates.

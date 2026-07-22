@@ -114,7 +114,15 @@ async function attendableEvents(ctx) {
 
 // Resolve an event reference that may be an id OR a name/slug (users say "late-night
 // supper crawl", the model sometimes passes "late-night-supper-crawl") to the event.
-const normName = (s) => String(s ?? '').toLowerCase().replace(/[\s_-]+/g, ' ').trim();
+// Fold a title/ref to a canonical form for matching: lowercase, and any run of
+// non-alphanumeric characters (whitespace, _, -, punctuation like "!!!", symbols, emoji)
+// becomes a single space. So "Supper at Springleaf prata!!!" and "supper at springleaf prata"
+// are the SAME name — the "!!!" is decoration, not a different event. NFKD folds accents too.
+const normName = (s) => String(s ?? '')
+  .toLowerCase()
+  .normalize('NFKD')
+  .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim();
 // EXACT resolution only — an event id or a full normalized-title match. A partial /
 // substring reference is deliberately NOT resolved here; resolveEvent turns those into
 // a "Did you mean …?" confirmation instead of silently picking one.
@@ -125,7 +133,11 @@ function findEvent(events, ref) {
   if (ev) return ev;
   const nr = normName(r);
   if (!nr) return null;
-  return events.find((e) => normName(e.title) === nr) ?? null; // exact name, hyphen/space/case-insensitive
+  // Resolve only when EXACTLY ONE title normalizes to the same form. If two events differ
+  // only by punctuation (e.g. "Party!" vs "Party?"), don't silently pick one — return null so
+  // resolveEvent surfaces a "Did you mean …?" (never auto-buy an ambiguous name).
+  const matches = events.filter((e) => normName(e.title) === nr);
+  return matches.length === 1 ? matches[0] : null;
 }
 
 // Sørensen–Dice similarity over character bigrams of two normalized strings (0..1).
@@ -206,7 +218,9 @@ async function resolveEvent(ctx, events, ref) {
   if (nr) {
     for (const e of list) {
       const en = normName(e.title);
-      if (en && (en.includes(nr) || nr.includes(en))) push(e.title);
+      // Require the shorter side to be >= 3 chars, so 1-2 char junk titles ("t", "1") don't
+      // match every query that happens to contain that character.
+      if (en && Math.min(en.length, nr.length) >= 3 && (en.includes(nr) || nr.includes(en))) push(e.title);
     }
   }
   // 2. Semantic matches (embeddings), high floor — only genuinely close events, never a guess.
