@@ -256,7 +256,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               Event over
             </Button>
 
-            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
+            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(15,122,68,0.10)', border: '1px solid rgba(15,122,68,0.30)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Payments were captured at checkout. Active tickets are refunded automatically if the event misses its hype threshold.</span>
@@ -310,7 +310,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
         ) : showOwnEvent ? (
         <aside className="lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300">
-            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#ffd968' }}>Your event</div>
+            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: 'var(--status-amber)' }}>Your event</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>You're the organiser</h3>
             <p className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
               You can't pledge to your own event. Manage it from your dashboard.
@@ -347,7 +347,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             {event.hypeDrivenPricing ? (
               <div className="mt-1 text-xs" style={{ color: '#ff8a66' }}>Live bonding-curve price · updates as tickets move</div>
             ) : event.status !== 'greenlit' ? (
-              <div className="mt-1 text-xs" style={{ color: '#ffd968' }}>Price rises at the next status</div>
+              <div className="mt-1 text-xs" style={{ color: 'var(--status-amber)' }}>Price rises at the next status</div>
             ) : null}
             {pledgeEstimate && buyQty > 0 && (
               <div className="mt-2 text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -407,7 +407,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               </Button>
             )}
 
-            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
+            <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(15,122,68,0.10)', border: '1px solid rgba(15,122,68,0.30)' }}>
               <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Your payment is captured now. Active tickets are refunded automatically if the event misses its hype threshold.</span>

@@ -40,7 +40,7 @@ function pad(n: number) {
   return String(n).padStart(2, '0');
 }
 
-export function Countdown({ deadline, targetIso, color = '#ffcb3c' }: { deadline?: string; targetIso?: string; color?: string }) {
+export function Countdown({ deadline, targetIso, color = 'var(--status-amber)' }: { deadline?: string; targetIso?: string; color?: string }) {
   const target = useMemo(() => {
     // Prefer a raw ISO timestamp (robust, timezone-correct); fall back to parsing a display string.
     if (targetIso) {
@@ -87,6 +87,7 @@ export function Countdown({ deadline, targetIso, color = '#ffcb3c' }: { deadline
                 fontSize: 22,
                 fontVariantNumeric: 'tabular-nums',
                 background: 'rgba(255,255,255,0.06)',
+                border: '1px solid var(--border)',
                 color,
                 minWidth: 52,
                 letterSpacing: '0.02em',
