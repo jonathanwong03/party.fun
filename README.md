@@ -201,7 +201,7 @@ These aren't code — miss them and auth/maps break only in production:
 - **Supabase → Authentication → URL Configuration** (or Google/Facebook OAuth silently bounces users to `localhost`). Set **Site URL** to the deployed origin (e.g. `https://your-app.vercel.app`) and add `<origin>/auth/callback` to the **Redirect URLs** allow-list (keep `http://localhost:5173/auth/callback` for dev; `https://your-app-*.vercel.app/**` covers preview deploys). Supabase falls back to the Site URL whenever `redirectTo` isn't allow-listed — a localhost Site URL is what makes production OAuth land on localhost even though [frontend/src/app/api.ts](frontend/src/app/api.ts) already sends the correct `window.location.origin/auth/callback`.
 - **Google Cloud → the Maps API key** (or address autocomplete returns *"not authorized … referer: …"*). Add the deployed origin to the key's **HTTP-referrer** allow-list (`https://your-app.vercel.app/*`, plus `https://your-app-*.vercel.app/*` for previews, keep localhost), and enable both **Maps JavaScript API** and **Places API**.
 
-## Demo
+<!-- ## Demo -->
 
-Demo accounts, the seed/cleanup scripts and a 14-step walkthrough live in
-[APP_OVERVIEW.md → Full demo runbook](APP_OVERVIEW.md#full-demo-runbook).
+<!-- Demo accounts, the seed/cleanup scripts and a 14-step walkthrough live in
+[APP_OVERVIEW.md → Full demo runbook](APP_OVERVIEW.md#full-demo-runbook). -->
