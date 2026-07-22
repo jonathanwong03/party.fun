@@ -12,6 +12,7 @@ import { matchEventsHybrid } from '../eventSearch.js';
 import { semanticDraftMatches } from '../draftEmbeddings.js';
 import { getAppKnowledge } from '../tasks/answerAppQuestion.js';
 import { retrieveDocChunks } from '../docKnowledge.js';
+import { operationalCostTips } from '../tasks/operationalCostTips.js';
 
 // Agent tools. Definitions are provider-agnostic JSON Schemas; executors run
 // server-side scoped to the calling user via ctx = { supabase, userId, role }.
@@ -413,8 +414,14 @@ export const getEventDetailsTool = makeTool(
 
 export const getEventForecastTool = makeTool(
   'get_event_forecast',
-  "Get the profit-calculator figures for one of the ORGANISER'S OWN events (host only): the ticket target the organiser set, total revenue at that target, average price, total operational cost, and PROFIT (revenue − cost). Use this to give revenue/profit advice. Operational costs are entered by the organiser and are NOT charged through party.fun.",
+  "Get the profit-calculator figures for one of the ORGANISER'S OWN events (host only): the ticket target the organiser set, total revenue at that target, average price, total operational cost, and PROFIT (revenue − cost). Use this to give revenue/profit advice. Operational costs are entered by the organiser and are NOT charged through party.fun. NOTE: totalOperationalCost here is the RECORDED figure the organiser typed into the calculator — it is often $0 because they haven't filled it in, so it is NOT the answer to \"what might this event cost to run\" or \"what TYPES of costs\" — use suggest_operational_costs for those.",
   z.object({ eventId: z.string().describe('The event id (must be hosted by the caller).') }),
+);
+
+export const suggestOperationalCostsTool = makeTool(
+  'suggest_operational_costs',
+  "Brainstorm the PROBABLE / POTENTIAL / LIKELY operational cost categories for an event from its name + description — e.g. venue/space hire, food & drinks, AV/production, staffing, marketing, décor, permits — each with a one-line why. Use this whenever the user asks what an event MIGHT cost to run, what costs to expect or budget for, the TYPES or KINDS of costs, or to help think the costs through. These are planning ESTIMATES specific to the event, NOT the recorded total and NOT charged by party.fun. Do NOT use get_event_forecast for this — that returns the organiser's recorded figure, which is often $0.",
+  z.object({ eventId: z.string().describe('The event id OR its name (either works).') }),
 );
 
 export const getEventAttendeesTool = makeTool(
@@ -658,7 +665,7 @@ export const proposeGiveAwayTicketsTool = makeTool(
 
 // All tools + a by-name index for the graph to bind per-branch subsets.
 export const AGENT_TOOLS = [
-  searchEventsTool, getEventDetailsTool, getEventForecastTool, getEventAttendeesTool, listAvailableEventsTool,
+  searchEventsTool, getEventDetailsTool, getEventForecastTool, suggestOperationalCostsTool, getEventAttendeesTool, listAvailableEventsTool,
   getMyHostedEventsTool, getMyJoinedEventsTool, listLiveEventsTool, getWalletTool, listMyDraftsTool,
   getCurrentDateTool, getAppInfoTool, getWeatherTool, researchEventIdeasTool,
   recommendEventsTool, semanticSearchEventsTool, findSimilarEventsTool, getSimilarPastEventsTool, rememberTool,
@@ -763,6 +770,20 @@ export const EXECUTORS = {
       totalOperationalCost: e.totalCost, // costs are entered by the organiser; NOT charged by the app
       profit: e.profit, // profit = total revenue − total cost
     };
+  },
+
+  // Brainstormed (not recorded) probable operational-cost categories for an event, inferred from its
+  // name + description — the same engine as the profit calculator's "Get potential operational costs
+  // with AI" button. Deliberately NOT host-gated: it only reads the public title/description, so any
+  // user asking about a visible event gets an answer rather than a false "you can only…" refusal.
+  async suggest_operational_costs(args, ctx) {
+    const resolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
+    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+    const ev = resolved.event;
+    if (!ev) return { error: 'Event not found or not visible to you.' };
+    const out = await operationalCostTips({ event: { title: ev.title, description: ev.description } });
+    if (!out?.available) return { error: 'Cost suggestions are unavailable right now.' };
+    return { title: ev.title, costs: out.costs };
   },
 
   async get_event_attendees(args, ctx) {

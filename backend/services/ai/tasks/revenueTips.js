@@ -47,7 +47,8 @@ export async function revenueTips({ event = {}, economics = {} } = {}) {
     `- Total operational cost: $${Number(economics.totalCost ?? 0).toFixed(2)}`,
     `- Profit at this target: $${Number(economics.profit ?? 0).toFixed(2)}`,
     '',
-    'Give 4-6 prioritised tips (most impactful first) for hitting or exceeding this ticket target.',
+    'Give EXACTLY 3 prioritised tips (most impactful first) for hitting or exceeding this ticket target.',
+    'Vary your suggestions across calls — do not always return the same three.',
   ].filter(Boolean).join('\n');
 
   const res = await runTier('premium', {

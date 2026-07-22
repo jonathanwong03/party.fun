@@ -4,10 +4,10 @@
    Other light values come from theme.css :root. */
 :root {
   --background: #ffffff;   /* pure white page */
-  --surface: #e6e8ec;      /* clear light-grey cards that separate from the white page */
-  --surface-2: #dcdfe4;    /* slightly deeper grey for nested fills / chips */
+  --surface: #edeff2;      /* light-grey cards (a touch darker than near-white, lighter than before) */
+  --surface-2: #e3e6ea;    /* slightly deeper for nested fills / chips */
   --border-strong: rgba(0, 0, 0, 0.16);
-  /* Status/accent text — deep shades so yellow/green/red read on light cards. */
+  /* Deep status shades so greenlit/early-birds/errors read on light cards. */
   --status-amber: #8a6100;
   --status-green: #0f7a44;
   --status-red: #cc1f3d;
@@ -56,7 +56,7 @@
    (the `--foreground` overrides flip every var-based label inside to dark automatically).
    `.dark .glass` below restores the translucent dark look and light text for dark mode. */
 .glass {
-  background: #e6e8ec !important;
+  background: #edeff2 !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(0, 0, 0, 0.05) !important;

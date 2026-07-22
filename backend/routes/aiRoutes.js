@@ -1,5 +1,5 @@
 import express from 'express';
-import { suggestEventCopy, revenueTips, recommendEvents, forYou, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory, transcribe } from '../controllers/aiController.js';
+import { suggestEventCopy, revenueTips, operationalCostTips, recommendEvents, forYou, ask, chat, resumeChat, models, executeActionHandler, listConversations, getConversation, deleteConversation, getMemory, deleteMemory, clearMemory, transcribe } from '../controllers/aiController.js';
 import { requireAuth, optionalAuth } from '../middleware/requireAuth.js';
 import { rateLimit } from '../middleware/rateLimit.js';
 
@@ -26,6 +26,7 @@ router.delete('/memory', requireAuth, clearMemory);
 router.delete('/memory/:id', requireAuth, deleteMemory);
 router.post('/suggest-event-copy', requireAuth, suggestEventCopy);
 router.post('/revenue-tips/:eventId', requireAuth, revenueTips);
+router.post('/operational-costs/:eventId', requireAuth, operationalCostTips);
 router.post('/recommend-events', optionalAuth, recommendEvents);
 router.post('/for-you', requireAuth, forYou);
 router.post('/ask', requireAuth, ask);

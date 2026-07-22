@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { __setProvidersForTests, __resetProvidersForTests } from '../modelRouter.js';
 import { suggestEventCopy } from './suggestEventCopy.js';
 import { revenueTips } from './revenueTips.js';
+import { operationalCostTips } from './operationalCostTips.js';
 import { recommendEvents } from './recommendEvents.js';
 import { answerAppQuestion } from './answerAppQuestion.js';
 import { chat } from './chat.js';
@@ -51,6 +52,20 @@ test('revenueTips returns parsed tips', async () => {
   const out = await revenueTips({ event: { title: 'X' }, economics: { totalRevenue: 100, totalCost: 20, profit: 80, ticketCount: 10 } });
   assert.equal(out.available, true);
   assert.equal(out.tips[0].impact, 'high');
+});
+
+test('operationalCostTips returns parsed cost categories', async () => {
+  withResponse('{"costs":[{"name":"Venue hire","why":"needs a hall"},{"name":"F&B","why":"snacks"},{"name":"AV","why":"sound system"}]}');
+  const out = await operationalCostTips({ event: { title: 'Rooftop Party', description: 'a night with music' } });
+  assert.equal(out.available, true);
+  assert.equal(out.costs.length, 3);
+  assert.equal(out.costs[0].name, 'Venue hire');
+});
+
+test('operationalCostTips reports unavailable with no provider', async () => {
+  withNoProvider();
+  const out = await operationalCostTips({ event: { title: 'X' } });
+  assert.equal(out.available, false);
 });
 
 test('recommendEvents only returns ids from the candidate list', async () => {

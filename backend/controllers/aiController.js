@@ -4,6 +4,7 @@ import { matchEventsHybrid } from '../services/ai/eventSearch.js';
 import { transcribeAudio, isSpeechEnabled } from '../services/ai/speechService.js';
 import { suggestEventCopy as suggestEventCopyTask } from '../services/ai/tasks/suggestEventCopy.js';
 import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips.js';
+import { operationalCostTips as operationalCostTipsTask } from '../services/ai/tasks/operationalCostTips.js';
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
@@ -76,6 +77,21 @@ export async function revenueTips(req, res) {
     pricingModel: ev.hypeDrivenPricing ? 'hype' : 'tiered',
   };
   res.json(await revenueTipsTask({ event, economics }));
+}
+
+// POST /api/ai/operational-costs/:eventId  (host-scoped)
+// Probable operational cost categories inferred from the event's name + description.
+export async function operationalCostTips(req, res) {
+  if (!guard(req, res)) return;
+  let events;
+  try { events = await listEventsRaw(req.supabase, req.user.id); }
+  catch (e) { return res.status(400).json({ status: 'error', message: e.message }); }
+  const ev = (events ?? []).find((e) => e.id === req.params.eventId);
+  if (!ev) return res.status(404).json({ status: 'not_found', message: 'Event not found.' });
+  if (ev.hostId !== req.user.id && !ev.canEdit && !ev.isCoOrganiser && req.user.role !== 'admin') {
+    return res.status(403).json({ status: 'forbidden', message: 'Not your event.' });
+  }
+  res.json(await operationalCostTipsTask({ event: { title: ev.title, description: ev.description } }));
 }
 
 // POST /api/ai/recommend-events
@@ -165,6 +181,8 @@ const AGENT_SYSTEM = () => [
   '',
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
   'EXACT TITLES: always name an event using its EXACT title as returned by the tools — keep the original capitalisation and punctuation (including any trailing "!", "&", etc.). NEVER lowercase, abbreviate, reword, or echo the user\'s own spelling of an event name; e.g. if the tool title is "Supper at Springleaf prata!!!", write it exactly that way even if the user typed "supper at springleaf prata".',
+  'OPERATIONAL COSTS: when the user asks what an event MIGHT cost to run, its POTENTIAL/PROBABLE/LIKELY costs, what to BUDGET for, or the TYPES/kinds of costs, call suggest_operational_costs (identify the event by name) — it brainstorms cost categories SPECIFIC to that event from its name + description, each with a one-line why. Present those. Do NOT call get_event_forecast for this and NEVER report the recorded operational total as the answer — it is often $0 because the organiser has not filled the calculator in, and "$0" is not a helpful answer to "what might it cost". Only use get_event_forecast when they ask for the ACTUAL recorded cost/revenue/profit figure. Remind them operational costs are their own estimates and are not charged through party.fun.',
+  'REVENUE: when an organiser asks how to earn or increase ticket revenue, identify the event by name and give concrete ways to sell more tickets for THAT event (pricing, timing, audience targeting, promotion, adjusting the ticket target/threshold). Make it specific to the event, not generic.',
   'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
   'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
   'BINARY (YES/NO) QUESTIONS: when the user asks a yes/no question ("am I an organiser?", "can I still buy tickets for X?", "is X sold out?", "can I attend X?", "have I already bought tickets for X?", "can I edit X?", "is it too late?", "will I be refunded if X is cancelled?"), LEAD with "Yes" or "No", then ONE short line saying why, grounded in tool data. Never answer a yes/no question with a bare noun and never dodge it. A QUESTION about buying ("can I buy tickets after 24 July?") is a question — ANSWER it; do NOT start the purchase flow unless they actually ask to buy.',
@@ -182,7 +200,8 @@ const AGENT_SYSTEM = () => [
   "- get_my_hosted_events: the organiser's OWN events (Hosted Events) with status + early-bird/greenlit prices + hype + revenue so far, AND each event's start/end date-time, venue, address, deadline and description — so it answers \"where/when/how long was my event?\" without another call.",
   '- search_events: general lookup of a SPECIFIC event by name (includes the user\'s own events and ones they already bought; excludes ended events). Use ONLY to find one event (e.g. before editing) — never to list what the user can attend/buy.',
   '- get_event_details: full details for one event.',
-  "- get_event_forecast: projected sales/revenue/costs and PROFIT for the user's OWN events (host only). Forecasts are estimates; operational costs are NOT charged through party.fun.",
+  "- get_event_forecast: projected sales/revenue/costs and PROFIT for the user's OWN events (host only). Forecasts are estimates; operational costs are NOT charged through party.fun. Its recorded operational total is often $0 (calculator not filled in) — use suggest_operational_costs, not this, to answer what an event MIGHT cost.",
+  '- suggest_operational_costs: brainstorm the PROBABLE/POTENTIAL cost categories for an event (venue, F&B, AV, staffing, marketing, etc.) inferred from its name + description. Use for "what might X cost to run?", "what should I budget?", or "what TYPES of costs?" — NOT get_event_forecast (its recorded total is often $0). These are planning estimates, not charged by party.fun.',
   '- get_event_attendees: who is attending an event (distinct people holding active tickets) and the count — for "who is coming / who is attending / how many backers". Present the people as a NUMBERED list (1., 2., 3., each on its own line). If the result has canSeeContacts=true (the caller is the event\'s organiser, a co-organiser, or an admin), also show each person\'s email and — only if present — their telegram and phone (these are optional; omit any that are blank). If canSeeContacts is false, list names only.',
   '- get_my_joined_events: the events the user has joined, split into upcoming / past / cancelled, with how many tickets they hold for each. When you present them, number each group SEPARATELY starting at 1 — list the UPCOMING events as 1., 2., 3.; then a PLAIN unnumbered header line like "You have also joined N past events:" followed by those events renumbered 1., 2.; and likewise for cancelled. The header/intro lines are NOT numbered list items.',
   '',
