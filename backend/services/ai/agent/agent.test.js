@@ -1,7 +1,7 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
-import { __resetProvidersForTests } from '../modelRouter.js';
+import { __resetProvidersForTests, __setProvidersForTests } from '../modelRouter.js';
 import { runGraph, resumeGraph, classifyIntent, BRANCH_TOOLS, OFF_TOPIC_REPLY, ROLE_BLOCK_REPLY, guardAllows, looksClearlyOffTopic, looksLikePurchase, __setBuildModelForTests, __setAgentsForTests, __setClassifyForTests, __setGuardForTests, __resetGraphForTests } from './eventGraph.js';
 import { EXECUTORS, AGENT_TOOLS, TOOLS_BY_NAME } from './tools.js';
 import { executeAction } from './actions.js';
@@ -279,7 +279,7 @@ test('every branch binds the universal READ tools (no false capability denials)'
   // "I don't have that functionality". classify re-runs per turn with no stickiness, so the
   // same conversation flips between capable and incapable branches. Scoping a read-only tool
   // buys only prompt economy; this invariant is what stops the fourth recurrence.
-  const universal = ['get_current_date', 'get_weather', 'get_event_forecast', 'get_event_details',
+  const universal = ['get_current_date', 'get_weather', 'get_event_forecast', 'suggest_operational_costs', 'get_event_details',
     'get_my_hosted_events', 'get_my_joined_events', 'get_wallet', 'list_my_drafts', 'get_app_info'];
   for (const branch of Object.keys(BRANCH_TOOLS)) {
     for (const tool of universal) {
@@ -360,6 +360,27 @@ test('search_events filters by query/price and flags own events', async () => {
   const ids = out.events.map((e) => e.id);
   assert.deepEqual(ids.sort(), ['e1', 'e3']); // e2 too pricey, e4 cancelled
   assert.equal(out.events.find((e) => e.id === 'e3').mine, true);
+});
+
+test('suggest_operational_costs brainstorms categories for a visible event by name', async () => {
+  // Stub the premium model the operationalCostTips task calls, so we assert wiring not the LLM.
+  __setProvidersForTests({
+    gemini: {
+      isConfigured: () => true,
+      generate: async ({ model }) => ({
+        text: '{"costs":[{"name":"Venue hire","why":"needs a hall"},{"name":"Referees","why":"officiating"},{"name":"F&B","why":"snacks"}]}',
+        provider: 'mock',
+        model,
+      }),
+    },
+  });
+  const events = [{ id: 'e1', title: 'UniFootball Fest', description: 'a 5-a-side tournament', status: 'greenlit', hostId: 'u1', statuses: [{ price: 8 }], active_ticket_count: 3, hypeThreshold: 10 }];
+  const ok = await EXECUTORS.suggest_operational_costs({ eventId: 'UniFootball Fest' }, ctxWith(events));
+  assert.equal(ok.title, 'UniFootball Fest');
+  assert.equal(ok.costs.length, 3);
+  assert.equal(ok.costs[0].name, 'Venue hire');
+  const miss = await EXECUTORS.suggest_operational_costs({ eventId: 'nope' }, ctxWith(events));
+  assert.ok(miss.error);
 });
 
 test('get_event_details returns details for a visible event, error otherwise', async () => {
@@ -858,10 +879,11 @@ test('get_wallet returns balance, card and recent transactions', async () => {
   assert.ok(Array.isArray(out.recentTransactions));
 });
 
-test('AGENT_TOOLS exposes all 28 tools as tool()+zod objects, invokable end-to-end', async () => {
-  assert.equal(AGENT_TOOLS.length, 28);
+test('AGENT_TOOLS exposes all 29 tools as tool()+zod objects, invokable end-to-end', async () => {
+  assert.equal(AGENT_TOOLS.length, 29);
   const names = AGENT_TOOLS.map((t) => t.name).sort();
   assert.ok(names.includes('search_events') && names.includes('propose_topup') && names.includes('get_wallet'));
+  assert.ok(names.includes('suggest_operational_costs'));
   assert.ok(names.includes('list_live_events') && names.includes('get_app_info'));
   assert.ok(names.includes('get_weather') && names.includes('research_event_ideas'));
   assert.ok(names.includes('get_current_date') && names.includes('propose_give_away_tickets'));
