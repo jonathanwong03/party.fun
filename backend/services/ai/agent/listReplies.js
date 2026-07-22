@@ -6,7 +6,7 @@
 // would use. Anything qualified — a price cap, a specific event name, a superlative or a
 // request for one fact — returns null and falls through to the LLM graph.
 
-import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable } from './tools.js';
+import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable, diceSimilarity } from './tools.js';
 import { isBuyQuestion } from './buyIntent.js';
 
 // A qualifier/price cap or a quoted specific-event name means the ask is NOT a plain
@@ -166,7 +166,16 @@ export async function buildBuyIntentReply(name, ctx) {
       if (!visibleNear.length) visibleNear = visible?.ambiguous ?? [];
     }
     const shown = String(name ?? '').trim();
-    const suggestions = buyableNear.length ? buyableNear : visibleNear;
+    // Rank the closest matches across BOTH pools by string similarity to what the user typed,
+    // rather than blindly preferring buyable events. Otherwise a weak match to the only buyable
+    // event (e.g. "Stardust Soiree") would beat a near-perfect typo match to an event the user
+    // already owns ("Book event event"), so a typo suggested a totally unrelated event.
+    const merged = [...visibleNear, ...buyableNear].filter((t, i, a) => a.indexOf(t) === i);
+    const suggestions = merged
+      .map((t) => ({ t, s: diceSimilarity(shown, t) }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 3)
+      .map((x) => x.t);
     if (suggestions.length === 1) {
       return `I'm sorry, I cannot find an event named "${shown}". Did you mean "${suggestions[0]}"?`;
     }

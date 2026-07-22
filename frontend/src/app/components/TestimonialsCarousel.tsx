@@ -62,6 +62,12 @@ export function TestimonialsCarousel({ reviews }: { reviews: Review[] }) {
         <div className="min-h-[13rem] flex-1 text-center">
           <Avatar url={r.avatarUrl} name={r.username} />
 
+          {r.eventTitle && (
+            <p className="mb-3 text-xs" style={{ color: 'var(--muted-foreground)', fontWeight: 600 }}>
+              Attended {r.eventTitle}
+            </p>
+          )}
+
           {/* A review can be stars-only, in which case there is no quote to show. */}
           {r.body?.trim() && (
             <p className="mx-auto max-w-xl text-base" style={{ color: 'var(--foreground)', lineHeight: 1.6 }}>

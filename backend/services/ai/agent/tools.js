@@ -158,7 +158,7 @@ function bigrams(s) {
   }
   return out;
 }
-function diceSimilarity(a, b) {
+export function diceSimilarity(a, b) {
   const na = normName(a);
   const nb = normName(b);
   if (!na || !nb) return 0;

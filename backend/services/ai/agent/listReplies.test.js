@@ -338,6 +338,20 @@ test('matchBuyQuestionName extracts the event only from purchase QUESTIONS', () 
   assert.equal(matchBuyQuestionName('what events can i join'), null); // not a buy phrase
 });
 
+test('a typo suggests the CLOSEST event (even if owned), not the only buyable one', async () => {
+  // Reported bug: "book event evnet" suggested the unrelated buyable "Stardust Soiree" because it
+  // was the only attendable event, over the near-identical already-purchased "Book event event".
+  const pool = [
+    { id: 'e1', title: 'Stardust Soiree: A Night Under the Stars', status: 'early_bird', hostId: 'other', startDate: iso(14), statuses: [{ price: 15 }] },
+    { id: 'e2', title: 'Book event event', status: 'early_bird', hostId: 'other', startDate: iso(14), statuses: [{ price: 10 }] },
+  ];
+  // e2 is already purchased → excluded from the attendable pool, present in the visible pool.
+  const ctx = buyCtx(pool, { tickets: [{ eventId: 'e2', tab: 'upcoming' }] });
+  const reply = await buildBuyIntentReply('book event evnet', ctx);
+  assert.match(reply, /Did you mean "Book event event"\?/);
+  assert.doesNotMatch(reply, /Stardust/);
+});
+
 test('buildOwnedOrClosedReply names the EXACT title for an owned event, null when buyable/unknown', async () => {
   const owned = buyCtx([uniFootball()], { tickets: [{ eventId: 'e1', tab: 'upcoming' }] });
   const reply = await buildOwnedOrClosedReply('UniFootball Fest: Skills and Social', owned);
