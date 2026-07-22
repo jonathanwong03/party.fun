@@ -533,7 +533,7 @@ function CalcCosts({ state, onChange, eventId }: { state: CalculatorState; onCha
               className="flex-1 rounded-lg px-2 py-1.5 text-sm"
               style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: 'var(--foreground)', minWidth: 120 }}
             />
-            <MoneyField value={c.amount} onChange={(v) => setCost(i, { amount: v })} />
+            <MoneyField value={c.amount} onChange={(v) => setCost(i, { amount: v })} dark />
             <button onClick={() => removeCost(i)} className="grid size-8 place-items-center rounded-lg text-sm" style={{ background: 'var(--surface)', border: '1px solid var(--border)', color: '#ff4d2e' }} aria-label="Delete cost">✕</button>
           </div>
         ))}

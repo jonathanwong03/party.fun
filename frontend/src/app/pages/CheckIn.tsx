@@ -8,7 +8,18 @@ import type { EventItem, Role } from '../components/types';
 
 export function CheckIn({ role, events }: { role: Role | null; events: EventItem[] }) {
   // Admins can check in any event; organisers can check in owned + accepted co-organised events.
-  const mine = useMemo(() => (role === 'admin' ? events : events.filter((e) => e.canCheckIn ?? e.mine)), [events, role]);
+  // Only events that are CURRENTLY taking place are checkable: greenlit (not early-bird/cancelled/
+  // completed) AND with "now" inside the event's start–end window. The backend still enforces
+  // too_early/too_late on the actual check-in; this just narrows the picker.
+  const mine = useMemo(() => {
+    const now = Date.now();
+    const owned = role === 'admin' ? events : events.filter((e) => e.canCheckIn ?? e.mine);
+    return owned.filter((e) =>
+      e.status === 'greenlit'
+      && e.startsAt && e.endsAt
+      && Date.parse(e.startsAt) <= now && now <= Date.parse(e.endsAt),
+    );
+  }, [events, role]);
   const [eventId, setEventId] = useState<string>('');
   const [tickets, setTickets] = useState<EventTicket[]>([]);
   const [loading, setLoading] = useState(false);
@@ -73,6 +84,11 @@ export function CheckIn({ role, events }: { role: Role | null; events: EventItem
             {mine.map((e) => <SelectItem key={e.id} value={e.id}>{e.title}</SelectItem>)}
           </SelectContent>
         </Select>
+        {mine.length === 0 && (
+          <p className="mt-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
+            No events are taking place right now — check-in opens during an event's start–end window.
+          </p>
+        )}
       </div>
 
       {eventId && (
