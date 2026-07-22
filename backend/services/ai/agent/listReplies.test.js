@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from './listReplies.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchBuyQuestionName, buildOwnedOrClosedReply, matchLinkCardIntent, buildLinkCardReply } from './listReplies.js';
 import { EXECUTORS, resolveVisibleRef, whyNotAttendable } from './tools.js';
 import { __setEmbedForTests, __resetEmbedForTests } from '../embeddingService.js';
 
@@ -304,6 +304,62 @@ test('two events differing only in punctuation resolve to NEITHER (ambiguous, no
   const res = await resolveVisibleRef(buyCtx(pool), 'party');
   assert.equal(res.event ?? null, null); // never silently picks one
   assert.deepEqual((res.ambiguous ?? []).slice().sort(), ['Party!', 'Party?']);
+});
+
+// ── "&" ↔ "and" (and a few more) equivalence ──────────────────────────────────
+const uniFootball = (over = {}) => ({
+  id: 'e1', title: 'UniFootball Fest: Skills & Social', status: 'early_bird', hostId: 'other',
+  startDate: iso(14), statuses: [{ price: 15 }], ...over,
+});
+
+test('"Skills and Social" (word) resolves EXACTLY to the "&" event', async () => {
+  // Buyable → matchBuyIntent path returns null so the agent continues to method → quantity.
+  assert.equal(await buildBuyIntentReply('UniFootball Fest: Skills and Social', buyCtx([uniFootball()])), null);
+  // Owned → the honest reason, naming the REAL "&" title (issues 1 + 2 together).
+  const owned = buyCtx([uniFootball()], { tickets: [{ eventId: 'e1', tab: 'upcoming' }] });
+  const reply = await buildBuyIntentReply('UniFootball Fest: Skills and Social', owned);
+  assert.match(reply, /already have tickets for "UniFootball Fest: Skills & Social"/);
+});
+
+test('a PARTIAL name still asks "Did you mean?" (not auto-resolved), now suggesting the right event', async () => {
+  const reply = await buildBuyIntentReply('skills and social', buyCtx([uniFootball()]));
+  assert.match(reply, /Did you mean "UniFootball Fest: Skills & Social"\?/);
+});
+
+test('number-words fold to digits ("party two" matches "Party 2")', async () => {
+  const p2 = { id: 'e1', title: 'Party 2', status: 'early_bird', hostId: 'other', startDate: iso(10), statuses: [{ price: 5 }] };
+  assert.equal(await buildBuyIntentReply('party two', buyCtx([p2])), null); // exact → buyable → continue
+});
+
+// ── issue 3: deterministic exact-title reply for a purchase QUESTION ───────────
+test('matchBuyQuestionName extracts the event only from purchase QUESTIONS', () => {
+  assert.equal(matchBuyQuestionName('can i purchase tickets for UniFootball Fest: Skills and Social'), 'UniFootball Fest: Skills and Social');
+  assert.equal(matchBuyQuestionName('buy tickets for UniFootball Fest'), null); // imperative, not a question
+  assert.equal(matchBuyQuestionName('what events can i join'), null); // not a buy phrase
+});
+
+test('a typo suggests the CLOSEST event (even if owned), not the only buyable one', async () => {
+  // Reported bug: "book event evnet" suggested the unrelated buyable "Stardust Soiree" because it
+  // was the only attendable event, over the near-identical already-purchased "Book event event".
+  const pool = [
+    { id: 'e1', title: 'Stardust Soiree: A Night Under the Stars', status: 'early_bird', hostId: 'other', startDate: iso(14), statuses: [{ price: 15 }] },
+    { id: 'e2', title: 'Book event event', status: 'early_bird', hostId: 'other', startDate: iso(14), statuses: [{ price: 10 }] },
+  ];
+  // e2 is already purchased → excluded from the attendable pool, present in the visible pool.
+  const ctx = buyCtx(pool, { tickets: [{ eventId: 'e2', tab: 'upcoming' }] });
+  const reply = await buildBuyIntentReply('book event evnet', ctx);
+  assert.match(reply, /Did you mean "Book event event"\?/);
+  assert.doesNotMatch(reply, /Stardust/);
+});
+
+test('buildOwnedOrClosedReply names the EXACT title for an owned event, null when buyable/unknown', async () => {
+  const owned = buyCtx([uniFootball()], { tickets: [{ eventId: 'e1', tab: 'upcoming' }] });
+  const reply = await buildOwnedOrClosedReply('UniFootball Fest: Skills and Social', owned);
+  assert.match(reply, /already have tickets for "UniFootball Fest: Skills & Social"/);
+  // Buyable event → null (the graph answers the question, temporal asks keep working).
+  assert.equal(await buildOwnedOrClosedReply('UniFootball Fest: Skills and Social', buyCtx([uniFootball()])), null);
+  // Unknown event → null, never a canned "cannot find" for a question.
+  assert.equal(await buildOwnedOrClosedReply('some event that does not exist', buyCtx([uniFootball()])), null);
 });
 
 // ── superlative / single-fact asks must reach the LLM ──────────────────────────

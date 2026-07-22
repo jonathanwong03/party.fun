@@ -20,7 +20,7 @@ export function ConfirmDeleteModal({
       <div className="w-full max-w-md overflow-hidden rounded-2xl border" style={{ borderColor: 'var(--border-strong)', background: 'var(--surface)' }}>
         <div className="flex items-start justify-between p-5">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-full" style={{ background: 'rgba(255,51,84,0.12)', color: '#ff3354' }}>
+            <div className="grid size-10 place-items-center rounded-full" style={{ background: 'rgba(255,51,84,0.12)', color: 'var(--status-red)' }}>
               <AlertTriangle size={18} />
             </div>
             <div>

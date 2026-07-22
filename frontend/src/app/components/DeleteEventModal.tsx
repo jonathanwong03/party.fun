@@ -49,7 +49,7 @@ export function DeleteEventModal({
         style={{ borderColor: 'var(--border-strong)', background: 'var(--surface)' }}>
         <div className="flex items-start justify-between p-5">
           <div className="flex items-center gap-3">
-            <div className="grid size-10 place-items-center rounded-full" style={{ background: 'rgba(255,51,84,0.12)', color: '#ff3354' }}>
+            <div className="grid size-10 place-items-center rounded-full" style={{ background: 'rgba(255,51,84,0.12)', color: 'var(--status-red)' }}>
               <AlertTriangle size={18} />
             </div>
             <div>
@@ -100,7 +100,7 @@ export function DeleteEventModal({
 
           <div>
             <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>
-              Type <span style={{ color: '#ff3354', fontWeight: 700 }}>{confirmWord}</span> to confirm
+              Type <span style={{ color: 'var(--status-red)', fontWeight: 700 }}>{confirmWord}</span> to confirm
             </Label>
             <Input
               value={confirmText}

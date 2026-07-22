@@ -114,14 +114,22 @@ async function attendableEvents(ctx) {
 
 // Resolve an event reference that may be an id OR a name/slug (users say "late-night
 // supper crawl", the model sometimes passes "late-night-supper-crawl") to the event.
-// Fold a title/ref to a canonical form for matching: lowercase, and any run of
-// non-alphanumeric characters (whitespace, _, -, punctuation like "!!!", symbols, emoji)
-// becomes a single space. So "Supper at Springleaf prata!!!" and "supper at springleaf prata"
-// are the SAME name — the "!!!" is decoration, not a different event. NFKD folds accents too.
+// Fold a title/ref to a canonical form for matching. Beyond lowercasing and accents (NFKD):
+//  - common symbol/word equivalents are unified so "&" and "and" match ("Skills & Social" ==
+//    "Skills and Social"), likewise "+"→and and "@"→at — done BEFORE stripping punctuation,
+//    while the symbols are still present;
+//  - any remaining run of non-alphanumerics (whitespace, _, -, "!!!", emoji) becomes one space,
+//    so "Supper at Springleaf prata!!!" == "supper at springleaf prata" (the "!!!" is decoration);
+//  - small number-words fold to digits ("Party two" == "Party 2"), on word boundaries only.
+const NUM_WORDS = { one: '1', two: '2', three: '3', four: '4', five: '5', six: '6', seven: '7', eight: '8', nine: '9', ten: '10' };
 const normName = (s) => String(s ?? '')
   .toLowerCase()
   .normalize('NFKD')
+  .replace(/&/g, ' and ').replace(/\+/g, ' and ').replace(/@/g, ' at ')
   .replace(/[^\p{L}\p{N}]+/gu, ' ')
+  .trim()
+  .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b/g, (m) => NUM_WORDS[m])
+  .replace(/\s+/g, ' ')
   .trim();
 // EXACT resolution only — an event id or a full normalized-title match. A partial /
 // substring reference is deliberately NOT resolved here; resolveEvent turns those into
@@ -150,7 +158,7 @@ function bigrams(s) {
   }
   return out;
 }
-function diceSimilarity(a, b) {
+export function diceSimilarity(a, b) {
   const na = normName(a);
   const nb = normName(b);
   if (!na || !nb) return 0;
@@ -1199,20 +1207,25 @@ export const EXECUTORS = {
     // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
     // Accepts an event id OR name (findEvent resolves both).
     const resolved = await resolveEvent(ctx, await attendableEvents(ctx), args.eventId);
-    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) {
+      // NOT an exact buyable event. Check the WIDER visible pool for an EXACT match FIRST, so an
+      // event the user already owns (excluded from the attendable pool) gets the specific reason
+      // — worded from its REAL title — instead of the attendable pool's weak "Did you mean …?"
+      // guess. (Returning resolved.ambiguous here first would suggest an unrelated buyable event.)
       const seenResolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
-      if (seenResolved.ambiguous) return ambiguousEvent(seenResolved.ambiguous);
       const seen = seenResolved.event;
-      if (!seen) return { error: 'Event not found or not visible to you.' };
-      if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
-      if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
-      if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
-      // Before the catch-all: a full event used to fall through to "you already hold tickets",
-      // which is simply untrue for someone who has never bought any.
-      if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
-      return { error: 'You already hold tickets for this event — give them away before buying again.' };
+      if (seen) {
+        if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
+        if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
+        if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
+        if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
+        return { error: `You already hold tickets for "${seen.title}", so you can't buy more for that event — give some away first if you no longer need them.` };
+      }
+      // No exact match anywhere — surface the closest suggestion, preferring the visible pool.
+      if (seenResolved.ambiguous) return ambiguousEvent(seenResolved.ambiguous);
+      if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+      return { error: 'Event not found or not visible to you.' };
     }
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
     // Capacity was previously enforced ONLY by the create_pledge RPC, so the agent would build

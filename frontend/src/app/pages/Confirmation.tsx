@@ -19,7 +19,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
       <div className="text-center">
         <div className="mx-auto grid size-16 place-items-center rounded-full"
           style={{ background: 'rgba(41,224,122,0.15)', border: '1px solid rgba(41,224,122,0.4)' }}>
-          <CheckCircle2 size={28} style={{ color: '#29e07a' }} />
+          <CheckCircle2 size={28} style={{ color: 'var(--status-green)' }} />
         </div>
         <h1 className="mt-5" style={{ fontSize: 32, fontWeight: 800, letterSpacing: '-0.02em' }}>
           You're in. Hype incoming.
@@ -27,7 +27,7 @@ export function Confirmation({ id, qty, lines, go, events }: { id: string; qty: 
         <p className="mt-2" style={{ color: 'var(--muted-foreground)' }}>
           Your payment was captured and your tickets are locked in.
         </p>
-        <p className="mt-2 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>
+        <p className="mt-2 text-sm" style={{ color: 'var(--status-green)', fontWeight: 600 }}>
           Your tickets have been emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.
         </p>
       </div>

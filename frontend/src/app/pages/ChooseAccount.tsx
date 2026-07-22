@@ -58,7 +58,7 @@ export function ChooseAccount({ go }: { go: (r: Route) => void }) {
         <div className="h-px flex-1" style={{ background: 'var(--border)' }} />
       </div>
 
-      {error && <p className="mt-3 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+      {error && <p className="mt-3 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
 
       <Button
         type="button"

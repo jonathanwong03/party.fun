@@ -6,9 +6,9 @@ import type { EventItem, Route } from '../components/types';
 
 const STATUS_LABEL: Record<string, { text: string; color: string }> = {
   early_bird: { text: 'EARLY BIRDS', color: '#ffd23f' },
-  greenlit: { text: 'GREENLIT', color: '#29e07a' },
+  greenlit: { text: 'GREENLIT', color: 'var(--status-green)' },
   completed: { text: 'COMPLETED', color: '#4d8dff' },
-  cancelled: { text: 'CANCELLED', color: '#ff3354' },
+  cancelled: { text: 'CANCELLED', color: 'var(--status-red)' },
 };
 
 export function AdminManageEvents({ go, events, onCancel }: { go: (r: Route) => void; events: EventItem[]; onCancel: (id: string, reason: string) => Promise<void> }) {
@@ -95,7 +95,7 @@ export function AdminManageEvents({ go, events, onCancel }: { go: (r: Route) => 
               className="w-full rounded-lg border p-3 text-sm"
               style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
             />
-            {error && <p className="mt-2 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+            {error && <p className="mt-2 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
             <div className="mt-5 flex justify-end gap-2">
               <Button onClick={() => { setCancelling(null); setReason(''); setError(null); }} variant="outline" style={{ borderRadius: 12 }}>Back</Button>
               <Button onClick={submit} disabled={busy || reason.trim().length < 10} className="bg-[#ff3354] text-white hover:bg-[#ff4865] disabled:opacity-50" style={{ borderRadius: 12 }}>

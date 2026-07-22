@@ -623,8 +623,8 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                       {inviteBusy ? 'Sending...' : 'Invite'}
                     </Button>
                   </div>
-                  {inviteMessage && <p className="text-xs" style={{ color: '#a6f3c8' }}>{inviteMessage}</p>}
-                  {inviteError && <p className="text-xs" style={{ color: '#ff9a82' }}>{inviteError}</p>}
+                  {inviteMessage && <p className="text-xs" style={{ color: 'var(--status-green)' }}>{inviteMessage}</p>}
+                  {inviteError && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{inviteError}</p>}
                 </Section>
               )}
 
@@ -684,7 +684,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                 {weather?.status === "ok" && weather.willRain && (
                   <div
                     className="mt-3 flex items-start gap-2 rounded-lg p-3 text-xs"
-                    style={{ background: "rgba(255,77,46,0.08)", border: "1px solid rgba(255,77,46,0.35)", color: "#ffb4a3" }}
+                    style={{ background: "rgba(255,77,46,0.08)", border: "1px solid rgba(255,77,46,0.35)", color: "var(--status-red)" }}
                   >
                     <AlertTriangle size={16} style={{ marginTop: 1, flexShrink: 0 }} />
                     <span>{weather.summary}</span>
@@ -736,7 +736,7 @@ export function CreateEvent({ route, go, editId, events, hostUniversity, organis
                     style={{
                       background: "rgba(41,224,122,0.08)",
                       border: "1px solid rgba(41,224,122,0.25)",
-                      color: "#a6f3c8",
+                      color: "var(--status-green)",
                     }}
                   >
                     Pricing is locked — this event is greenlit.
@@ -1095,7 +1095,7 @@ function Field({
       </Label>
       {children}
       {error && (
-        <p className="mt-1 text-xs" style={{ color: "#ff9a82" }}>
+        <p className="mt-1 text-xs" style={{ color: "var(--status-red)" }}>
           {error}
         </p>
       )}

@@ -112,8 +112,8 @@ export function CheckIn({ role, events }: { role: Role | null; events: EventItem
 
           {msg && (
             <div className="mb-5 max-w-xl rounded-lg p-3 text-sm" style={msg.kind === 'ok'
-              ? { background: 'rgba(41,224,122,0.10)', border: '1px solid rgba(41,224,122,0.3)', color: '#a6f3c8' }
-              : { background: 'rgba(255,77,46,0.10)', border: '1px solid rgba(255,77,46,0.3)', color: '#ff9a82' }}>
+              ? { background: 'rgba(41,224,122,0.10)', border: '1px solid rgba(41,224,122,0.3)', color: 'var(--status-green)' }
+              : { background: 'rgba(255,77,46,0.10)', border: '1px solid rgba(255,77,46,0.3)', color: 'var(--status-red)' }}>
               {msg.text}
             </div>
           )}
@@ -136,7 +136,7 @@ export function CheckIn({ role, events }: { role: Role | null; events: EventItem
                     <td className="px-4 py-3">{t.username}</td>
                     <td className="px-4 py-3">
                       {t.status === 'used'
-                        ? <span className="inline-flex items-center gap-1" style={{ color: '#29e07a', fontWeight: 600 }}><CheckCircle2 size={14} /> Checked in</span>
+                        ? <span className="inline-flex items-center gap-1" style={{ color: 'var(--status-green)', fontWeight: 600 }}><CheckCircle2 size={14} /> Checked in</span>
                         : <span style={{ color: 'var(--muted-foreground)' }}>Not yet</span>}
                     </td>
                     <td className="px-4 py-3 text-right">

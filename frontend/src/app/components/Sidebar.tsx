@@ -67,10 +67,10 @@ export function Sidebar({
       <aside
         className="fixed left-0 top-0 z-50 flex h-full w-[260px] flex-col transition-transform duration-300"
         style={{
-          background: '#0f0f15',
+          background: 'var(--surface)',
           borderRightWidth: '0.609px',
           borderRightStyle: 'solid',
-          borderRightColor: 'rgba(255,255,255,0.08)',
+          borderRightColor: 'var(--border)',
           transform: open ? 'translateX(0)' : 'translateX(-100%)',
         }}
       >
@@ -91,7 +91,7 @@ export function Sidebar({
                 key={it.label}
                 type="button"
                 onClick={() => handleClick(it.target)}
-                className="flex items-center gap-2.5 whitespace-nowrap rounded-[16px] px-3 py-2.5 text-sm text-[#8a8a99] transition hover:bg-[#ff4d2e1f] hover:text-white"
+                className="flex items-center gap-2.5 whitespace-nowrap rounded-[16px] px-3 py-2.5 text-sm text-[#8a8a99] transition hover:bg-[#ff4d2e1f] hover:text-[#ff4d2e]"
                 style={{
                   fontWeight: 500,
                   borderLeftWidth: '1.895px',
@@ -109,16 +109,16 @@ export function Sidebar({
           onClick={() => handleClick({ name: 'faq' })}
           className="m-3 rounded-[14px] p-3 text-left transition hover:bg-white/5"
           style={{
-            background: '#14141b',
+            background: 'var(--surface-2)',
             borderWidth: '0.609px',
             borderStyle: 'solid',
-            borderColor: 'rgba(255,255,255,0.08)',
+            borderColor: 'var(--border)',
           }}
         >
           <div className="text-xs" style={{ color: '#8a8a99' }}>
             Need help?
           </div>
-          <div className="text-sm underline" style={{ color: '#f5f5f7', fontWeight: 500 }}>
+          <div className="text-sm underline" style={{ color: 'var(--foreground)', fontWeight: 500 }}>
             See the commonly asked questions
           </div>
         </button>

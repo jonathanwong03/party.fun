@@ -158,7 +158,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
               {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
             </SelectContent>
           </Select>
-          {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.university}</p>}
+          {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{errs.university}</p>}
           <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Used to access events restricted to a university's members. You can change this once later.</p>
         </div>
 
@@ -174,7 +174,7 @@ export function RegisterUser({ go }: { go: (r: Route) => void }) {
           <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{MATRIC_HINT}. party.fun is for current university students, and your matriculation number is unique to your account.</p>
         </div>
 
-        {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
+        {submitError && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{submitError}</p>}
 
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Creating…' : 'Create account'}
@@ -189,7 +189,7 @@ function Field({ label, error, ...props }: { label: string; error?: string | nul
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
-      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+      {error && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
     </div>
   );
 }

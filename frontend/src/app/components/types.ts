@@ -106,7 +106,7 @@ export function getActiveStatus(e: EventItem): number {
 }
 
 // Price-status colors: Early Birds = yellow, Greenlit = green.
-export const STATUS_COLORS = ['#ffcb3c', '#29e07a'] as const;
+export const STATUS_COLORS = ['var(--status-amber)', 'var(--status-green)'] as const;
 
 // The two price statuses, indexed by getActiveStatus (0 = early_bird, 1 = greenlit).
 export const STATUS_LABELS = ['Early Birds', 'Greenlit'] as const;
@@ -119,10 +119,10 @@ export function statusStageLabel(e: EventItem): string {
 // Badge styling for an event: cancelled -> red, completed -> grey, greenlit -> green,
 // otherwise early_bird -> yellow.
 export function eventBadge(e: EventItem): { label: string; bg: string; fg: string; dot: string } {
-  if (e.status === 'cancelled') return { label: 'Cancelled', bg: 'rgba(255,51,84,0.14)', fg: '#ff6b85', dot: '#ff3354' };
-  if (e.status === 'completed') return { label: 'Completed', bg: 'rgba(255,255,255,0.06)', fg: '#9a9aa5', dot: '#8a8a99' };
-  if (e.status === 'greenlit') return { label: 'Greenlit', bg: 'rgba(41,224,122,0.14)', fg: '#29e07a', dot: '#29e07a' };
-  return { label: 'Early Birds', bg: 'rgba(255,203,60,0.16)', fg: '#ffcb3c', dot: '#ffcb3c' };
+  if (e.status === 'cancelled') return { label: 'Cancelled', bg: 'rgba(255,51,84,0.14)', fg: 'var(--status-red)', dot: 'var(--status-red)' };
+  if (e.status === 'completed') return { label: 'Completed', bg: 'rgba(127,127,127,0.14)', fg: 'var(--muted-foreground)', dot: 'var(--muted-foreground)' };
+  if (e.status === 'greenlit') return { label: 'Greenlit', bg: 'rgba(41,224,122,0.14)', fg: 'var(--status-green)', dot: 'var(--status-green)' };
+  return { label: 'Early Birds', bg: 'rgba(255,203,60,0.16)', fg: 'var(--status-amber)', dot: 'var(--status-amber)' };
 }
 
 // Key matching what the badge shows, used by the landing filter.

@@ -24,10 +24,10 @@ const STATUS_FILTERS: { key: 'all' | EventItem['status']; label: string }[] = [
 ];
 
 const DASHBOARD_STATUS_COLORS: Record<'GREENLIT' | 'EARLY BIRDS' | 'CANCELLED' | 'COMPLETED', string> = {
-  GREENLIT: '#29e07a',
-  'EARLY BIRDS': '#ffcb3c',
-  CANCELLED: '#ff3354',
-  COMPLETED: '#9a9aa5',
+  GREENLIT: 'var(--status-green)',
+  'EARLY BIRDS': 'var(--status-amber)',
+  CANCELLED: 'var(--status-red)',
+  COMPLETED: 'var(--muted-foreground)',
 };
 
 // An event can't be cancelled once it has started.
@@ -135,7 +135,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                           <span>{e.organiser || (isDrafts ? 'Draft event' : '')}</span>
                           {!isDrafts && e.isCoOrganiser && (
-                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c', fontWeight: 700 }}>Co-organiser</span>
+                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: 'var(--status-amber)', fontWeight: 700 }}>Co-organiser</span>
                           )}
                         </div>
                       </div>
@@ -158,16 +158,16 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                       {isDrafts ? (
                         <>
                           <button onClick={() => go({ name: 'create-event', draftId: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Resume</button>
-                          <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Trash2 size={13} /> Delete</button>
+                          <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: 'var(--status-red)' }}><Trash2 size={13} /> Delete</button>
                         </>
                       ) : (
                         <>
                           <button onClick={() => go({ name: 'event', id: e.id, fromOrganiser: true })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Eye size={13} /> View</button>
                           {(e.canEdit ?? e.mine) && e.status !== 'cancelled' && e.status !== 'completed' && <button onClick={() => go({ name: 'edit-event', id: e.id })} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)' }}><Pencil size={13} /> Edit</button>}
                           {e.status === 'cancelled' && (e.canDelete ?? e.mine) ? (
-                            <button onClick={() => setDeleting(e.id)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Trash2 size={13} /> Remove</button>
+                            <button onClick={() => setDeleting(e.id)} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: 'var(--status-red)' }}><Trash2 size={13} /> Remove</button>
                           ) : (e.canCancel ?? e.mine) && (e.status === 'early_bird' || e.status === 'greenlit') && !hasStarted(e) ? (
-                            <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: '#ff3354' }}><Ban size={13} /> Cancel</button>
+                            <button onClick={() => { setReason(''); setDeleting(e.id); }} className="flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition hover:bg-white/5" style={{ borderColor: 'var(--border)', color: 'var(--status-red)' }}><Ban size={13} /> Cancel</button>
                           ) : null}
                         </>
                       )}
@@ -208,7 +208,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                         <div className="flex flex-wrap items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                           <span>{e.organiser || (isDrafts ? 'Draft event' : '')}</span>
                           {!isDrafts && e.isCoOrganiser && (
-                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c', fontWeight: 700 }}>
+                            <span className="rounded-full px-2 py-0.5" style={{ background: 'rgba(255,203,60,0.16)', color: 'var(--status-amber)', fontWeight: 700 }}>
                               Co-organiser
                             </span>
                           )}

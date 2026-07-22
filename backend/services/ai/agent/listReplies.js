@@ -6,7 +6,7 @@
 // would use. Anything qualified — a price cap, a specific event name, a superlative or a
 // request for one fact — returns null and falls through to the LLM graph.
 
-import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable } from './tools.js';
+import { EXECUTORS, resolveAttendableRef, resolveVisibleRef, whyNotAttendable, diceSimilarity } from './tools.js';
 import { isBuyQuestion } from './buyIntent.js';
 
 // A qualifier/price cap or a quoted specific-event name means the ask is NOT a plain
@@ -87,6 +87,19 @@ export function matchBuyIntent(text) {
   return cleanName(quoted ? quoted[1] : m[1]) || null;
 }
 
+// The event name in a purchase-phrased QUESTION ("can i buy tickets for X?") — the mirror of
+// matchBuyIntent, which skips questions. Used only by buildOwnedOrClosedReply, which returns a
+// reply ONLY when the event is an exact not-buyable match, so a question about a BUYABLE event
+// still falls through to the graph (temporal asks like "…after 1 august?" keep working there).
+export function matchBuyQuestionName(text) {
+  const t = String(text ?? '').trim();
+  if (!t || !isBuyQuestion(t)) return null;
+  const m = BUY_INTENT_RX.exec(t);
+  if (!m) return null;
+  const quoted = QUOTED_NAME_RX.exec(m[1]);
+  return cleanName(quoted ? quoted[1] : m[1]) || null;
+}
+
 // A trailing time qualifier on an imperative buy ("buy tickets for Neon Rave after 1 august")
 // belongs to the ASK, not to the event name. Stripping it at parse time would maul an event
 // legitimately titled "Party on Friday", so the stripped form is only ever a FALLBACK
@@ -153,7 +166,16 @@ export async function buildBuyIntentReply(name, ctx) {
       if (!visibleNear.length) visibleNear = visible?.ambiguous ?? [];
     }
     const shown = String(name ?? '').trim();
-    const suggestions = buyableNear.length ? buyableNear : visibleNear;
+    // Rank the closest matches across BOTH pools by string similarity to what the user typed,
+    // rather than blindly preferring buyable events. Otherwise a weak match to the only buyable
+    // event (e.g. "Stardust Soiree") would beat a near-perfect typo match to an event the user
+    // already owns ("Book event event"), so a typo suggested a totally unrelated event.
+    const merged = [...visibleNear, ...buyableNear].filter((t, i, a) => a.indexOf(t) === i);
+    const suggestions = merged
+      .map((t) => ({ t, s: diceSimilarity(shown, t) }))
+      .sort((a, b) => b.s - a.s)
+      .slice(0, 3)
+      .map((x) => x.t);
     if (suggestions.length === 1) {
       return `I'm sorry, I cannot find an event named "${shown}". Did you mean "${suggestions[0]}"?`;
     }
@@ -164,6 +186,28 @@ export async function buildBuyIntentReply(name, ctx) {
     return `I'm sorry, I cannot find an event named "${shown}". Ask me what events you can join and I'll list them.`;
   } catch {
     return null; // any snag → let the normal graph answer instead
+  }
+}
+
+// For a purchase-phrased QUESTION ("can i buy tickets for X?"): if X is an EXACT visible event
+// the user CAN'T buy (already owns / cancelled / ended / own event / restricted), answer
+// deterministically with the reason — worded from the event's REAL title (notBuyableReply uses
+// ev.title), so the casing/punctuation is always correct. A BUYABLE event, an unknown name, or an
+// ambiguous near-miss all return null so the graph answers: a question must never be turned into a
+// canned "cannot find …?" (that regression is exactly why questions skip matchBuyIntent).
+export async function buildOwnedOrClosedReply(name, ctx) {
+  try {
+    if (String(ctx?.role ?? 'user').toLowerCase() === 'admin') return null;
+    for (const candidate of nameCandidates(name)) {
+      const visible = await resolveVisibleRef(ctx, candidate);
+      if (visible?.event) {
+        const reason = await whyNotAttendable(visible.event, ctx);
+        return reason ? notBuyableReply(visible.event, reason) : null;
+      }
+    }
+    return null;
+  } catch {
+    return null;
   }
 }
 

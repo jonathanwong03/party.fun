@@ -155,7 +155,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
               style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', height: 44 }}
             />
           </div>
-          {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
           <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
             {submitting ? 'Logging in…' : 'Login'}
           </Button>
@@ -175,7 +175,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
             />
             <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Use the phone number saved on your account, in international format.</p>
           </div>
-          {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
           <Button type="submit" disabled={phoneSubmitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
             {phoneSubmitting ? 'Sending…' : 'Send code'}
           </Button>
@@ -199,7 +199,7 @@ export function Login({ go, onLogin }: { go: (r: Route) => void; onLogin: (user:
             />
             <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>Sent by SMS to {phone}.</p>
           </div>
-          {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
           <Button type="submit" disabled={phoneSubmitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
             {phoneSubmitting ? 'Verifying…' : 'Verify & sign in'}
           </Button>

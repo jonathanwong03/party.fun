@@ -39,8 +39,8 @@ export function ResetPassword({ go, email, code }: { go: (r: Route) => void; ema
       <AuthShell maxWidthClass="max-w-xl" title="Password updated" subtitle="Your password has been changed. Sign in with your new password.">
         <div className="space-y-5">
           <div className="flex items-center gap-3 rounded-xl p-4" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
-            <CheckCircle2 size={20} style={{ color: '#29e07a' }} />
-            <span className="text-sm" style={{ color: '#a6f3c8' }}>All set — you can log in now.</span>
+            <CheckCircle2 size={20} style={{ color: 'var(--status-green)' }} />
+            <span className="text-sm" style={{ color: 'var(--status-green)' }}>All set — you can log in now.</span>
           </div>
           <Button onClick={() => go({ name: 'login' })} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
             Back to login
@@ -63,7 +63,7 @@ export function ResetPassword({ go, email, code }: { go: (r: Route) => void; ema
             onChange={(e) => setPassword(e.target.value)}
             style={{ background: 'var(--surface-2)', borderColor: attempted && errs.password ? '#ff4d2e' : 'var(--border)', height: 44 }}
           />
-          {attempted && errs.password && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.password}</p>}
+          {attempted && errs.password && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{errs.password}</p>}
         </div>
         <div>
           <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Confirm new password</Label>
@@ -75,9 +75,9 @@ export function ResetPassword({ go, email, code }: { go: (r: Route) => void; ema
             onChange={(e) => setConfirm(e.target.value)}
             style={{ background: 'var(--surface-2)', borderColor: attempted && errs.confirm ? '#ff4d2e' : 'var(--border)', height: 44 }}
           />
-          {attempted && errs.confirm && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.confirm}</p>}
+          {attempted && errs.confirm && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{errs.confirm}</p>}
         </div>
-        {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+        {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Updating…' : 'Update password'}
         </Button>

@@ -93,7 +93,7 @@ export function Analytics({ role, events }: { role: Role | null; go: (r: Route) 
                     <stop offset="100%" stopColor="#29e07a" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.22)" />
                 <XAxis dataKey="label" tick={AXIS} tickLine={false} axisLine={false} />
                 <YAxis tick={AXIS} tickLine={false} axisLine={false} />
                 <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => `$${Number(v).toFixed(2)}`} />
@@ -110,10 +110,10 @@ export function Analytics({ role, events }: { role: Role | null; go: (r: Route) 
           {topEvents.length === 0 ? <Empty text="No active events yet." /> : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={topEvents} layout="vertical" margin={{ top: 4, right: 16, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" horizontal={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.22)" horizontal={false} />
                 <XAxis type="number" allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
                 <YAxis type="category" dataKey="name" width={120} tick={AXIS} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(128,128,128,0.12)' }} />
                 <Bar dataKey="ticketsSold" name="Tickets" fill="#ff4d2e" radius={[0, 6, 6, 0]} />
               </BarChart>
             </ResponsiveContainer>
@@ -152,10 +152,10 @@ export function Analytics({ role, events }: { role: Role | null; go: (r: Route) 
             {data.platform.topOrganisers.length === 0 ? <Empty text="No organisers yet." /> : (
               <ResponsiveContainer width="100%" height={320}>
                 <BarChart data={data.platform.topOrganisers.map((o) => ({ ...o, name: o.name.length > 14 ? o.name.slice(0, 13) + '…' : o.name }))} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(128,128,128,0.22)" />
                   <XAxis dataKey="name" tick={AXIS} tickLine={false} axisLine={false} />
                   <YAxis allowDecimals={false} tick={AXIS} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(255,255,255,0.04)' }} />
+                  <Tooltip contentStyle={tooltipStyle} cursor={{ fill: 'rgba(128,128,128,0.12)' }} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Bar dataKey="tickets" name="Tickets" fill="#ff4d2e" radius={[6, 6, 0, 0]} />
                   <Bar dataKey="events" name="Events" fill="#4d8dff" radius={[6, 6, 0, 0]} />

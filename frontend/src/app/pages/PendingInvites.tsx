@@ -55,7 +55,7 @@ export function PendingInvites({ go, onChanged }: { go: (r: Route) => void; onCh
       </div>
 
       {error && (
-        <div className="mb-5 rounded-xl p-4 text-sm" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>
+        <div className="mb-5 rounded-xl p-4 text-sm" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: 'var(--status-red)' }}>
           {error}
         </div>
       )}
@@ -137,8 +137,8 @@ function InviteRow({ invite, action, go }: { invite: CoOrganiserInvite; action: 
 
 function StatusPill({ status }: { status: CoOrganiserInvite['status'] }) {
   const styles: Record<CoOrganiserInvite['status'], React.CSSProperties> = {
-    pending: { background: 'rgba(255,203,60,0.16)', color: '#ffcb3c' },
-    accepted: { background: 'rgba(41,224,122,0.14)', color: '#29e07a' },
+    pending: { background: 'rgba(255,203,60,0.16)', color: 'var(--status-amber)' },
+    accepted: { background: 'rgba(41,224,122,0.14)', color: 'var(--status-green)' },
     declined: { background: 'rgba(255,77,46,0.14)', color: '#ff8a70' },
     revoked: { background: 'rgba(255,255,255,0.06)', color: 'var(--muted-foreground)' },
   };

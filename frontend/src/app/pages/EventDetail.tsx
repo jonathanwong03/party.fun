@@ -107,7 +107,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <p className="mt-1 text-sm text-white/85 sm:mt-2 sm:text-[17px]" style={{ fontWeight: 700 }}>Hosted by {event.organiser}</p>
             {hostUniversity && <p className="mt-0.5 text-sm text-white/80 sm:mt-1 sm:text-base" style={{ fontWeight: 600 }}>{hostUniversity}</p>}
             {restrictedUniCode && (
-              <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: '#ff6b85', fontWeight: 700 }}>
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: 'var(--status-red)', fontWeight: 700 }}>
                 <Shield size={12} /> {restrictedUniCode} members only
               </span>
             )}
@@ -118,7 +118,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
       {weather?.status === 'ok' && weather.willRain && (
         <div
           className="mb-6 flex items-start gap-2 rounded-xl p-4 text-sm"
-          style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.35)', color: '#ffb4a3' }}
+          style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.35)', color: 'var(--status-red)' }}
         >
           <AlertTriangle size={18} style={{ marginTop: 1, flexShrink: 0 }} />
           <span>{weather.summary}</span>
@@ -133,23 +133,23 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <CalendarClock size={13} /> Starts
               </div>
-              <div className="mt-1 font-bold text-white">{event.startLong || event.date}</div>
-              <div className="font-bold text-white">{event.startClock || event.time}</div>
+              <div className="mt-1 font-bold">{event.startLong || event.date}</div>
+              <div className="font-bold">{event.startClock || event.time}</div>
             </div>
             <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <CalendarClock size={13} /> Ends
               </div>
-              <div className="mt-1 font-bold text-white">{event.endLong || event.endDate}</div>
-              <div className="font-bold text-white">{event.endClock || event.endTime}</div>
+              <div className="mt-1 font-bold">{event.endLong || event.endDate}</div>
+              <div className="font-bold">{event.endClock || event.endTime}</div>
             </div>
             <div className="rounded-xl glass p-4 transition-all duration-300 hover:scale-[1.02]">
               <div className="flex items-center gap-2 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                 <MapPin size={13} /> Location
               </div>
-              {event.location && <div className="mt-1 font-bold text-white">{event.location}</div>}
-              {event.address && <div className={`${event.location ? '' : 'mt-1 '}font-bold text-white`}>{event.address}</div>}
-              {!event.location && !event.address && <div className="mt-1 font-bold text-white">{fullLocation}</div>}
+              {event.location && <div className="mt-1 font-bold">{event.location}</div>}
+              {event.address && <div className={`${event.location ? '' : 'mt-1 '}font-bold`}>{event.address}</div>}
+              {!event.location && !event.address && <div className="mt-1 font-bold">{fullLocation}</div>}
               {fullLocation && (
                 <HowToGetThere destination={fullLocation} />
               )}
@@ -176,7 +176,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
 
             {/* Countdown */}
             {event.status !== 'greenlit' && event.status !== 'cancelled' && (
-              <div className="mt-5 rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'rgba(255,255,255,0.03)' }}>
+              <div className="mt-5 rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
                 <div className="mb-3 flex items-center gap-1.5 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                   <Timer size={12} /> Event starts in
                   <span className="ml-auto font-medium" style={{ color: 'var(--foreground)' }}>{event.date}</span>
@@ -196,7 +196,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
                   key={c.label}
                   role="button"
                   className="group relative cursor-pointer rounded-lg p-3"
-                  style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}
+                  style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}
                   onPointerDown={() => { pressStart.current = Date.now(); setHeldHint(c.label); }}
                   onPointerUp={() => { setHeldHint(null); if (Date.now() - pressStart.current < 250) setStuckHint((p) => (p === c.label ? null : c.label)); }}
                   onPointerLeave={() => setHeldHint(null)}
@@ -251,13 +251,13 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <Button
               disabled
               className="w-full"
-              style={{ background: '#5c2a20', color: 'rgba(255,255,255,0.55)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              style={{ background: 'var(--surface-2)', color: 'var(--muted-foreground)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
             >
               Event over
             </Button>
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Payments were captured at checkout. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>
@@ -267,7 +267,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
         ) : showOptOut ? (
         <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300">
-            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
+            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: 'var(--status-green)' }}>You're in</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Tickets pledged</h3>
             <div className="mt-1 text-sm" style={{ color: 'var(--foreground)', fontWeight: 600 }}>
               {(qty ?? 1)}× ticket{(qty ?? 1) === 1 ? '' : 's'}
@@ -277,7 +277,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             </p>
 
             <div className="mt-4 rounded-lg p-3" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#ffb4a3' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-red)' }}>
                 <Mail size={14} className="mt-0.5 shrink-0" />
                 <span>🎟️ Your tickets were emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.</span>
               </div>
@@ -321,7 +321,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <Button
               disabled
               className="w-full"
-              style={{ background: '#2a2a33', color: 'rgba(255,255,255,0.55)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+              style={{ background: 'var(--surface-2)', color: 'var(--muted-foreground)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
             >
               Can't pledge your own event
             </Button>
@@ -329,7 +329,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <Button
               onClick={() => go({ name: 'hosted-events' })}
               variant="outline"
-              className="mt-3 w-full border-white/15 bg-transparent hover:bg-white/5"
+              className="mt-3 w-full bg-transparent"
               style={{ borderRadius: 12, height: 48, fontSize: 15, fontWeight: 700 }}
             >
               Go to hosted events
@@ -383,7 +383,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <Button
                 disabled
                 className="w-full disabled:opacity-100"
-                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+                style={{ background: 'rgba(255,51,84,0.08)', color: 'var(--status-red)', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
               >
                 Event unavailable
               </Button>
@@ -391,7 +391,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <Button
                 disabled
                 className="w-full disabled:opacity-100"
-                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 15, fontWeight: 700 }}
+                style={{ background: 'rgba(255,51,84,0.08)', color: 'var(--status-red)', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 15, fontWeight: 700 }}
               >
                 {restrictedUniCode} members only
               </Button>
@@ -408,7 +408,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             )}
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Your payment is captured now. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>
@@ -462,17 +462,17 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
     <div
       className="rounded-2xl p-6"
       style={{
-        background: '#14141b',
+        background: 'var(--surface)',
         borderWidth: '0.625px',
         borderStyle: 'solid',
-        borderColor: 'rgba(255,255,255,0.08)',
+        borderColor: 'var(--border)',
       }}
     >
-      <h3 className="mb-5" style={{ color: '#f5f5f7', fontSize: 18, fontWeight: 500 }}>Who's going?</h3>
+      <h3 className="mb-5" style={{ color: 'var(--foreground)', fontSize: 18, fontWeight: 500 }}>Who's going?</h3>
 
       <div className="mb-5 flex items-center">
         {shown.length === 0 ? (
-          <span className="text-sm" style={{ color: '#8a8a99' }}>No tickets locked in yet.</span>
+          <span className="text-sm" style={{ color: 'var(--muted-foreground)' }}>No tickets locked in yet.</span>
         ) : (
           shown.map((a, i) => (
             <div key={a.username} className="group relative" style={{ marginLeft: i === 0 ? 0 : -12 }}>
@@ -482,12 +482,12 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
                   alt={a.username}
                   referrerPolicy="no-referrer"
                   className="size-14 rounded-full object-cover"
-                  style={{ border: '2px solid #14141b' }}
+                  style={{ border: '2px solid var(--surface)' }}
                 />
               ) : (
                 <div
                   className="grid size-14 place-items-center rounded-full text-white"
-                  style={{ background: avatarColor(a.username), border: '2px solid #14141b', fontSize: 28, fontWeight: 500 }}
+                  style={{ background: avatarColor(a.username), border: '2px solid var(--surface)', fontSize: 28, fontWeight: 500 }}
                 >
                   {(a.name || a.username).charAt(0).toUpperCase()}
                 </div>
@@ -507,21 +507,21 @@ function WhosGoingCard({ event, go, role }: { event: EventItem; go: (r: Route) =
         {overflow > 0 && (
           <div
             className="grid size-14 place-items-center rounded-full"
-            style={{ marginLeft: -12, background: '#23232c', border: '2px solid #14141b', color: '#c9c9d4', fontSize: 16, fontWeight: 600 }}
+            style={{ marginLeft: -12, background: 'var(--surface-2)', border: '2px solid var(--surface)', color: 'var(--muted-foreground)', fontSize: 16, fontWeight: 600 }}
           >
             +{overflow}
           </div>
         )}
       </div>
 
-      <p className="mb-4 text-sm" style={{ color: '#8a8a99', fontWeight: 700 }}>
+      <p className="mb-4 text-sm" style={{ color: 'var(--muted-foreground)', fontWeight: 700 }}>
         {event.activeTicketCount} tickets locked in. {event.spotsLeft} spots remaining
       </p>
 
       <Button
         onClick={() => go(role ? { name: 'attendees', id: event.id } : { name: 'login' })}
         variant="outline"
-        className="w-full border-white/15 bg-transparent hover:bg-white/5"
+        className="w-full bg-transparent"
         style={{ borderRadius: 12, height: 42, fontWeight: 600 }}
       >
         View Details

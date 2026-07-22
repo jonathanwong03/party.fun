@@ -40,7 +40,9 @@ const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|
 function autoNumberList(paras: string[]): string[] {
   const introIdx = paras.findIndex((p) => /:\s*$/.test(p));
   if (introIdx === -1) return paras;
-  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p) && !/:\s*$/.test(p);
+  // A paragraph ending in "?" is a question/CTA ("Would you like to buy tickets?"), never an
+  // event title — exclude it so a single event followed by a CTA doesn't get numbered as a list.
+  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p) && !/:\s*$/.test(p) && !/\?\s*$/.test(p);
   const titleCount = paras.slice(introIdx + 1).filter(isTitle).length;
   if (titleCount < 2) return paras;
   let n = 0;
@@ -395,7 +397,7 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
                       </div>
                       <div className="mt-1 text-sm" style={{ color: 'var(--foreground)' }}>{p.summary}</div>
                       {st.status === 'done' ? (
-                        <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#29e07a' }}>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: 'var(--status-green)' }}>
                           <Check size={14} /> {st.message ?? 'Done.'}
                         </div>
                       ) : st.status === 'error' ? (

@@ -32,7 +32,7 @@ export function PricingTier({
               </div>
               <div
                 className="relative w-full overflow-hidden rounded-t-md"
-                style={{ height: maxH, background: 'rgba(255,255,255,0.05)', border: active ? `1px solid ${TIER_COLORS[i]}40` : '1px solid transparent' }}
+                style={{ height: maxH, background: 'var(--surface-2)', border: active ? `1px solid ${TIER_COLORS[i]}40` : '1px solid transparent' }}
               >
                 <div
                   className="absolute bottom-0 left-0 w-full rounded-t-sm transition-all duration-700"
@@ -83,14 +83,14 @@ export function PricingTier({
                 <span
                   className="grid size-5 place-items-center rounded-full"
                   style={{
-                    background: done ? color : active ? color : 'rgba(255,255,255,0.06)',
-                    color: done || active ? '#0b0b0f' : '#8a8a99',
+                    background: done ? color : active ? color : 'var(--surface-2)',
+                    color: done || active ? '#0b0b0f' : 'var(--muted-foreground)',
                   }}
                 >
                   {done ? <Check size={11} /> : active ? '•' : <Lock size={9} />}
                 </span>
                 <div>
-                  <div style={{ color: done || active ? 'var(--foreground)' : '#8a8a99', fontWeight: 500 }}>{t.label}</div>
+                  <div style={{ color: done || active ? 'var(--foreground)' : 'var(--muted-foreground)', fontWeight: 500 }}>{t.label}</div>
                   <div className="text-xs" style={{ color: 'var(--muted-foreground)' }}>{t.sold}/{t.qty} sold</div>
                 </div>
                 {active && (

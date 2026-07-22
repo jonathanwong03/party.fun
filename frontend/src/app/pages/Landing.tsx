@@ -108,7 +108,7 @@ export function Landing({
 
   if (error) {
     return (
-      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: '#ff9a82' }}>
+      <div className="mx-auto max-w-[1536px] px-6 py-20 text-center text-sm" style={{ color: 'var(--status-red)' }}>
         Unable to load events from the backend.
       </div>
     );

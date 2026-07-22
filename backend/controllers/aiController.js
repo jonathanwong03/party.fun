@@ -7,7 +7,7 @@ import { revenueTips as revenueTipsTask } from '../services/ai/tasks/revenueTips
 import { recommendEvents as recommendEventsTask } from '../services/ai/tasks/recommendEvents.js';
 import { answerAppQuestion } from '../services/ai/tasks/answerAppQuestion.js';
 import { runGraph, resumeGraph } from '../services/ai/agent/eventGraph.js';
-import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchLinkCardIntent, buildLinkCardReply } from '../services/ai/agent/listReplies.js';
+import { matchListQuery, buildListReply, matchBuyIntent, buildBuyIntentReply, matchBuyQuestionName, buildOwnedOrClosedReply, matchLinkCardIntent, buildLinkCardReply } from '../services/ai/agent/listReplies.js';
 import { executeAction } from '../services/ai/agent/actions.js';
 import { loadMemory, loadRelevantMemory, formatMemory } from '../services/ai/memory.js';
 import { embedChatMessages, loadRelevantChatHistory, formatChatHistory } from '../services/ai/chatHistory.js';
@@ -164,6 +164,7 @@ const AGENT_SYSTEM = () => [
   'REFERENCES: users refer to events by NAME (or by "it"/"that"/"the first one" from earlier in the chat), never by id. Before ANY action on an event — buy/pledge, edit, cancel, give away, get details or forecast — find that event by NAME in the SAME turn using a search tool (list_available_events or search_events for events to attend; get_my_hosted_events for their own; list_my_drafts for drafts) and use the EXACT id it returns. NEVER treat the user\'s words or an event name as an id, never ask the user for an id, and never invent or reuse an id from an earlier message.',
   '',
   'IDs are internal only. Never show event IDs, draft IDs, database IDs, UUIDs, or parenthetical "(ID: ...)" text in user-facing replies, even when a tool result includes them.',
+  'EXACT TITLES: always name an event using its EXACT title as returned by the tools — keep the original capitalisation and punctuation (including any trailing "!", "&", etc.). NEVER lowercase, abbreviate, reword, or echo the user\'s own spelling of an event name; e.g. if the tool title is "Supper at Springleaf prata!!!", write it exactly that way even if the user typed "supper at springleaf prata".',
   'CARD SAFETY: NEVER ask for, accept, repeat or store a card number, expiry date or CVC in this chat — chat messages are stored and processed, so card details must only ever be typed into the app\'s secure card form. If the user wants to link/add a card or has none linked, tell them you will open the secure card form for them (or offer to pay by in-app wallet instead). If a user pastes card details anyway, do NOT repeat them back and tell them not to share card numbers in chat.',
   'YOU CAN BUY TICKETS. You have propose_pledge — never tell the user you cannot help with a purchase or that you lack that functionality. If someone asks to buy/purchase tickets, start the buy flow (confirm the event, then payment method, then quantity).',
   'BINARY (YES/NO) QUESTIONS: when the user asks a yes/no question ("am I an organiser?", "can I still buy tickets for X?", "is X sold out?", "can I attend X?", "have I already bought tickets for X?", "can I edit X?", "is it too late?", "will I be refunded if X is cancelled?"), LEAD with "Yes" or "No", then ONE short line saying why, grounded in tool data. Never answer a yes/no question with a bare noun and never dodge it. A QUESTION about buying ("can I buy tickets after 24 July?") is a question — ANSWER it; do NOT start the purchase flow unless they actually ask to buy.',
@@ -425,6 +426,15 @@ export async function chat(req, res) {
   if (buyName) {
     const reply = await buildBuyIntentReply(buyName, ctx);
     if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
+  } else {
+    // A purchase-phrased QUESTION ("can i buy tickets for X?"): answer deterministically with the
+    // event's REAL title ONLY when X is an exact event they can't buy (already owned / closed).
+    // Buyable/unknown/ambiguous → null, so the graph still answers (temporal asks keep working).
+    const askedName = matchBuyQuestionName(lastUserMsg?.content);
+    if (askedName) {
+      const reply = await buildOwnedOrClosedReply(askedName, ctx);
+      if (reply) return respondDirect(req, res, { list, lastUserMsg, conversationId, reply });
+    }
   }
   if (!guard(req, res)) return;
   const [memories, chatHistory] = await Promise.all([
