@@ -524,6 +524,8 @@ function AppShell() {
           go={go}
           walletBalance={walletBalance}
           onMenuClick={() => setSidebarOpen(true)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       )}
       {!isAuthPage && role && (

@@ -1,5 +1,5 @@
 import { Logo } from './Logo';
-import { Menu, Settings as SettingsIcon, Wallet as WalletIcon } from 'lucide-react';
+import { Menu, Moon, Settings as SettingsIcon, Sun, Wallet as WalletIcon } from 'lucide-react';
 import type { Role, Route } from './types';
 import type { AuthUser } from '../api';
 
@@ -10,6 +10,8 @@ export function Navbar({
   go,
   walletBalance,
   onMenuClick,
+  theme,
+  onToggleTheme,
 }: {
   role: Role | null;
   user: AuthUser | null;
@@ -17,6 +19,8 @@ export function Navbar({
   go: (r: Route) => void;
   walletBalance?: number | null;
   onMenuClick: () => void;
+  theme: 'dark' | 'light';
+  onToggleTheme: () => void;
 }) {
   const navItem = (label: string, target: Route, _active: boolean) => (
     <button
@@ -61,6 +65,14 @@ export function Navbar({
         </nav>
 
         <div className="col-start-3 flex items-center gap-2 justify-self-end">
+          <button
+            type="button"
+            aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            onClick={onToggleTheme}
+            className="grid size-9 place-items-center rounded-full text-white transition hover:bg-white/5"
+          >
+            {theme === 'dark' ? <Moon size={18} color="#f5f5f7" /> : <Sun size={18} color="#f5f5f7" />}
+          </button>
           {role ? (
             <>
               {role !== 'admin' && (
