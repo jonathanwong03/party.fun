@@ -1207,20 +1207,25 @@ export const EXECUTORS = {
     // Only events the caller can actually attend/buy (not own/started/past/cancelled/owned).
     // Accepts an event id OR name (findEvent resolves both).
     const resolved = await resolveEvent(ctx, await attendableEvents(ctx), args.eventId);
-    if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
     const ev = resolved.event;
     if (!ev) {
+      // NOT an exact buyable event. Check the WIDER visible pool for an EXACT match FIRST, so an
+      // event the user already owns (excluded from the attendable pool) gets the specific reason
+      // — worded from its REAL title — instead of the attendable pool's weak "Did you mean …?"
+      // guess. (Returning resolved.ambiguous here first would suggest an unrelated buyable event.)
       const seenResolved = await resolveEvent(ctx, await visibleEvents(ctx), args.eventId);
-      if (seenResolved.ambiguous) return ambiguousEvent(seenResolved.ambiguous);
       const seen = seenResolved.event;
-      if (!seen) return { error: 'Event not found or not visible to you.' };
-      if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
-      if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
-      if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
-      // Before the catch-all: a full event used to fall through to "you already hold tickets",
-      // which is simply untrue for someone who has never bought any.
-      if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
-      return { error: 'You already hold tickets for this event — give them away before buying again.' };
+      if (seen) {
+        if (seen.hostId === ctx.userId) return { error: 'You cannot buy tickets for your own event.' };
+        if (seen.status === 'cancelled' || seen.status === 'completed') return { error: 'This event is no longer open for tickets.' };
+        if (!isFutureStart(seen)) return { error: 'This event has already started, so tickets can no longer be bought.' };
+        if (isSoldOut(seen)) return { error: `"${seen.title}" is at full capacity — every ticket has been taken, so none can be bought. Tell the user, and do NOT propose a purchase.` };
+        return { error: `You already hold tickets for "${seen.title}", so you can't buy more for that event — give some away first if you no longer need them.` };
+      }
+      // No exact match anywhere — surface the closest suggestion, preferring the visible pool.
+      if (seenResolved.ambiguous) return ambiguousEvent(seenResolved.ambiguous);
+      if (resolved.ambiguous) return ambiguousEvent(resolved.ambiguous);
+      return { error: 'Event not found or not visible to you.' };
     }
     const qty = Math.max(1, Math.floor(Number(args.qty ?? 1)) || 1);
     // Capacity was previously enforced ONLY by the create_pledge RPC, so the agent would build

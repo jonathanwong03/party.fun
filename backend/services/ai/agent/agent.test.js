@@ -542,6 +542,24 @@ test('propose_pledge proposes a wallet purchase, blocks own event, guides top-up
   assert.match(short.error, /short|top up/i);
 });
 
+test('propose_pledge names the EXACT owned event, not a "Did you mean" to a buyable one', async () => {
+  // Reported bug: confirming an already-owned event ("Book event event") returned "Did you mean
+  // Stardust Soiree?" because the attendable pool (which excludes owned events) fuzzy-matched the
+  // only buyable event. It must instead say "you already hold tickets", naming the real event.
+  const events = [
+    { id: 'e1', title: 'Stardust Soiree: A Night Under the Stars', status: 'early_bird', hostId: 'other', startDate: inDaysIso(5), statuses: [{ price: 15 }] },
+    { id: 'e2', title: 'Book event event', status: 'early_bird', hostId: 'other', startDate: inDaysIso(5), statuses: [{ price: 10 }] },
+  ];
+  const profileTickets = { tickets: [{ eventId: 'e2', tab: 'upcoming', activeTicketCount: 1 }] };
+  const ctx = { userId: 'u1', role: 'user', supabase: {
+    rpc: async (name) => ({ data: name === 'get_profile' ? profileTickets : events, error: null }),
+  } };
+  const res = await EXECUTORS.propose_pledge({ eventId: 'Book event event', qty: 3 }, ctx);
+  assert.ok(res.error);
+  assert.match(res.error, /already hold tickets for "Book event event"/);
+  assert.doesNotMatch(res.error, /Stardust|Did you mean/);
+});
+
 test('event tools resolve an event by NAME or slug, not just id', async () => {
   const events = [{ id: 'e1', title: 'Late-Night Supper Crawl', description: 'yum', status: 'early_bird', hostId: 'other', startDate: inDaysIso(3), statuses: [{ price: 9 }] }];
   const ctx = ctxFull({ events, user: { walletBalance: 100, cardLast4: '4242' } });

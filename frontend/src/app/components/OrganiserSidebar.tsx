@@ -15,10 +15,10 @@ export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) =
     <aside
       className="hidden w-[8.75rem] shrink-0 flex-col p-3 md:flex"
       style={{
-        background: '#0f0f15',
+        background: 'var(--surface)',
         borderRightWidth: '0.556px',
         borderRightStyle: 'solid',
-        borderRightColor: 'rgba(255,255,255,0.08)',
+        borderRightColor: 'var(--border)',
         minHeight: 'calc(100vh - 64px)',
       }}
     >
@@ -46,16 +46,16 @@ export function OrganiserSidebar({ route, go }: { route: Route; go: (r: Route) =
         onClick={() => go({ name: 'faq' })}
         className="mt-auto rounded-[14px] p-3 text-left transition hover:bg-white/5"
         style={{
-          background: '#14141b',
+          background: 'var(--surface-2)',
           borderWidth: '0.556px',
           borderStyle: 'solid',
-          borderColor: 'rgba(255,255,255,0.08)',
+          borderColor: 'var(--border)',
         }}
       >
         <div className="text-xs" style={{ color: '#8a8a99' }}>
           Need help?
         </div>
-        <div className="text-sm underline" style={{ color: '#f5f5f7', fontWeight: 500 }}>
+        <div className="text-sm underline" style={{ color: 'var(--foreground)', fontWeight: 500 }}>
           See the commonly asked questions
         </div>
       </button>

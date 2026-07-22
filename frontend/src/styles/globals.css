@@ -3,9 +3,9 @@
 /* Light-mode surface tokens (applied when the root has no `.dark` class).
    Other light values come from theme.css :root. */
 :root {
-  --background: #f4f5f7;   /* faint cool-grey backdrop (clean neumorphic light theme) */
-  --surface: #ffffff;      /* white cards; they lift off the page via soft shadows */
-  --surface-2: #eef0f4;
+  --background: #ffffff;   /* pure white page */
+  --surface: #e6e8ec;      /* clear light-grey cards that separate from the white page */
+  --surface-2: #dcdfe4;    /* slightly deeper grey for nested fills / chips */
   --border-strong: rgba(0, 0, 0, 0.16);
 }
 
@@ -48,7 +48,7 @@
    (the `--foreground` overrides flip every var-based label inside to dark automatically).
    `.dark .glass` below restores the translucent dark look and light text for dark mode. */
 .glass {
-  background: #f7f8fa !important;
+  background: #e6e8ec !important;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid rgba(0, 0, 0, 0.05) !important;
