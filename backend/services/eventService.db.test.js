@@ -18,6 +18,7 @@ import {
   respondCoOrganiserInvite,
   dependencies,
 } from './eventService.js';
+import { __setRedisForTests, __resetRedisForTests } from './redisClient.js';
 
 describe('eventService Additional Database helpers', () => {
   let rpcCalls = [];
@@ -219,11 +220,28 @@ describe('eventService Additional Database helpers', () => {
   test('saveDraft inserts a brand new draft if no UUID id is provided', async () => {
     const draftPayload = { title: 'New Inserted Draft' };
     const saved = await saveDraft(mockSb, 'user-1', draftPayload);
-    
+
     assert.equal(saved.id, 'draft-2');
     assert.deepEqual(saved.title, 'New Inserted Draft');
     assert.ok(syncDraftCalled);
     assert.equal(syncDraftCalled.draftId, 'draft-2');
+  });
+
+  test('saveDraft insert invalidates the per-user drafts cache (so a new draft shows immediately)', async () => {
+    const store = new Map();
+    store.set('data:drafts:u:user-1', JSON.stringify([{ id: 'stale', title: 'Stale list without the new draft' }]));
+    __setRedisForTests({
+      status: 'ready',
+      async get(k) { return store.has(k) ? store.get(k) : null; },
+      async set(k, v) { store.set(k, v); return 'OK'; },
+      async del(...keys) { let n = 0; for (const k of keys) { if (store.delete(k)) n += 1; } return n; },
+    });
+    try {
+      await saveDraft(mockSb, 'user-1', { title: 'Fresh Draft' }); // insert path (no uuid id)
+      assert.equal(store.has('data:drafts:u:user-1'), false, 'inserting a new draft must clear the cached drafts list');
+    } finally {
+      __resetRedisForTests();
+    }
   });
 
   test('deleteDraft deletes DB entry and de-indexes draft embedding', async () => {

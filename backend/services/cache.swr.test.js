@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { withSwrCache, __swrSettled } from './cache.js';
+import { withSwrCache, __swrSettled, bumpSwrGeneration } from './cache.js';
 import { __setRedisForTests, __resetRedisForTests } from './redisClient.js';
 
 // Minimal in-memory stand-in for the bits cacheGetJson/cacheSetJson use. Expiry isn't
@@ -77,6 +77,31 @@ test('concurrent stale hits trigger only ONE background refresh (no stampede)', 
   await __swrSettled();
 
   assert.equal(calls, 2, 'three stale hits must collapse into a single reload');
+});
+
+test('a background refresh that raced an invalidation (generation bump) is NOT written back', async () => {
+  const redis = fakeRedis();
+  __setRedisForTests(redis);
+
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  let calls = 0;
+  const load = async () => {
+    calls += 1;
+    if (calls === 2) await gate; // hold the background refresh open so we can invalidate mid-flight
+    return [`load-${calls}`];
+  };
+
+  await withSwrCache('k', 0, 600, load);               // seed (calls=1), stale immediately
+  const stale = await withSwrCache('k', 0, 600, load); // stale hit kicks the background refresh (calls=2, awaiting gate)
+  assert.deepEqual(stale, ['load-1']);
+
+  bumpSwrGeneration(); // a write-invalidation (e.g. createEvent) happened while the refresh was loading
+  release();           // let the background loader finish and try to write back
+  await __swrSettled();
+
+  const stored = JSON.parse(redis.store.get('k'));
+  assert.deepEqual(stored.v, ['load-1'], 'the raced refresh must not overwrite the just-invalidated key with its stale snapshot');
 });
 
 test('a legacy (non-envelope) cached value is treated as a miss', async () => {

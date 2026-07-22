@@ -87,12 +87,21 @@ export async function withCache(key, ttlSeconds, loader) {
 // a single reload rather than a stampede.
 const inFlight = new Map();
 
+// Monotonic generation guarding SWR write-backs against the classic stale-vs-invalidate race:
+// a refresh whose loader read data BEFORE an invalidation must not write that now-stale snapshot
+// back after the invalidation cleared the key. Callers bump this in their write-invalidation path
+// (e.g. invalidateEventCaches). Per-process — matches the app's single-instance assumption.
+let swrGeneration = 0;
+export function bumpSwrGeneration() { swrGeneration += 1; }
+
 function refreshInBackground(key, freshTtlS, staleTtlS, loader) {
   if (inFlight.has(key)) return;
+  const startGen = swrGeneration;
   const task = (async () => {
     try {
       const value = await loader();
-      if (value != null) await cacheSetJson(key, envelope(value, freshTtlS), freshTtlS + staleTtlS);
+      // Skip the write-back if an invalidation happened while we were loading — the value is stale.
+      if (value != null && startGen === swrGeneration) await cacheSetJson(key, envelope(value, freshTtlS), freshTtlS + staleTtlS);
     } catch (err) {
       // Serving stale already succeeded — a failed refresh just means we retry next hit.
       console.warn('[cache] background refresh failed:', key, err?.message || err);
@@ -109,6 +118,7 @@ const envelope = (value, freshTtlS) => ({ v: value, f: Date.now() + freshTtlS * 
 const isEnvelope = (x) => !!x && typeof x === 'object' && !Array.isArray(x) && 'v' in x && typeof x.f === 'number';
 
 export async function withSwrCache(key, freshTtlS, staleTtlS, loader) {
+  const startGen = swrGeneration;
   const hit = await cacheGetJson(key);
   if (isEnvelope(hit)) {
     if (Date.now() < hit.f) return hit.v;                       // fresh
@@ -116,7 +126,8 @@ export async function withSwrCache(key, freshTtlS, staleTtlS, loader) {
     return hit.v;                                               // …but answer instantly
   }
   const value = await loader();
-  if (value != null) await cacheSetJson(key, envelope(value, freshTtlS), freshTtlS + staleTtlS);
+  // Same guard as the background path: don't cache a snapshot that an invalidation raced past.
+  if (value != null && startGen === swrGeneration) await cacheSetJson(key, envelope(value, freshTtlS), freshTtlS + staleTtlS);
   return value;
 }
 

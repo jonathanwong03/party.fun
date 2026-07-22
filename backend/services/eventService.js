@@ -10,7 +10,7 @@
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
-import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache } from './cache.js';
+import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache, bumpSwrGeneration } from './cache.js';
 import { adminClient } from './supabaseAdmin.js';
 
 export const dependencies = {
@@ -53,6 +53,7 @@ export async function listEventsRaw(sb, userId) {
 // event / hype / attendee / revenue / analytics changes, so the next read (UI or agent)
 // is fresh after a mutation. Short TTLs bound anything a broad prefix-clear misses.
 async function invalidateEventCaches() {
+  bumpSwrGeneration(); // block any in-flight SWR refresh from writing a pre-mutation snapshot back
   await Promise.all([
     cacheDel('events:list:anon'),
     cacheDelByPrefix('events:list:u:'),
@@ -468,6 +469,7 @@ export async function saveDraft(sb, userId, draft) {
   if (error) throw new Error(error.message);
   const saved = asDraft(data);
   dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
+  await cacheDel(`data:drafts:u:${userId}`); // new draft must invalidate the cached list (mirrors the update branch)
   return saved;
 }
 
