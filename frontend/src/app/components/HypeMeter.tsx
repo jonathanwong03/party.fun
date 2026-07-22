@@ -24,7 +24,7 @@ export function HypeMeter({
   const t = Math.max(0, Math.min(STATUS_COLORS.length - 1, statusIndex));
   // Cancelled and completed events render in grey.
   const inactive = status === 'cancelled' || status === 'completed';
-  const color = inactive ? '#5a5a66' : '#ffffff';
+  const color = inactive ? '#5a5a66' : 'var(--foreground)';
   const statusColor = inactive ? '#5a5a66' : STATUS_COLORS[t];
   const gradient = inactive
     ? '#5a5a66'

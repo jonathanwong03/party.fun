@@ -61,7 +61,7 @@ function ReviewForm({ event, onDone }: { event: ReviewableEvent; onDone: () => v
         className="mt-3 w-full rounded-lg border p-3 text-sm"
         style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--foreground)' }}
       />
-      {error && <p className="mt-2 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+      {error && <p className="mt-2 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
       <button
         onClick={submit}
         disabled={busy}
@@ -105,7 +105,7 @@ export function Review({ go }: { go: (r: Route) => void }) {
       {loading ? (
         <p className="mt-8 text-sm" style={{ color: 'var(--muted-foreground)' }}>Loading…</p>
       ) : error ? (
-        <p className="mt-8 text-sm" style={{ color: '#ff9a82' }}>{error}</p>
+        <p className="mt-8 text-sm" style={{ color: 'var(--status-red)' }}>{error}</p>
       ) : reviewable.length === 0 ? (
         <div className="mt-8 rounded-2xl border p-6 text-center text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface)', color: 'var(--muted-foreground)' }}>
           Nothing to review right now. Once an event you joined has finished, it'll show up here.

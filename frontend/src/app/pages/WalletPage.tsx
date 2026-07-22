@@ -123,7 +123,7 @@ function CardSection({ wallet, onChange }: { wallet: WalletInfo | null; onChange
           <div className="rounded-lg p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
             <CardElement options={CARD_STYLE} />
           </div>
-          {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+          {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
           <Button onClick={submit} disabled={busy || !stripe} className="bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 10, height: 42 }}>
             {busy ? 'Saving…' : 'Save card'}
           </Button>
@@ -179,8 +179,8 @@ function TopUpSection({ hasCard, onChange }: { hasCard: boolean; onChange: () =>
           </Button>
         </div>
       )}
-      {error && <p className="mt-3 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
-      {ok && <p className="mt-3 text-xs" style={{ color: '#29e07a', fontWeight: 600 }}>Wallet topped up.</p>}
+      {error && <p className="mt-3 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
+      {ok && <p className="mt-3 text-xs" style={{ color: 'var(--status-green)', fontWeight: 600 }}>Wallet topped up.</p>}
     </div>
   );
 }

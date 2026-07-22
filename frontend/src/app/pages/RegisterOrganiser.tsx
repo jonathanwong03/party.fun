@@ -97,7 +97,7 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
               {UNIVERSITIES.map((u) => <SelectItem key={u.code} value={u.code}>{universityLabel(u.code)}</SelectItem>)}
             </SelectContent>
           </Select>
-          {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{errs.university}</p>}
+          {attempted && errs.university && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{errs.university}</p>}
         </div>
 
         <div>
@@ -118,12 +118,12 @@ export function RegisterOrganiser({ go }: { go: (r: Route) => void }) {
         </div>
 
         <div className="flex items-start gap-2 rounded-lg p-3 text-xs"
-          style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
+          style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: 'var(--status-green)' }}>
           <Shield size={14} className="mt-0.5 shrink-0" />
           <span>Organisers must be current university students. Your matriculation number is unique to your account.</span>
         </div>
 
-        {submitError && <p className="text-xs" style={{ color: '#ff9a82' }}>{submitError}</p>}
+        {submitError && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{submitError}</p>}
 
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Creating…' : 'Create organiser account'}
@@ -138,7 +138,7 @@ function Field({ label, error, ...props }: { label: string; error?: string | nul
     <div>
       <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>{label}</Label>
       <Input {...props} style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 42 }} />
-      {error && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+      {error && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
     </div>
   );
 }

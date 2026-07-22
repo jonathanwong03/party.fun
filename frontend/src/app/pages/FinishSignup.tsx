@@ -90,7 +90,7 @@ export function FinishSignup({ go, onLogin }: { go: (r: Route) => void; onLogin:
           <p className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{MATRIC_HINT}. party.fun is for current university students.</p>
         </div>
 
-        {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+        {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
 
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Setting up…' : 'Continue'}

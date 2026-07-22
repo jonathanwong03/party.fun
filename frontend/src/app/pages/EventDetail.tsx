@@ -107,7 +107,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             <p className="mt-1 text-sm text-white/85 sm:mt-2 sm:text-[17px]" style={{ fontWeight: 700 }}>Hosted by {event.organiser}</p>
             {hostUniversity && <p className="mt-0.5 text-sm text-white/80 sm:mt-1 sm:text-base" style={{ fontWeight: 600 }}>{hostUniversity}</p>}
             {restrictedUniCode && (
-              <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: '#ff6b85', fontWeight: 700 }}>
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs" style={{ background: 'rgba(255,51,84,0.14)', color: 'var(--status-red)', fontWeight: 700 }}>
                 <Shield size={12} /> {restrictedUniCode} members only
               </span>
             )}
@@ -118,7 +118,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
       {weather?.status === 'ok' && weather.willRain && (
         <div
           className="mb-6 flex items-start gap-2 rounded-xl p-4 text-sm"
-          style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.35)', color: '#ffb4a3' }}
+          style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.35)', color: 'var(--status-red)' }}
         >
           <AlertTriangle size={18} style={{ marginTop: 1, flexShrink: 0 }} />
           <span>{weather.summary}</span>
@@ -257,7 +257,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             </Button>
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Payments were captured at checkout. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>
@@ -267,7 +267,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
         ) : showOptOut ? (
         <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <div className="rounded-2xl glass p-6 transition-all duration-300">
-            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: '#29e07a' }}>You're in</div>
+            <div className="mb-1 text-xs uppercase tracking-wider" style={{ color: 'var(--status-green)' }}>You're in</div>
             <h3 className="mt-1" style={{ fontSize: 22, fontWeight: 700 }}>Tickets pledged</h3>
             <div className="mt-1 text-sm" style={{ color: 'var(--foreground)', fontWeight: 600 }}>
               {(qty ?? 1)}× ticket{(qty ?? 1) === 1 ? '' : 's'}
@@ -277,7 +277,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             </p>
 
             <div className="mt-4 rounded-lg p-3" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#ffb4a3' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-red)' }}>
                 <Mail size={14} className="mt-0.5 shrink-0" />
                 <span>🎟️ Your tickets were emailed to you — check your inbox (and spam) for the printable PDF with each ticket's QR code.</span>
               </div>
@@ -383,7 +383,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <Button
                 disabled
                 className="w-full disabled:opacity-100"
-                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
+                style={{ background: 'rgba(255,51,84,0.08)', color: 'var(--status-red)', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 16, fontWeight: 700 }}
               >
                 Event unavailable
               </Button>
@@ -391,7 +391,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
               <Button
                 disabled
                 className="w-full disabled:opacity-100"
-                style={{ background: 'rgba(255,51,84,0.08)', color: '#ff3354', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 15, fontWeight: 700 }}
+                style={{ background: 'rgba(255,51,84,0.08)', color: 'var(--status-red)', border: '1px solid rgba(255,51,84,0.4)', borderRadius: 12, height: 52, fontSize: 15, fontWeight: 700 }}
               >
                 {restrictedUniCode} members only
               </Button>
@@ -408,7 +408,7 @@ export function EventDetail({ id, go, role, events, purchasedEventIds, bookingId
             )}
 
             <div className="mt-5 rounded-lg p-3" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)' }}>
-              <div className="flex items-start gap-2 text-xs" style={{ color: '#a6f3c8' }}>
+              <div className="flex items-start gap-2 text-xs" style={{ color: 'var(--status-green)' }}>
                 <Shield size={14} className="mt-0.5 shrink-0" />
                 <span>Your payment is captured now. Active tickets are refunded automatically if the event misses its hype threshold.</span>
               </div>

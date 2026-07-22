@@ -45,11 +45,11 @@ export function HypePricingPanel({ event, estimatedTotal, qty }: {
 
       <div className="grid grid-cols-2 gap-3 text-xs">
         <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <TrendingUp size={14} className="mt-0.5 shrink-0" style={{ color: '#ffcb3c' }} />
+          <TrendingUp size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--status-amber)' }} />
           <span style={{ color: 'var(--muted-foreground)' }}>Each new pledge pushes the price up along the curve.</span>
         </div>
         <div className="flex items-start gap-2 rounded-lg p-3" style={{ background: 'var(--surface-2)', border: '1px solid var(--border)' }}>
-          <TrendingDown size={14} className="mt-0.5 shrink-0" style={{ color: '#29e07a' }} />
+          <TrendingDown size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--status-green)' }} />
           <span style={{ color: 'var(--muted-foreground)' }}>Give-aways release spots and lower the price for the next buyer.</span>
         </div>
       </div>

@@ -126,7 +126,7 @@ export function JoinedEvents({ go, events, tickets, onDelete }: { go: (route: Ro
                       aria-label="Delete"
                       title="Delete"
                       className="grid size-9 shrink-0 place-items-center rounded-lg transition hover:bg-white/5"
-                      style={{ color: '#ff3354' }}
+                      style={{ color: 'var(--status-red)' }}
                     >
                       <Trash2 size={16} />
                     </button>

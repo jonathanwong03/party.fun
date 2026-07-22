@@ -218,7 +218,7 @@ export function Settings({
               )}
             </div>
             <p className="text-xs" style={{ color: 'var(--muted-foreground)' }}>PNG, JPG or GIF. Square images look best.</p>
-            {avatarError && <p className="text-xs" style={{ color: '#ff9a82' }}>{avatarError}</p>}
+            {avatarError && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{avatarError}</p>}
           </div>
         </div>
 
@@ -272,8 +272,8 @@ export function Settings({
           Change username
         </Button>
 
-        {usernameError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{usernameError}</p>}
-        {saved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Username updated.</p>}
+        {usernameError && <p className="mt-3 text-sm" style={{ color: 'var(--status-red)' }}>{usernameError}</p>}
+        {saved && <p className="mt-3 text-sm" style={{ color: 'var(--status-green)', fontWeight: 600 }}>Username updated.</p>}
       </section>
 
       {/* Admin license (admins only) */}
@@ -346,8 +346,8 @@ export function Settings({
           {contactBusy ? 'Saving…' : 'Save contact details'}
         </Button>
 
-        {contactError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{contactError}</p>}
-        {contactSaved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>Contact details updated.</p>}
+        {contactError && <p className="mt-3 text-sm" style={{ color: 'var(--status-red)' }}>{contactError}</p>}
+        {contactSaved && <p className="mt-3 text-sm" style={{ color: 'var(--status-green)', fontWeight: 600 }}>Contact details updated.</p>}
       </section>
       )}
 
@@ -389,8 +389,8 @@ export function Settings({
           </>
         )}
 
-        {uniError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{uniError}</p>}
-        {uniSaved && <p className="mt-3 text-sm" style={{ color: '#29e07a', fontWeight: 600 }}>University updated.</p>}
+        {uniError && <p className="mt-3 text-sm" style={{ color: 'var(--status-red)' }}>{uniError}</p>}
+        {uniSaved && <p className="mt-3 text-sm" style={{ color: 'var(--status-green)', fontWeight: 600 }}>University updated.</p>}
       </section>
       )}
 
@@ -414,9 +414,9 @@ export function Settings({
       {/* Danger zone */}
       {!isAdmin && (
       <section className="rounded-2xl border p-6" style={{ borderColor: 'rgba(255,51,84,0.35)', background: 'var(--surface)' }}>
-        <div className="mb-4 flex items-center gap-2" style={{ color: '#ff6b85' }}>
+        <div className="mb-4 flex items-center gap-2" style={{ color: 'var(--status-red)' }}>
           <AlertTriangle size={18} />
-          <h3 style={{ color: '#ff6b85' }}>Danger zone</h3>
+          <h3 style={{ color: 'var(--status-red)' }}>Danger zone</h3>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm" style={{ color: 'var(--muted-foreground)' }}>
@@ -430,7 +430,7 @@ export function Settings({
             Delete account
           </Button>
         </div>
-        {deleteError && <p className="mt-3 text-sm" style={{ color: '#ff9a82' }}>{deleteError}</p>}
+        {deleteError && <p className="mt-3 text-sm" style={{ color: 'var(--status-red)' }}>{deleteError}</p>}
       </section>
       )}
 

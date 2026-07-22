@@ -69,8 +69,8 @@ export function VerifyCode({ go, email, channel = 'email' }: { go: (r: Route) =>
             style={{ background: 'var(--surface-2)', borderColor: error ? '#ff4d2e' : 'var(--border)', height: 52, fontSize: 22, letterSpacing: '0.5em', textAlign: 'center', fontWeight: 700 }}
           />
         </div>
-        {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
-        {resent && <p className="text-xs" style={{ color: '#29e07a' }}>A new code has been sent.</p>}
+        {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
+        {resent && <p className="text-xs" style={{ color: 'var(--status-green)' }}>A new code has been sent.</p>}
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Verifying…' : 'Verify code'}
         </Button>

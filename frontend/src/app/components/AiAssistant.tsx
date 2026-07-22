@@ -397,7 +397,7 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
                       </div>
                       <div className="mt-1 text-sm" style={{ color: 'var(--foreground)' }}>{p.summary}</div>
                       {st.status === 'done' ? (
-                        <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: '#29e07a' }}>
+                        <div className="mt-2 flex items-center gap-1.5 text-xs" style={{ color: 'var(--status-green)' }}>
                           <Check size={14} /> {st.message ?? 'Done.'}
                         </div>
                       ) : st.status === 'error' ? (

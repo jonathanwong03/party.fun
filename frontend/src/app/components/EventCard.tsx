@@ -78,7 +78,7 @@ export function EventCard({
           <div className="flex min-w-0 items-center gap-3">
             <span className="flex items-center gap-1"><Calendar size={12} /> {event.date}</span>
           </div>
-          <span style={{ fontWeight: 700, color: '#fff', fontSize: 15 }}>
+          <span style={{ fontWeight: 700, color: 'var(--foreground)', fontSize: 15 }}>
             ${event.price.toFixed(2)}{event.hypeDrivenPricing ? '+' : ''}
           </span>
         </div>
@@ -86,7 +86,7 @@ export function EventCard({
         <div className="space-y-1">
           <HypeMeter pct={event.hypePercentage} status={event.status} statusIndex={statusIndex} size="sm" showLabel={false} />
           <div className="flex items-center justify-between text-xs">
-            <span style={{ color: '#ffffff', fontWeight: 600 }}>
+            <span style={{ color: 'var(--foreground)', fontWeight: 600 }}>
               {event.activeTicketCount} of {event.hypeThreshold} tickets pledged
             </span>
             <span style={{ color: 'var(--muted-foreground)' }}>{event.spotsLeft} spots left</span>

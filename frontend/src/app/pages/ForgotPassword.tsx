@@ -53,7 +53,7 @@ export function ForgotPassword({ go }: { go: (r: Route) => void }) {
             onChange={(e) => setIdentifier(e.target.value)}
             style={{ background: 'var(--surface-2)', borderColor: attempted && err ? '#ff4d2e' : 'var(--border)', height: 44 }}
           />
-          {attempted && err && <p className="mt-1 text-xs" style={{ color: '#ff9a82' }}>{err}</p>}
+          {attempted && err && <p className="mt-1 text-xs" style={{ color: 'var(--status-red)' }}>{err}</p>}
         </div>
         <div>
           <Label className="mb-1.5 block text-xs" style={{ color: 'var(--muted-foreground)' }}>Send code via</Label>
@@ -78,7 +78,7 @@ export function ForgotPassword({ go }: { go: (r: Route) => void }) {
             })}
           </div>
         </div>
-        {error && <p className="text-xs" style={{ color: '#ff9a82' }}>{error}</p>}
+        {error && <p className="text-xs" style={{ color: 'var(--status-red)' }}>{error}</p>}
         <Button type="submit" disabled={submitting} className="w-full bg-[#ff4d2e] text-white hover:bg-[#ff6647]" style={{ borderRadius: 12, height: 46 }}>
           {submitting ? 'Sending…' : 'Send reset code'}
         </Button>

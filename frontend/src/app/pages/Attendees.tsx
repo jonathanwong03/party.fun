@@ -62,14 +62,14 @@ export function Attendees({ id, go, events }: { id: string; go: (r: Route) => vo
         <h1 style={{ fontSize: 28, fontWeight: 800, letterSpacing: '-0.02em' }}>Who's going</h1>
         <p className="mt-1 text-sm" style={{ color: 'var(--muted-foreground)' }}>
           {event ? event.title : 'Event'} · {count} {count === 1 ? 'person' : 'people'}
-          {canViewDetails && <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ background: 'rgba(255,203,60,0.16)', color: '#ffcb3c' }}>Organiser view</span>}
+          {canViewDetails && <span className="ml-2 rounded-full px-2 py-0.5 text-xs" style={{ background: 'rgba(255,203,60,0.16)', color: 'var(--status-amber)' }}>Organiser view</span>}
         </p>
       </div>
 
       {loading ? (
         <div className="py-16 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>Loading attendees…</div>
       ) : error ? (
-        <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>{error}</div>
+        <div className="rounded-xl p-4 text-sm" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: 'var(--status-red)' }}>{error}</div>
       ) : count === 0 ? (
         <div className="py-16 text-center text-sm" style={{ color: 'var(--muted-foreground)' }}>No one has locked in yet.</div>
       ) : canViewDetails ? (

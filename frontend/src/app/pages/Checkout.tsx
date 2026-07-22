@@ -163,7 +163,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
             </div>
           </section>
 
-          <div className="flex items-start gap-2 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: '#a6f3c8' }}>
+          <div className="flex items-start gap-2 rounded-lg p-3 text-xs" style={{ background: 'rgba(41,224,122,0.08)', border: '1px solid rgba(41,224,122,0.25)', color: 'var(--status-green)' }}>
             <Shield size={14} className="mt-0.5 shrink-0" />
             <span>Paid instantly. If the event is cancelled or misses its threshold, you're refunded automatically — wallet payments to your wallet instantly, card payments back to your card (~3–5 business days).</span>
           </div>
@@ -198,7 +198,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               </div>
 
               {universityBlocked && (
-                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.4)', color: '#ff6b85' }}>
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,51,84,0.08)', border: '1px solid rgba(255,51,84,0.4)', color: 'var(--status-red)' }}>
                   This event is open to {event.restrictedUniversity} members only.
                 </div>
               )}
@@ -208,7 +208,7 @@ export function Checkout({ id, role, go, events, qty = 1, onPledge }: { id: stri
               </Button>
 
               {submitError && (
-                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: '#ff9a82' }}>{submitError}</div>
+                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(255,77,46,0.08)', border: '1px solid rgba(255,77,46,0.25)', color: 'var(--status-red)' }}>{submitError}</div>
               )}
             </div>
           </div>

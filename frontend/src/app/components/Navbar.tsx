@@ -49,7 +49,7 @@ export function Navbar({
             </button>
           )}
           <button onClick={() => go(role === 'admin' ? { name: 'manage-events' } : { name: 'landing' })} className="flex items-center">
-            <Logo />
+            <Logo color="#ffffff" />
           </button>
         </div>
 
