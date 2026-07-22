@@ -40,7 +40,9 @@ const FIELD_LINE_RX = /^(description|status|current price|price|date|when|venue|
 function autoNumberList(paras: string[]): string[] {
   const introIdx = paras.findIndex((p) => /:\s*$/.test(p));
   if (introIdx === -1) return paras;
-  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p) && !/:\s*$/.test(p);
+  // A paragraph ending in "?" is a question/CTA ("Would you like to buy tickets?"), never an
+  // event title — exclude it so a single event followed by a CTA doesn't get numbered as a list.
+  const isTitle = (p: string) => !FIELD_LINE_RX.test(p) && !/^\d+\.\s/.test(p) && !/:\s*$/.test(p) && !/\?\s*$/.test(p);
   const titleCount = paras.slice(introIdx + 1).filter(isTitle).length;
   if (titleCount < 2) return paras;
   let n = 0;
