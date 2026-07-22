@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { withSwrCache, __swrSettled, bumpSwrGeneration } from './cache.js';
+import { withCache, withSwrCache, __swrSettled, bumpSwrGeneration } from './cache.js';
 import { __setRedisForTests, __resetRedisForTests } from './redisClient.js';
 
 // Minimal in-memory stand-in for the bits cacheGetJson/cacheSetJson use. Expiry isn't
@@ -113,6 +113,22 @@ test('a legacy (non-envelope) cached value is treated as a miss', async () => {
 
   assert.deepEqual(await withSwrCache('k', 60, 600, load), [{ id: 'new' }]);
   assert.equal(calls, 1, 'legacy value must not be served as if it were an envelope');
+});
+
+test('withCache: a slow loader that raced an invalidation is NOT written back', async () => {
+  const redis = fakeRedis();
+  __setRedisForTests(redis);
+
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const load = async () => { await gate; return [{ id: 'stale' }]; }; // pre-mutation snapshot, held open
+
+  const pending = withCache('k', 60, load); // MISS → loader starts, awaiting gate
+  bumpSwrGeneration();                       // a write-invalidation (e.g. createEvent) cleared the key
+  release();
+  await pending;
+
+  assert.equal(redis.store.has('k'), false, 'the raced load must not re-populate the just-invalidated key');
 });
 
 test('Redis off → fails open to the loader', async () => {

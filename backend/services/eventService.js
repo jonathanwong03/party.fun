@@ -10,7 +10,7 @@
 import { quoteTotal, ticketPrice, validateHypePricingConfig } from '../utils/pricingCalculator.js';
 import { syncEventEmbedding } from './ai/eventEmbeddings.js';
 import { syncDraftEmbedding, deleteDraftEmbedding } from './ai/draftEmbeddings.js';
-import { cacheGetJson, cacheSetJson, cacheDel, cacheDelByPrefix, withCache, withSwrCache, bumpSwrGeneration } from './cache.js';
+import { cacheDel, cacheDelByPrefix, withCache, withSwrCache, bumpSwrGeneration } from './cache.js';
 import { adminClient } from './supabaseAdmin.js';
 
 export const dependencies = {
@@ -184,23 +184,23 @@ export function mapEventRow(row, userId) {
 // ── Reads ──────────────────────────────────────────────────────────────────
 
 export async function listEvents(sb, userId) {
-  const cacheKey = eventsCacheKey(userId);
-  const cached = await cacheGetJson(cacheKey);
-  if (cached != null) return cached;
-
-  const { data, error } = await sb.rpc('get_events');
-  if (error) throw new Error(error.message);
-  const events = (data ?? []).map((row) => mapEventRow(row, userId));
-  // Backend picks the single "most hyped" still-open event (highest hype ratio) so
-  // the Landing page renders the feature card without recomputing the winner.
-  let featured = null;
-  for (const e of events) {
-    if (e.mine || e.status === 'cancelled' || e.status === 'completed') continue;
-    if (!featured || (e.hypeRatio ?? 0) > (featured.hypeRatio ?? 0)) featured = e;
-  }
-  if (featured) featured.featured = true;
-  await cacheSetJson(cacheKey, events, EVENTS_TTL_S);
-  return events;
+  // Guarded read-through cache (withCache): a slow get_events load that started before a write
+  // can't clobber a just-invalidated key with its pre-mutation snapshot — otherwise a freshly
+  // created event would appear then vanish for up to EVENTS_TTL_S.
+  return withCache(eventsCacheKey(userId), EVENTS_TTL_S, async () => {
+    const { data, error } = await sb.rpc('get_events');
+    if (error) throw new Error(error.message);
+    const events = (data ?? []).map((row) => mapEventRow(row, userId));
+    // Backend picks the single "most hyped" still-open event (highest hype ratio) so
+    // the Landing page renders the feature card without recomputing the winner.
+    let featured = null;
+    for (const e of events) {
+      if (e.mine || e.status === 'cancelled' || e.status === 'completed') continue;
+      if (!featured || (e.hypeRatio ?? 0) > (featured.hypeRatio ?? 0)) featured = e;
+    }
+    if (featured) featured.featured = true;
+    return events;
+  });
 }
 
 export async function getEvent(sb, eventId, userId) {
@@ -458,6 +458,7 @@ export async function saveDraft(sb, userId, draft) {
     if (error) throw new Error(error.message);
     const saved = asDraft(data);
     dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
+    bumpSwrGeneration(); // block an in-flight listDrafts load from clobbering the cache with a pre-edit snapshot
     await cacheDel(`data:drafts:u:${userId}`);
     return saved;
   }
@@ -469,6 +470,7 @@ export async function saveDraft(sb, userId, draft) {
   if (error) throw new Error(error.message);
   const saved = asDraft(data);
   dependencies.syncDraftEmbedding(sb, saved.id, userId, saved);
+  bumpSwrGeneration(); // block an in-flight listDrafts load from re-populating the cache without the new draft
   await cacheDel(`data:drafts:u:${userId}`); // new draft must invalidate the cached list (mirrors the update branch)
   return saved;
 }
@@ -477,6 +479,7 @@ export async function deleteDraft(sb, id) {
   const { error } = await sb.from('EVENT_DRAFTS').delete().eq('id', id);
   if (error) throw new Error(error.message);
   dependencies.deleteDraftEmbedding(sb, id);
+  bumpSwrGeneration(); // block an in-flight listDrafts load from resurrecting the deleted draft
   await cacheDelByPrefix('data:drafts:');
 }
 

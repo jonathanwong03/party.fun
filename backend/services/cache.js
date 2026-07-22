@@ -65,10 +65,13 @@ export async function cacheDelByPrefix(prefix) {
 // result for `ttlSeconds`, and return it. When Redis is off this is just `loader()`.
 // A loader result of null/undefined is returned but not cached.
 export async function withCache(key, ttlSeconds, loader) {
+  const startGen = swrGeneration;
   const hit = await cacheGetJson(key);
   if (hit != null) return hit;
   const value = await loader();
-  if (value != null) await cacheSetJson(key, value, ttlSeconds);
+  // Skip the write-back if an invalidation raced past while the (often slow) loader ran, so a
+  // pre-mutation snapshot can't re-populate a just-cleared key. See withSwrCache for the same guard.
+  if (value != null && startGen === swrGeneration) await cacheSetJson(key, value, ttlSeconds);
   return value;
 }
 
