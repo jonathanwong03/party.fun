@@ -71,7 +71,7 @@ export function Navbar({
             onClick={onToggleTheme}
             className="grid size-9 place-items-center rounded-full text-white transition hover:bg-white/5"
           >
-            {theme === 'dark' ? <Moon size={18} color="#f5f5f7" /> : <Sun size={18} color="#f5f5f7" />}
+            {theme === 'dark' ? <Sun size={18} color="#f5f5f7" /> : <Moon size={18} color="#f5f5f7" />}
           </button>
           {role ? (
             <>
