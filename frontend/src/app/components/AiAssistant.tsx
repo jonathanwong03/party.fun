@@ -286,7 +286,9 @@ export function AiAssistant({ role, onDataChanged, onOpenCardForm }: { role: Rol
       const outcome = (res.results ?? []).find((r) => r.proposalId === p.id);
       const ok = outcome ? outcome.ok : true;
       setActions((s) => ({ ...s, [p.id]: { status: ok ? 'done' : 'error', message: outcome?.message ?? res.reply } }));
-      const followUps = (res.proposals ?? []).filter((proposal) => proposal.id !== p.id);
+      // Follow-ups exclude the just-decided proposal AND anything the user already acted on —
+      // an echoed old proposal must never re-render its (stale) card as a new message.
+      const followUps = (res.proposals ?? []).filter((proposal) => proposal.id !== p.id && !actions[proposal.id]);
       if (ok && followUps.length) {
         setMessages((current) => [
           ...current,

@@ -622,7 +622,10 @@ function shape(state, interrupted, { threadId, provider, modelId }) {
     available: true,
     status: interrupted ? 'awaiting_confirmation' : 'done',
     reply: sanitizeAiReply(lastAiText(state?.messages)),
-    proposals: state?.proposals ?? [],
+    // The proposals channel ACCUMULATES across the thread (concat reducer), so filter to the
+    // still-undecided ones (same predicate as the confirm node) — otherwise a confirmed/rejected
+    // proposal is echoed back after a follow-up confirm and the client re-renders its stale card.
+    proposals: (state?.proposals ?? []).filter((p) => !(p.id in (state?.decisions ?? {}))),
     results: state?.results ?? [],
     threadId,
     provider,

@@ -306,11 +306,15 @@ test('ask mode interrupts for confirmation; confirm executes, reject does not', 
   assert.equal(confirmed.status, 'done');
   assert.equal(confirmed.results.length, 1);
   assert.equal(confirmed.results[0].action, 'topup');
+  // The proposals channel accumulates across the thread — a DECIDED proposal must not be echoed
+  // back, or the client re-renders its stale card after a follow-up confirm.
+  assert.deepEqual(confirmed.proposals, [], 'a confirmed proposal is not re-surfaced on resume');
 
   const second = await runGraph({ system: 's', messages: [{ role: 'user', content: 'top up $20' }], ctx });
   const rejected = await resumeGraph({ system: 's', ctx, threadId: second.threadId, proposalId: 'p1', decision: 'reject' });
   assert.equal(rejected.status, 'done');
   assert.equal(rejected.results.length, 0);
+  assert.deepEqual(rejected.proposals, [], 'a rejected proposal is not re-surfaced on resume');
 });
 
 test('auto mode executes inline', async () => {
