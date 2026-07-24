@@ -147,7 +147,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                     </div>
                     <div className="flex items-center gap-4 text-xs" style={{ color: 'var(--muted-foreground)' }}>
                       <span>{e.date || '—'}</span>
-                      <span>Revenue: <strong style={{ color: 'var(--foreground)' }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</strong></span>
+                      <span>Revenue: <strong style={{ color: 'var(--foreground)' }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
                       <span>{e.activeTicketCount}/{e.hypeThreshold}</span>
                     </div>
                     <div>
@@ -221,7 +221,7 @@ export function OrganiserHostedEvents({ route, go, events, onCancel, onHide, dra
                         </div>
                         <div className="mt-1 text-xs" style={{ color: 'var(--muted-foreground)' }}>{e.hypePercentage}%</div>
                       </td>
-                      <td className="px-3 py-4 text-left" style={{ fontWeight: 600 }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString()}</td>
+                      <td className="px-3 py-4 text-left" style={{ fontWeight: 600 }}>${(summary.revenueByEvent[e.id] ?? 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                       <td className="px-3 py-4 text-left" style={{ color: 'var(--muted-foreground)' }}>
                         {e.activeTicketCount}/{e.hypeThreshold}
                       </td>

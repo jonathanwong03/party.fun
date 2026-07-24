@@ -48,6 +48,9 @@ backend/.cache/
 # MCP config (contains a Supabase personal access token)
 .mcp.json
 
+# Local DB schema diagram (generated, not part of the app)
+party-fun-db-schema.drawio
+
 # OS files
 .DS_Store
 Thumbs.db
